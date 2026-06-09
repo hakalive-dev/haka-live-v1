@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Haka Live — Production Infrastructure Stack</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --purple:        #7B4FFF;
+      --purple-light:  #9D7FFF;
+      --purple-subtle: #F3EFFF;
+      --gold:          #E8A020;
+      --gold-subtle:   #FEF3DC;
+      --dark:          #111827;
+      --mid:           #374151;
+      --muted:         #6B7280;
+      --light:         #9CA3AF;
+      --border:        #E5E7EB;
+      --surface:       #F9FAFB;
+      --white:         #FFFFFF;
+      --green:         #16A34A;
+      --green-subtle:  #DCFCE7;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #D1D5DB;
+      color: var(--dark);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ── PAGE SHELL ── */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      background: var(--white);
+      margin: 10mm auto;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.14);
+      overflow: hidden;
+    }
+
+    .page-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 14mm 18mm 8mm;
+    }
+
+    @media print {
+      body { background: white; }
+      .page {
+        margin: 0;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+
+    @page { size: A4; margin: 0; }
+
+    /* ── COVER ── */
+    .cover { padding: 0; }
+
+    .cover-accent-bar {
+      height: 10mm;
+      background: linear-gradient(90deg, var(--purple) 0%, var(--purple-light) 100%);
+    }
+
+    .cover-body {
+      flex: 1;
+      padding: 16mm 18mm 10mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .cover-eyebrow {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--purple);
+      margin-bottom: 18px;
+    }
+
+    .cover-wordmark {
+      font-size: 54px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      line-height: 1;
+      color: var(--dark);
+      margin-bottom: 4px;
+    }
+
+    .cover-wordmark span { color: var(--purple); }
+
+    .cover-title {
+      font-size: 21px;
+      font-weight: 300;
+      color: var(--mid);
+      letter-spacing: -0.4px;
+      margin-bottom: 36px;
+    }
+
+    .cover-rule {
+      width: 44px;
+      height: 3px;
+      background: var(--purple);
+      border-radius: 2px;
+      margin-bottom: 22px;
+    }
+
+    .cover-meta {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 2;
+    }
+
+    .cover-meta strong { color: var(--dark); font-weight: 600; }
+
+    .cover-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 6mm 18mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cover-footer-label {
+      font-size: 10px;
+      color: var(--light);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 100px;
+      letter-spacing: 0.05em;
+    }
+    .pill-purple { background: var(--purple-subtle); color: var(--purple); }
+    .pill-gold   { background: var(--gold-subtle);   color: var(--gold);   }
+    .pill-green  { background: var(--green-subtle);  color: var(--green);  }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 12px;
+      border-bottom: 1.5px solid var(--border);
+      margin-bottom: 22px;
+    }
+
+    .page-title {
+      font-size: 21px;
+      font-weight: 700;
+      color: var(--dark);
+      letter-spacing: -0.5px;
+    }
+
+    .page-section {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--purple);
+    }
+
+    /* ── PAGE FOOTER ── */
+    .page-footer {
+      padding: 8px 18mm 10mm;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-brand {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--light);
+      letter-spacing: 0.05em;
+    }
+
+    .footer-brand span { color: var(--purple); }
+
+    .footer-num {
+      font-size: 10px;
+      color: var(--light);
+    }
+
+    /* ── SPACER ── */
+    .spacer { flex: 1; }
+
+    /* ── STATS ROW ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 12px;
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--purple);
+      letter-spacing: -1px;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* ── BODY TEXT ── */
+    p.body-text {
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--mid);
+      margin-bottom: 14px;
+    }
+
+    p.body-text strong { color: var(--dark); font-weight: 600; }
+
+    /* ── CALLOUT ── */
+    .callout {
+      background: var(--purple-subtle);
+      border-left: 3px solid var(--purple);
+      border-radius: 0 8px 8px 0;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+
+    .callout.gold {
+      background: var(--gold-subtle);
+      border-left-color: var(--gold);
+    }
+
+    .callout-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--purple);
+      margin-bottom: 5px;
+    }
+
+    .callout.gold .callout-title { color: var(--gold); }
+
+    .callout-body {
+      font-size: 12px;
+      color: var(--mid);
+      line-height: 1.75;
+    }
+
+    /* ── TABLE ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin-bottom: 14px;
+    }
+
+    thead th {
+      background: var(--dark);
+      color: white;
+      font-weight: 600;
+      padding: 9px 11px;
+      text-align: left;
+      font-size: 10.5px;
+      letter-spacing: 0.03em;
+    }
+
+    thead th:first-child { border-radius: 6px 0 0 0; }
+    thead th:last-child  { border-radius: 0 6px 0 0; }
+
+    tbody tr:nth-child(even) { background: var(--surface); }
+    tbody tr:nth-child(odd)  { background: var(--white);   }
+
+    tbody td {
+      padding: 8px 11px;
+      border-bottom: 1px solid var(--border);
+      color: var(--mid);
+      vertical-align: middle;
+      line-height: 1.5;
+    }
+
+    tbody td:first-child { font-weight: 600; color: var(--dark); }
+
+    .row-total td {
+      background: var(--purple-subtle) !important;
+      font-weight: 700 !important;
+      color: var(--purple) !important;
+      border-top: 1.5px solid #C4B0FF !important;
+    }
+
+    .row-highlight td { background: #EEF2FF !important; font-weight: 600 !important; }
+
+    .align-right { text-align: right !important; }
+
+    /* ── ARCH DIAGRAM ── */
+    .arch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 6px 0 18px;
+      gap: 2px;
+    }
+
+    .arch-node {
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 22px;
+      text-align: center;
+      min-width: 160px;
+    }
+
+    .arch-node.purple {
+      border-color: var(--purple);
+      background: var(--purple-subtle);
+    }
+
+    .arch-node.gold {
+      border-color: var(--gold);
+      background: var(--gold-subtle);
+    }
+
+    .arch-node-name { font-size: 12px; font-weight: 700; color: var(--dark); }
+    .arch-node.purple .arch-node-name { color: var(--purple); }
+    .arch-node.gold   .arch-node-name { color: var(--gold);   }
+    .arch-node-sub  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .arch-arrow { font-size: 18px; color: var(--light); line-height: 1; padding: 2px 0; }
+
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: 100%;
+      margin-top: 2px;
+    }
+
+    .arch-service {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+
+    .arch-service-name { font-size: 11px; font-weight: 600; color: var(--dark); }
+    .arch-service-sub  { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
+
+    .arch-connects {
+      font-size: 10px;
+      color: var(--light);
+      padding: 4px 0;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── REASON CARDS ── */
+    .reason-cards { display: flex; flex-direction: column; gap: 10px; }
+
+    .reason-card {
+      display: flex;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      align-items: flex-start;
+    }
+
+    .reason-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--purple);
+      color: white;
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .reason-title { font-size: 12.5px; font-weight: 700; color: var(--dark); margin-bottom: 5px; }
+    .reason-body  { font-size: 11.5px; color: var(--mid); line-height: 1.75; }
+
+    /* ── BULLET LIST ── */
+    ul.bullets { list-style: none; margin-bottom: 14px; }
+
+    ul.bullets li {
+      font-size: 12.5px;
+      color: var(--mid);
+      line-height: 1.75;
+      padding-left: 18px;
+      position: relative;
+      margin-bottom: 5px;
+    }
+
+    ul.bullets li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      width: 6px;
+      height: 6px;
+      background: var(--purple);
+      border-radius: 50%;
+    }
+
+    ul.bullets li strong { color: var(--dark); font-weight: 600; }
+
+    /* ── STEP LIST ── */
+    .steps { display: flex; flex-direction: column; gap: 9px; }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px 13px;
+    }
+
+    .step-box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-text { font-size: 12px; color: var(--mid); line-height: 1.65; }
+    .step-text strong { color: var(--dark); font-weight: 600; }
+
+    /* ── SECTION LABEL ── */
+    .label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--purple);
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════
+     PAGE 1 — COVER
+     ════════════════════════════════════════ -->
+<div class="page cover" style="display:flex; flex-direction:column;">
+  <div class="cover-accent-bar"></div>
+
+  <div class="cover-body" style="flex:1; padding:16mm 18mm 10mm; display:flex; flex-direction:column; justify-content:center;">
+    <div class="cover-eyebrow">Investor Briefing &nbsp;·&nbsp; May 2026</div>
+    <div class="cover-wordmark">HAKA<span>LIVE</span></div>
+    <div class="cover-title">Production Infrastructure Stack</div>
+    <div class="cover-rule"></div>
+    <div class="cover-meta">
+      <strong>Purpose</strong><br>
+      Infrastructure plan, service stack selection,<br>
+      and monthly cost projections by growth stage.<br><br>
+      <strong>Classification</strong><br>
+      Confidential — For internal and investor use only.
+    </div>
+  </div>
+
+  <div class="cover-footer">
+    <div class="cover-footer-label">Haka Live &nbsp;·&nbsp; Production Stack Briefing</div>
+    <div class="pill pill-purple">Confidential</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 2 — EXECUTIVE SUMMARY
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Executive Summary</div>
+      <div class="page-section">Overview</div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-number">9</div>
+        <div class="stat-label">Infrastructure services</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">$205</div>
+        <div class="stat-label">Starting monthly cost</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">4</div>
+        <div class="stat-label">Growth stages planned</div>
+      </div>
+    </div>
+
+    <p class="body-text">
+      Haka Live's production infrastructure is designed to support a live social audio and video platform from early launch through significant scale. Every service has been selected to balance <strong>cost predictability, operational simplicity, and growth readiness</strong>.
+    </p>
+    <p class="body-text">
+      The stack is hosted on <strong>Render</strong> (backend compute), <strong>Supabase</strong> (database, authentication, and media storage), and <strong>Cloudflare</strong> (global CDN and DDoS protection). Real-time audio and video rooms are powered by <strong>Agora</strong> — the same engine used by BIGO Live, Clubhouse, and Yalla.
+    </p>
+    <p class="body-text">
+      At early stage, total infrastructure spend begins at approximately <strong>$205/month</strong> for under 100 concurrent users. As the platform grows, the primary variable is Agora's usage-based audio billing — a cost that scales in direct proportion to user engagement and, therefore, revenue opportunity.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">Key Design Principle</div>
+      <div class="callout-body">
+        All services are production-grade managed platforms — no self-hosted infrastructure to maintain. The stack is optimised for a lean engineering team, with authentication, storage, caching, and monitoring all handled by specialist providers.
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">2 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 3 — PLATFORM ARCHITECTURE
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Platform Architecture</div>
+      <div class="page-section">Technical Overview</div>
+    </div>
+
+    <p class="body-text">
+      All user traffic originates from the mobile application and flows through Cloudflare's global edge network before reaching the backend. This provides DDoS protection, SSL termination, and performance caching at no additional latency cost.
+    </p>
+
+    <div class="arch">
+      <div class="arch-node purple">
+        <div class="arch-node-name">Mobile Application</div>
+        <div class="arch-node-sub">iOS &amp; Android &nbsp;·&nbsp; Expo React Native</div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-node gold">
+        <div class="arch-node-name">Cloudflare CDN (Pro)</div>
+        <div class="arch-node-sub">DDoS protection &nbsp;·&nbsp; Global edge &nbsp;·&nbsp; SSL</div>
+      </div>
+      <div class="arch-arrow">↓</div>
+      <div class="arch-node purple">
+        <div class="arch-node-name">Backend API</div>
+        <div class="arch-node-sub">Render &nbsp;·&nbsp; 2× Standard Instances &nbsp;·&nbsp; Node.js</div>
+      </div>
+      <div class="arch-connects">── connects to ──</div>
+      <div class="arch-grid">
+        <div class="arch-service">
+          <div class="arch-service-name">Supabase</div>
+          <div class="arch-service-sub">Database · Auth · Storage</div>
+        </div>
+        <div class="arch-service">
+          <div class="arch-service-name">Redis Cache</div>
+          <div class="arch-service-sub">Render · Sessions · Leaderboards</div>
+        </div>
+        <div class="arch-service">
+          <div class="arch-service-name">Firebase</div>
+          <div class="arch-service-sub">Phone OTP · Push (FCM)</div>
+        </div>
+        <div class="arch-service">
+          <div class="arch-service-name">Agora</div>
+          <div class="arch-service-sub">Live audio &amp; video rooms</div>
+        </div>
+        <div class="arch-service">
+          <div class="arch-service-name">EAS (Expo)</div>
+          <div class="arch-service-sub">Mobile build pipeline</div>
+        </div>
+        <div class="arch-service">
+          <div class="arch-service-name">Better Stack</div>
+          <div class="arch-service-sub">Monitoring · Uptime alerts</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="body-text">
+      Supabase serves as a unified data layer — combining the PostgreSQL database, user authentication, and media file storage under a single provider. This reduces operational complexity while keeping all persistent data in one auditable location.
+    </p>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">3 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 4 — INFRASTRUCTURE STACK TABLE
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Infrastructure Stack</div>
+      <div class="page-section">Fixed Monthly Costs</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Provider</th>
+          <th>Purpose</th>
+          <th class="align-right">Low</th>
+          <th class="align-right">High</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Backend API</td>
+          <td>Render</td>
+          <td>2× Standard Instances — zero-downtime deploys, basic redundancy</td>
+          <td class="align-right">$50</td>
+          <td class="align-right">$70</td>
+        </tr>
+        <tr>
+          <td>Admin Panel</td>
+          <td>Render</td>
+          <td>Static site hosting for the internal operations dashboard</td>
+          <td class="align-right">$7</td>
+          <td class="align-right">$15</td>
+        </tr>
+        <tr>
+          <td>Redis Cache</td>
+          <td>Render</td>
+          <td>1GB — real-time session management and leaderboard caching</td>
+          <td class="align-right">$20</td>
+          <td class="align-right">$20</td>
+        </tr>
+        <tr>
+          <td>Database</td>
+          <td>Supabase</td>
+          <td>PostgreSQL Pro — 8GB storage, connection pooling, daily backups</td>
+          <td class="align-right">$25</td>
+          <td class="align-right">$25</td>
+        </tr>
+        <tr>
+          <td>File Storage</td>
+          <td>Supabase</td>
+          <td>100GB included + overage — profile images, gift assets, media</td>
+          <td class="align-right">$10</td>
+          <td class="align-right">$20</td>
+        </tr>
+        <tr>
+          <td>CDN</td>
+          <td>Cloudflare</td>
+          <td>Pro — global edge, DDoS mitigation, SSL, performance optimisation</td>
+          <td class="align-right">$20</td>
+          <td class="align-right">$20</td>
+        </tr>
+        <tr>
+          <td>Monitoring</td>
+          <td>Better Stack / Sentry</td>
+          <td>Uptime checks, error tracking, on-call alerting</td>
+          <td class="align-right">$0</td>
+          <td class="align-right">$20</td>
+        </tr>
+        <tr>
+          <td>Push Notifications</td>
+          <td>Firebase FCM</td>
+          <td>Delivery to iOS and Android — up to 1M messages/day</td>
+          <td class="align-right" style="color:var(--green); font-weight:700;">Free</td>
+          <td class="align-right" style="color:var(--green); font-weight:700;">Free</td>
+        </tr>
+        <tr>
+          <td>Mobile Builds</td>
+          <td>EAS (Expo)</td>
+          <td>Automated iOS &amp; Android build pipeline — 30 builds/month free</td>
+          <td class="align-right">$0</td>
+          <td class="align-right">$29</td>
+        </tr>
+        <tr>
+          <td>App Store</td>
+          <td>Apple Developer</td>
+          <td>$99/year — required for iOS App Store distribution</td>
+          <td class="align-right">$8</td>
+          <td class="align-right">$8</td>
+        </tr>
+        <tr class="row-total">
+          <td colspan="3">Fixed Monthly Subtotal</td>
+          <td class="align-right">$140</td>
+          <td class="align-right">$207</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">4 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 5 — VARIABLE COSTS + STAGE TABLE
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Variable Costs</div>
+      <div class="page-section">Usage-Based Billing</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Provider</th>
+          <th>Billing Model</th>
+          <th class="align-right">Low</th>
+          <th class="align-right">High</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Phone OTP (SMS)</td>
+          <td>Firebase Auth Blaze</td>
+          <td>Per SMS verification — rate varies by country</td>
+          <td class="align-right">$15</td>
+          <td class="align-right">$50</td>
+        </tr>
+        <tr>
+          <td>Audio / Video Rooms</td>
+          <td>Agora</td>
+          <td>Per participant-minute — scales with active room usage</td>
+          <td class="align-right">$50</td>
+          <td class="align-right">$500+</td>
+        </tr>
+        <tr>
+          <td>Payments</td>
+          <td>TBD</td>
+          <td colspan="3" style="text-align:center;"><span class="pill pill-gold">To be Discussed</span></td>
+        </tr>
+        <tr class="row-total">
+          <td colspan="3">Variable Monthly Subtotal</td>
+          <td class="align-right">$65</td>
+          <td class="align-right">$550+</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="label" style="margin-top:6px;">Total Monthly Spend by Growth Stage</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th>Concurrent Users</th>
+          <th class="align-right">Fixed</th>
+          <th class="align-right">Variable</th>
+          <th class="align-right">Monthly Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="row-highlight">
+          <td>Early</td>
+          <td>&lt; 100</td>
+          <td class="align-right">$140–207</td>
+          <td class="align-right">$65–150</td>
+          <td class="align-right" style="font-weight:700;">~$205–357</td>
+        </tr>
+        <tr>
+          <td>Comfortable</td>
+          <td>100–300</td>
+          <td class="align-right">$140–207</td>
+          <td class="align-right">$150–600</td>
+          <td class="align-right" style="font-weight:700;">~$290–807</td>
+        </tr>
+        <tr>
+          <td>Growth</td>
+          <td>300–700</td>
+          <td class="align-right">$140–207</td>
+          <td class="align-right">$400–1,500</td>
+          <td class="align-right" style="font-weight:700;">~$540–1,707</td>
+        </tr>
+        <tr>
+          <td>Scale</td>
+          <td>700–1,500</td>
+          <td class="align-right">$160–250</td>
+          <td class="align-right">$1,200–3,000</td>
+          <td class="align-right" style="font-weight:700;">~$1,360–3,250</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">5 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 6 — AGORA COST SPOTLIGHT
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Cost Spotlight: Agora</div>
+      <div class="page-section">Variable Cost Deep-Dive</div>
+    </div>
+
+    <p class="body-text">
+      Agora is the real-time audio and video engine powering Haka Live's live rooms — the same technology used by <strong>BIGO Live, Clubhouse, and Yalla</strong>. It is billed per participant-minute, meaning costs grow only when users are actively engaged on the platform.
+    </p>
+
+    <div class="callout gold">
+      <div class="callout-title">Why This Is an Opportunity, Not a Risk</div>
+      <div class="callout-body">
+        Agora costs rise only when users are active in rooms. Active users are the same users sending virtual gifts and purchasing coins. Every increase in Agora spend is accompanied by a proportional increase in platform revenue.
+      </div>
+    </div>
+
+    <div class="label">Audio Room Cost Projections</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Concurrent Users in Rooms</th>
+          <th>Participant-Minutes / Month</th>
+          <th class="align-right">Estimated Agora Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>50 users</td>
+          <td>720,000 min</td>
+          <td class="align-right">~$71 / mo</td>
+        </tr>
+        <tr>
+          <td>200 users</td>
+          <td>2,880,000 min</td>
+          <td class="align-right">~$285 / mo</td>
+        </tr>
+        <tr>
+          <td>500 users</td>
+          <td>7,200,000 min</td>
+          <td class="align-right">~$713 / mo</td>
+        </tr>
+        <tr>
+          <td>1,000 users</td>
+          <td>14,400,000 min</td>
+          <td class="align-right">~$1,426 / mo</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size:10.5px; color:var(--muted); margin-bottom:14px;">
+      Assumes 8 hours average daily room activity. Audio-only rate: $0.99 / 1,000 participant-minutes.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">Mitigation: Hard Spend Alert</div>
+      <div class="callout-body">
+        A monthly budget cap will be configured in the Agora dashboard before launch. The team will be alerted before any threshold is exceeded, ensuring no surprise invoices at any stage of growth.
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">6 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 7 — WHY THESE CHOICES
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Why These Choices</div>
+      <div class="page-section">Strategic Rationale</div>
+    </div>
+
+    <div class="reason-cards">
+      <div class="reason-card">
+        <div class="reason-num">1</div>
+        <div>
+          <div class="reason-title">Supabase over separate database, auth, and storage providers</div>
+          <div class="reason-body">
+            Supabase consolidates PostgreSQL, user authentication, and media file storage into a single $25/month Pro plan. The alternative — a standalone managed database ($50–80/mo), a separate auth service, and an S3-equivalent for storage — would cost $90–130/month with three separate vendor relationships to manage. Supabase also includes daily automated backups, connection pooling, and a built-in admin interface.
+          </div>
+        </div>
+      </div>
+      <div class="reason-card">
+        <div class="reason-num">2</div>
+        <div>
+          <div class="reason-title">Firebase for Phone OTP, Supabase Auth for session management</div>
+          <div class="reason-body">
+            Firebase Auth delivers phone OTP without requiring a third-party SMS provider — the same service used by WhatsApp and BIGO Live for phone verification. Supabase Auth then manages all user sessions and access tokens from that point forward. Firebase Cloud Messaging (FCM) handles push notifications to both iOS and Android at no cost, up to 1 million messages per day.
+          </div>
+        </div>
+      </div>
+      <div class="reason-card">
+        <div class="reason-num">3</div>
+        <div>
+          <div class="reason-title">Render over self-managed cloud infrastructure</div>
+          <div class="reason-body">
+            Render provides managed Node.js hosting with zero DevOps overhead — no Kubernetes clusters, no load balancer configuration, no EC2 management. For an early-stage platform, this translates directly to engineering hours saved and faster product iteration. The backend is fully containerised with Docker, so migrating to AWS, GCP, or Fly.io at higher scale is straightforward when the time comes.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">7 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 8 — PAYMENTS
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Payment Gateway</div>
+      <div class="page-section">To be Discussed</div>
+    </div>
+
+    <div class="callout gold">
+      <div class="callout-title">Decision Pending</div>
+      <div class="callout-body">
+        The payment gateway provider and commercial model are yet to be finalised. This section will be updated once a decision has been reached by the founding team.
+      </div>
+    </div>
+
+    <p class="body-text">Key considerations for the payment gateway selection:</p>
+
+    <ul class="bullets">
+      <li><strong>Supported payment methods</strong> — card, Apple Pay, Google Pay, regional wallets, and alternative rails</li>
+      <li><strong>Target market coverage</strong> — transaction fees and availability vary significantly by region; key markets must be confirmed first</li>
+      <li><strong>Fee model</strong> — percentage per transaction versus flat monthly fee impacts unit economics at scale</li>
+      <li><strong>Payout and withdrawal support</strong> — agents and hosts require reliable earnings withdrawal to bank accounts or wallets</li>
+      <li><strong>Chargeback and fraud handling</strong> — virtual goods and coin purchases are a high-risk category; provider must support chargeback mitigation tools</li>
+      <li><strong>Crypto and alternative payment rails</strong> — relevant for markets with limited card penetration or where users prefer non-card methods</li>
+    </ul>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">8 of 9</div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     PAGE 9 — NEXT STEPS
+     ════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-body">
+    <div class="page-header">
+      <div class="page-title">Next Steps</div>
+      <div class="page-section">Action Items</div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Finalise payment gateway</strong> — Evaluate providers against target markets, agree on supported payment methods and fee model, and update this document accordingly.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Upgrade Supabase to Pro</strong> — The free tier pauses after 7 days of inactivity and must not be used in production. The Pro plan must be active before any public-facing launch.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Configure Agora spend alert</strong> — Set a hard monthly budget cap in the Agora dashboard. This is the only unbounded cost in the stack and must be actively monitored from day one.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Set up monitoring before launch</strong> — Configure Better Stack or Sentry uptime checks and error alerts. Ensure the engineering team is paged on any API downtime or error spikes.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Enrol in Apple Developer Programme</strong> — $99/year, required for App Store submission. Allow 2–5 business days for Apple approval after application.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-box"></div>
+        <div class="step-text">
+          <strong>Review stack at Comfortable stage (200+ concurrent users)</strong> — At this point, evaluate LiveKit self-hosting as a cost optimisation to reduce Agora spend, and review Render instance sizing.
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+  <div class="page-footer">
+    <div class="footer-brand">HAKA<span>LIVE</span></div>
+    <div class="footer-num">9 of 9</div>
+  </div>
+</div>
+
+</body>
+</html>

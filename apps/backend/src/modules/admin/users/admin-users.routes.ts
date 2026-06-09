@@ -1,0 +1,44 @@
+import { Router } from 'express';
+import * as ctrl from './admin-users.controller';
+import * as moderationCtrl from '../moderation/admin-moderation.controller';
+import { adminUpload } from '../../../utils/upload';
+import { requireAdminRole, requirePermission } from '../../../middleware/admin-auth.middleware';
+
+const router = Router();
+
+router.get('/',                   ctrl.listUsers);
+router.get('/:id/same-device',    ctrl.getSameDeviceUsers);
+router.get('/:id/super-admin-power', requireAdminRole('super_admin'), ctrl.getSuperAdminPower);
+router.patch('/:id/super-admin-power', requireAdminRole('super_admin'), ctrl.setSuperAdminPower);
+router.get('/:id',                ctrl.getUserDetail);
+router.post('/:id/ban',           ctrl.banUser);
+router.post('/:id/unban',         ctrl.unbanUser);
+router.post('/:id/deactivate',    ctrl.deactivateUser);
+router.post('/:id/activate',      ctrl.activateUser);
+router.post('/:id/verify',        moderationCtrl.verifyUser);
+router.post('/:id/unverify',      moderationCtrl.unverifyUser);
+router.post('/:id/mute',          ctrl.muteUser);
+router.post('/:id/unmute',        ctrl.unmuteUser);
+router.post('/:id/host-ban',      ctrl.hostBanUser);
+router.post('/:id/host-unban',    ctrl.hostUnbanUser);
+router.post('/:id/adjust-coins',  ctrl.adjustCoins);
+router.post('/:id/avatar',        adminUpload.single('file'), ctrl.updateUserAvatar);
+router.patch('/:id/role',         ctrl.changeRole);
+router.patch('/:id/level',                 ctrl.setLevel);
+router.patch('/:id/special-haka-id-level', ctrl.setSpecialHakaIdLevel);
+router.patch('/:id/host-status',  ctrl.setHostStatus);
+router.post('/:id/reset-password', ctrl.resetPassword);
+router.post('/:id/send-login-otp', requirePermission('user.send_otp'), ctrl.sendLoginOtp);
+router.post('/:id/reset-face-verification', requirePermission('user.edit'), ctrl.resetFaceVerification);
+router.get('/:id/invitations',    ctrl.getUserInvitations);
+router.get('/:id/store-items',    ctrl.getUserStoreItems);
+router.post('/:id/store-items',   requireAdminRole('super_admin'), ctrl.grantStoreItem);
+router.delete('/:id/store-items/:userStoreItemId', requirePermission('user.edit'), ctrl.removeStoreItem);
+router.patch('/:id/profile/name',    requirePermission('user.edit'), ctrl.updateProfileName);
+router.patch('/:id/profile/country', requirePermission('user.edit'), ctrl.updateProfileCountry);
+router.patch('/:id/profile/gender', requirePermission('user.edit'), ctrl.updateProfileGender);
+router.patch('/:id/profile/phone',   requirePermission('user.edit'), ctrl.updateProfilePhone);
+router.patch('/:id',              ctrl.editUser);
+router.delete('/:id',             ctrl.deleteUser);
+
+export default router;

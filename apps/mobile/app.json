@@ -1,0 +1,126 @@
+{
+  "expo": {
+    "name": "Haka Live",
+    "slug": "haka-live",
+    "version": "1.0.3",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.hakalive.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "associatedDomains": [
+        "applinks:hakalive.app",
+        "applinks:www.hakalive.app"
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Haka Live uses your microphone so you can talk in live rooms.",
+        "NSCameraUsageDescription": "Haka Live uses your camera for face verification and live rooms.",
+        "NSPhotoLibraryUsageDescription": "Haka Live uses your photo library so you can share images in live rooms.",
+        "NSPhotoLibraryAddUsageDescription": "Allow Haka Live to save photos to your library.",
+        "NSAppleMusicUsageDescription": "Haka Live needs access to your music library so you can play background music in rooms.",
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "resize",
+      "package": "com.hakalive.app",
+      "versionCode": 4,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "hakalive.app",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "www.hakalive.app",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/adaptive-icon-background.png"
+      },
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_VIDEO"
+      ]
+    },
+    "plugins": [
+      "./plugins/withStripForegroundServices",
+      "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Haka Live uses your photo library so you can share images in live rooms."
+        }
+      ],
+      "expo-notifications",
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Haka Live to access your photos.",
+          "savePhotosPermission": "Allow Haka Live to save photos.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-audio",
+      "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics",
+      "@react-native-firebase/messaging",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-apple-authentication",
+        {
+          "usesAppleSignIn": true
+        }
+      ],
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      "expo-localization"
+    ],
+    "scheme": "hakalive",
+    "owner": "hakalive",
+    "extra": {
+      "eas": {
+        "projectId": "88743b79-988b-4b7e-a8ae-0817b3b89a12"
+      }
+    }
+  }
+}

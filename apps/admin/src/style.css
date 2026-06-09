@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* ── Haka Live Admin theme ────────────────────────────────────────────────── */
+
+:root {
+  --sidebar-bg: #0F172A;
+  --sidebar-hover: #1E293B;
+  --sidebar-text: #CBD5E1;
+  --sidebar-text-dim: #64748B;
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-border: #1E293B;
+
+  --content-bg: #F1F5F9;
+  --card-bg: #FFFFFF;
+  --card-border: #E2E8F0;
+  --row-hover: #FAFAFC;
+
+  --text-primary: #0F172A;
+  --text-muted: #64748B;
+
+  --primary: #FF5500;
+  --primary-dark: #E04600;
+  --primary-light: #FF7733;
+  --primary-soft: rgba(255, 85, 0, 0.12);
+
+  --success: #22C97A;
+  --success-soft: rgba(34, 201, 122, 0.15);
+  --danger: #FF4D4D;
+  --danger-soft: rgba(255, 77, 77, 0.15);
+  --warning: #E8A020;
+  --warning-soft: rgba(232, 160, 32, 0.15);
+  --info: #4DA6FF;
+  --info-soft: rgba(77, 166, 255, 0.15);
+  --muted-soft: rgba(144, 144, 170, 0.15);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--content-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* ── Mobile responsiveness ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Tables: horizontal scroll */
+  .table-card,
+  .data-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Modals: full-width on small screens */
+  .modal-box,
+  .modal,
+  .user-modal { width: calc(100vw - 24px) !important; max-width: none !important; max-height: 95dvh !important; }
+
+  /* Reduce modal body padding */
+  .modal-body { padding: 14px !important; }
+  .modal-footer { padding: 12px 14px !important; }
+}
+
+/* ── Global modal defaults (views with scoped .modal-overlay override these) ─ */
+.modal-overlay,
+.dialog-overlay {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* modal-box class used by UserListView / confirm dialogs */
+.modal-box {
+  background: #ffffff;
+  border-top: 3px solid var(--primary);
+  box-shadow: 0 25px 80px rgba(0,0,0,.25);
+}
+
+/* Table row action menu column */
+.actions-th,
+th.actions {
+  width: 56px;
+  text-align: center;
+  white-space: nowrap;
+}
+.actions-td,
+td.actions-cell {
+  text-align: center;
+  white-space: nowrap;
+}

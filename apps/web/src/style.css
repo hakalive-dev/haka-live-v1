@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* ── Haka Live brand tokens (shared with the legal pages) ─────────────────── */
+:root {
+  --sidebar-bg: #0F172A;
+
+  --content-bg: #F1F5F9;
+  --card-bg: #FFFFFF;
+  --card-border: #E2E8F0;
+
+  --text-primary: #0F172A;
+  --text-muted: #64748B;
+
+  --primary: #FF5500;
+  --primary-dark: #E04600;
+  --primary-light: #FF7733;
+  --primary-soft: rgba(255, 85, 0, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--content-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }

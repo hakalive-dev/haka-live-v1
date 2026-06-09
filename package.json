@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "check-assets:staged": "bash scripts/check-asset-size.sh staged",
+    "check-assets:mobile": "bash scripts/check-asset-size.sh scan apps/mobile/assets && bash scripts/check-asset-size.sh scan apps/mobile/src/assets"
+  },
+  "dependencies": {
+    "@expo/ngrok": "^4.1.3"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

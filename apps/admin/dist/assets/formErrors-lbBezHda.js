@@ -1,0 +1,2 @@
+function e(e,t={}){if(!e)return``;let n=[];for(let[r,i]of Object.entries(e)){if(!i?.length)continue;let e=t[r]??r;n.push(`${e}: ${i.join(`, `)}`)}return n.join(`
+`)}function t(e){return e?.fieldErrors}export{e as n,t};

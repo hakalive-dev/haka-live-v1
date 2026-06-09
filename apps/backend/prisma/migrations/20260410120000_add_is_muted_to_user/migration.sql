@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "isMuted" BOOLEAN NOT NULL DEFAULT false;

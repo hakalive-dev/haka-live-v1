@@ -1,0 +1,130 @@
+import type {
+  CoinSellerProfile,
+  CoinSellerTransaction,
+  CoinSellerCustomer,
+  CoinSellerLevelRule,
+  LeaderboardUserEntry,
+} from '../../types';
+
+export const mockCoinSeller = {
+  profile: {
+    id: 'csp-1',
+    user: { id: 'u-agent-1', username: 'samir_rider', displayName: 'Samir Rider', hakaId: '69233615', avatar: 'https://i.pravatar.cc/150?u=samir_rider' },
+    whatsapp_number: '+911234567890',
+    is_assistant: false,
+    total_commission_rate: '15.00',
+    gift_commission_rate: '10.00',
+    income_reward_rate: '5.00',
+    gift_bonus_rate: '3.00',
+    level_up_rate: '2.00',
+    available_balance: 30000000,
+    total_balance: 30000000,
+    security_deposit: 0,
+    seller_level: 'Coin Seller',
+    quick_message: 'Best price! Contact me for coins.',
+    total_coins_sold: 5000000,
+    total_customers: 42,
+    payment_methods: [],
+  } as CoinSellerProfile,
+
+  balance: {
+    available_balance: 30000000,
+    total_balance: 30000000,
+    security_deposit: 0,
+  },
+
+  transactions: [
+    {
+      id: 'cst-1',
+      seller: {
+        id: 'u-agent-1',
+        username: 'samir_rider',
+        displayName: 'Samir Rider',
+        hakaId: '69233615',
+        avatar: 'https://i.pravatar.cc/150?u=samir_rider',
+      },
+      counterparty: {
+        id: 'u-2',
+        username: 'user2',
+        displayName: 'Priya Singh',
+        hakaId: 'HK234567',
+        avatar: 'https://i.pravatar.cc/150?u=priyasingh',
+      },
+      transaction_type: 'transfer' as const,
+      target_type: 'user' as const,
+      coins_amount: 50000,
+      operator_name: 'MD Samir',
+      notes: '',
+      created_at: '2025-06-22T19:00:56Z',
+    },
+    {
+      id: 'cst-2',
+      seller: {
+        id: 'u-agent-1',
+        username: 'samir_rider',
+        displayName: 'Samir Rider',
+        hakaId: '69233615',
+        avatar: 'https://i.pravatar.cc/150?u=samir_rider',
+      },
+      counterparty: null,
+      transaction_type: 'recharge' as const,
+      target_type: '' as const,
+      coins_amount: 500000,
+      operator_name: 'MD Samir',
+      notes: '',
+      created_at: '2025-06-22T18:30:00Z',
+    },
+    {
+      id: 'cst-3',
+      seller: {
+        id: 'u-agent-1',
+        username: 'samir_rider',
+        displayName: 'Samir Rider',
+        hakaId: '69233615',
+        avatar: 'https://i.pravatar.cc/150?u=samir_rider',
+      },
+      counterparty: null,
+      transaction_type: 'exchange' as const,
+      target_type: '' as const,
+      coins_amount: 10000,
+      operator_name: 'MD Samir',
+      notes: '',
+      created_at: '2025-06-22T17:00:00Z',
+    },
+  ] as CoinSellerTransaction[],
+
+  customers: [
+    {
+      id: 'u-2',
+      displayName: 'Priya Singh',
+      avatar: 'https://i.pravatar.cc/150?u=priyasingh',
+      hakaId: 'HK234567',
+      customer_type: 'recommend' as const,
+      trade_count: 14,
+      last_trade_at: '2025-06-14T09:50:00Z',
+    },
+    {
+      id: 'u-3',
+      displayName: 'Amit Patel',
+      avatar: 'https://i.pravatar.cc/150?u=amitpatel',
+      hakaId: 'HK345678',
+      customer_type: 'old' as const,
+      trade_count: 8,
+      last_trade_at: '2025-06-10T14:20:00Z',
+    },
+  ] as CoinSellerCustomer[],
+
+  levelRules: [
+    { id: 'lr-1', level_name: 'Exchange', exchange_limit: 'Lower > 1,000% / Daily', seller_to_user_rate: '14x Takes from Daily', user_to_seller_rate: '', seller_list_rule: '', coin_selling_list_rule: '', sort_order: 1 },
+    { id: 'lr-2', level_name: 'Coin seller → User', exchange_limit: '', seller_to_user_rate: '', user_to_seller_rate: '', seller_list_rule: '', coin_selling_list_rule: '', sort_order: 2 },
+    { id: 'lr-3', level_name: 'User → Coin seller', exchange_limit: '', seller_to_user_rate: '', user_to_seller_rate: '', seller_list_rule: '', coin_selling_list_rule: '', sort_order: 3 },
+    { id: 'lr-4', level_name: 'Seller list', exchange_limit: '', seller_to_user_rate: '', user_to_seller_rate: '', seller_list_rule: 'Visible on seller list', coin_selling_list_rule: '', sort_order: 4 },
+    { id: 'lr-5', level_name: 'Coin selling list', exchange_limit: '', seller_to_user_rate: '', user_to_seller_rate: '', seller_list_rule: '', coin_selling_list_rule: 'Visible on selling list', sort_order: 5 },
+  ] as CoinSellerLevelRule[],
+
+  leaderboard: [
+    { rank: 1, score: 2500000, id: 'u-agent-1', username: 'samir_rider', displayName: 'Monalisa001', avatar: 'https://i.pravatar.cc/150?u=monalisa', hakaId: '69233615' },
+    { rank: 2, score: 2000000, id: 'u-2', username: 'monalisa002', displayName: 'Monalisa002', avatar: 'https://i.pravatar.cc/150?u=monalisa2', hakaId: 'HK234567' },
+    { rank: 3, score: 1500000, id: 'u-3', username: 'malik_mason', displayName: 'Malik Mason', avatar: 'https://i.pravatar.cc/150?u=malik', hakaId: 'HK345678' },
+  ] as LeaderboardUserEntry[],
+};

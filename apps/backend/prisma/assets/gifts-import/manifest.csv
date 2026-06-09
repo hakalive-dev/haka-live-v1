@@ -1,0 +1,19 @@
+name,coinCost,beanValue,category,imageFile,svgaFile,order,animationType
+Glowing Rose,299,299,premium,136.png,136.svga,0,
+Kiss,499,499,premium,179.png,179.svga,1,
+Heart Angel,999,999,premium,156.png,156.svga,2,
+Sweet Celebration,1999,1999,premium,243.png,243.svga,3,
+Happy Birthday,2999,2999,special,199.png,199.svga,4,
+Royal Birthday,4999,4999,special,143.png,143.svga,5,
+Starry Hydrangea,6999,6999,special,181.png,181.svga,6,
+Twin Phoenix,8999,8999,special,100.png,100.svga,7,
+City of Love,9999,9999,special,68.png,68.svga,8,
+Love Ride,9999,9999,special,86.png,86.svga,9,svga
+Yellow Speedster,12000,12000,special,97.png,97.svga,10,
+Golden Palace,15000,15000,special,93.png,93.svga,11,svga
+I Love You,15000,15000,special,210.png,210.svga,12,
+Wedding Romance,18000,18000,special,81.png,81.svga,13,
+Golden Luxury Car,20000,20000,special,78.png,78.svga,14,
+Moonlight,25000,25000,special,116.png,116.svga,15,svga
+Diamond Ring,30000,30000,special,195.png,195.svga,16,
+Magic Lamp,50000,50000,special,121.png,121.svga,17,svga

@@ -1,0 +1,3 @@
+-- Migration applied directly to database; stub file added for history consistency.
+-- This migration was applied outside of version control.
+-- No schema changes are made here as they were already applied.

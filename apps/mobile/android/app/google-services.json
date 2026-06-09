@@ -1,0 +1,94 @@
+{
+  "project_info": {
+    "project_number": "936509388551",
+    "project_id": "haka-live-5d887",
+    "storage_bucket": "haka-live-5d887.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:936509388551:android:e98e123d9a0bc99967b7a2",
+        "android_client_info": {
+          "package_name": "com.hakalive.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "936509388551-1g0d1vrapdpu7qaolqa72ftdkkspd8ja.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "8d85f24011075caeb34c3475ee24c594713b60e7"
+          }
+        },
+        {
+          "client_id": "936509388551-1h3vhhtn4lgllmer3o3vj7k1tqdhjhpe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "936509388551-ev6k4skg5dhdml6u9eolh0a4nl9p2a9l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "29d51f51c1cdcecdc6b088ce979beb01a92c1915"
+          }
+        },
+        {
+          "client_id": "936509388551-g5cil4ujsn23m338rfrl4op1lunk42ab.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "809e008039efa77c636d05685cfa520319e3f9de"
+          }
+        },
+        {
+          "client_id": "936509388551-qp43depnslrlik9ivg6pdctj2nalmlhj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "44381d78f6f2c6db6b7044bcb2a5350771bfb6cd"
+          }
+        },
+        {
+          "client_id": "936509388551-v87giui8ibnjsvr1j3bfna7tp6gjcl5v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hakalive.app",
+            "certificate_hash": "d2a5a946bd87c804db79c3873c184f2f382146ab"
+          }
+        },
+        {
+          "client_id": "936509388551-lq8u2rr2mv61u81884c5cbamvm9lllv0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPKOopi0v3obiFkniVlFauifGI07ly5ok"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "936509388551-lq8u2rr2mv61u81884c5cbamvm9lllv0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "936509388551-066p7uul139b7tv7h6o0b8shr53tt8td.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.hakalive.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

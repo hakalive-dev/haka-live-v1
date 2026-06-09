@@ -1,0 +1,94 @@
+# Local stack: Postgres + Redis + API (hot-reload). From repo root:
+#   docker compose -f docker-compose.dev.yml up --build
+# If `npm ci` fails inside the image with ECONNRESET to registry.npmjs.org: fix host/VPN/DNS first;
+# the Dockerfile uses BuildKit cache (`# syntax=docker/dockerfile:1.4`) — ensure BuildKit is enabled (default in recent Docker).
+# Optional worker (BullMQ + cron when ENABLE_SCHEDULER=true on worker):
+#   docker compose -f docker-compose.dev.yml --profile worker up --build
+# API: http://localhost:3010  •  DB: localhost:5433 (user/pass hakalive / hakalive_dev)
+# Optional: set API_BASE_URL in .env if upload URLs must point elsewhere.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hakalive_dev
+      POSTGRES_USER: hakalive
+      POSTGRES_PASSWORD: hakalive
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hakalive -d hakalive_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: ../../docker/backend/Dockerfile
+      target: development
+    # Migrations first so a fresh DB matches the schema; then dev server.
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run dev"
+    env_file: .env
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://hakalive:hakalive@db:5432/hakalive_dev
+      - DIRECT_URL=postgresql://hakalive:hakalive@db:5432/hakalive_dev
+      - TEST_DATABASE_URL=postgresql://hakalive:hakalive@db:5432/hakalive_test
+      - PAYMENT_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      # Host URL for links returned by upload APIs (override in .env if needed).
+      - API_BASE_URL=${API_BASE_URL:-http://localhost:3010}
+    volumes:
+      - ./apps/backend:/app
+      # Prevent host node_modules from overriding container's
+      - /app/node_modules
+      # Mount admin SPA so /admin route works in dev
+      - ./apps/admin/dist:/admin-dist
+    ports:
+      - "3010:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Optional BullMQ + schedulers (same image as backend). Default stack: omit `--profile worker`.
+  # When running this service, set `ENABLE_SCHEDULER=false` on `backend` in `.env` to avoid duplicate cron (locks still dedupe if both run).
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ./apps/backend
+      dockerfile: ../../docker/backend/Dockerfile
+      target: development
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run dev:worker"
+    env_file: .env
+    environment:
+      - NODE_ENV=development
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://hakalive:hakalive@db:5432/hakalive_dev
+      - DIRECT_URL=postgresql://hakalive:hakalive@db:5432/hakalive_dev
+      - ENABLE_SCHEDULER=true
+      - PAYMENT_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    volumes:
+      - ./apps/backend:/app
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_dev_data:

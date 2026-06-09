@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "version": ">= 18.5.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.hakalive.com/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "936509388551-lq8u2rr2mv61u81884c5cbamvm9lllv0.apps.googleusercontent.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://snewjtukygzebeeyjpwq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuZXdqdHVreWd6ZWJlZXlqcHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTU4MjAsImV4cCI6MjA5NTk3MTgyMH0.DRDV5PWS_C5KpZsE-EoRsgQl3OKdWE7n0naS183-ysw"
+      }
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_SKIP_AGENT_OTP": "true"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "autoIncrement": true,
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

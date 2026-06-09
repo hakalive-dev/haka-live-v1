@@ -1,0 +1,95 @@
+import { WalletBalance, WalletTransaction } from '../../types';
+
+export const mockWallet: {
+  balance: WalletBalance;
+  transactions: WalletTransaction[];
+} = {
+  balance: {
+    coinBalance: 3_740,
+    beanBalance: 18_650,
+    updatedAt: '2026-04-01T19:30:00Z',
+  },
+
+  transactions: [
+    {
+      id: 'tx-9f8e7d6c',
+      transactionType: 'credit',
+      currency: 'coins',
+      amount: 3_000,
+      balanceAfter: 3_740,
+      reference: 'top_up',
+      description: 'Super Pack purchased — 2,500 + 500 bonus coins',
+      createdAt: '2026-04-01T14:22:00Z',
+    },
+    {
+      id: 'tx-8e7d6c5b',
+      transactionType: 'debit',
+      currency: 'coins',
+      amount: 1_000,
+      balanceAfter: 2_740,
+      reference: 'gift_sent',
+      description: 'Sent Crown to Kai Rivera',
+      createdAt: '2026-04-01T19:15:00Z',
+    },
+    {
+      id: 'tx-7d6c5b4a',
+      transactionType: 'credit',
+      currency: 'beans',
+      amount: 3_500,
+      balanceAfter: 18_650,
+      reference: 'gift_received',
+      description: 'Received Rocket from Preeti Sharma',
+      createdAt: '2026-04-01T19:08:00Z',
+    },
+    {
+      id: 'tx-6c5b4a39',
+      transactionType: 'debit',
+      currency: 'coins',
+      amount: 299,
+      balanceAfter: 1_740,
+      reference: 'gift_sent',
+      description: 'Sent Teddy Bear to Yuki Tanaka',
+      createdAt: '2026-03-31T21:40:00Z',
+    },
+    {
+      id: 'tx-5b4a3928',
+      transactionType: 'credit',
+      currency: 'beans',
+      amount: 700,
+      balanceAfter: 15_150,
+      reference: 'gift_received',
+      description: 'Received Crown from Omar Hassan',
+      createdAt: '2026-03-31T20:55:00Z',
+    },
+    {
+      id: 'tx-commission',
+      transactionType: 'credit',
+      currency: 'beans',
+      amount: 168,
+      balanceAfter: 15_318,
+      reference: 'gift_commission',
+      description: "Commission from Preeti Sharma's gift",
+      createdAt: '2026-03-30T11:00:00Z',
+    },
+    {
+      id: 'tx-4a392817',
+      transactionType: 'debit',
+      currency: 'beans',
+      amount: 5_000,
+      balanceAfter: 14_450,
+      reference: 'exchange',
+      description: 'Exchanged 5,000 beans to 2,500 coins',
+      createdAt: '2026-03-30T12:00:00Z',
+    },
+    {
+      id: 'tx-39281706',
+      transactionType: 'credit',
+      currency: 'coins',
+      amount: 2_500,
+      balanceAfter: 4_240,
+      reference: 'exchange',
+      description: 'Received 2,500 coins from bean exchange',
+      createdAt: '2026-03-30T12:00:00Z',
+    },
+  ],
+};

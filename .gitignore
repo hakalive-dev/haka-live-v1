@@ -1,0 +1,67 @@
+# Build artifacts
+dist/
+!apps/admin/dist/
+!apps/admin/dist/**
+build/
+*.log
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Local dev uploads (fallback when Supabase not configured)
+uploads/
+
+# Node / React Native
+node_modules/
+.expo/
+build/
+*.tgz
+.yarn/cache
+.yarn/unplugged
+
+# Android release keystore (NEVER commit)
+*.keystore
+!debug.keystore
+
+# APK build artifacts
+*.apk
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+.coverage
+htmlcov/
+
+# Project docs (private)
+CLAUDE.md
+DEMO-SETUP.md
+.worktrees/
+docs/superpowers/*
+
+# Tooling / agent dirs (kept local, out of repo)
+.claude/
+.husky/
+.superpowers/
+
+# Markdown docs — keep only README.md files
+*.md
+!README.md
+
+# Operational handover, deploy & build/restore docs (tracked despite *.md rule)
+!docs/handover/*.md
+!docs/deploy/*.md
+!docs/versioning-and-maintenance.md
+!docs/production-stack.md

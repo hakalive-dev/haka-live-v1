@@ -1,0 +1,2400 @@
+// This is your Prisma schema file.
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── User ──────────────────────────────────────────────────────────────────────
+model User {
+  id                             String    @id @default(uuid())
+  supabaseUid                    String?   @unique
+  /// True when a Google identity is linked via Supabase Auth (set at login from app_metadata.providers).
+  googleLinked                   Boolean   @default(false)
+  phone                          String?   @unique
+  email                          String?   @unique
+  username                       String?   @unique
+  displayName                    String    @default("")
+  avatar                         String    @default("")
+  bio                            String    @default("")
+  country                        String    @default("")
+  /// ISO 3166-1 alpha-2 for withdrawal payout country (picker default).
+  preferredWithdrawalCountryCode String    @default("")
+  /// Display city for regional leaderboards (e.g. Delhi). Empty = not ranked by city shard.
+  city                           String    @default("")
+  gender                         String    @default("")
+  dateOfBirth                    DateTime?
+  locationLat                    Float?
+  locationLng                    Float?
+  locationUpdatedAt              DateTime?
+  hakaId                         String?   @unique
+  password                       String? // bcrypt hash; set by admin reset-password
+  /// AES-256-GCM encrypted plaintext snapshot for admin CS display (see utils/encryption.ts).
+  passwordSnapshot               String    @default("")
+  onboardingComplete             Boolean   @default(false)
+  isActive                       Boolean   @default(true)
+  /// Set by self-service account deletion (anonymize-in-place). Distinguishes
+  /// deleted (deletedAt != null) from banned/deactivated (isActive=false only).
+  deletedAt                      DateTime?
+  isVerified                     Boolean   @default(false)
+  isVerifiedHost                 Boolean   @default(false)
+  isPremiumHost                  Boolean   @default(false)
+  isMuted                        Boolean   @default(false)
+  isHostBanned                   Boolean   @default(false)
+  isTaskBanned                   Boolean   @default(false)
+  isTaskBannedReason             String    @default("")
+  lastSeenAt                     DateTime?
+  lastLiveAt                     DateTime? // most recent time one of this user's rooms went live
+  /// When true, user is excluded from search/public profile/discovery (system accounts e.g. Haka Team).
+  profileHidden                  Boolean   @default(false)
+
+  /// Face verification (liveness + admin approval). Status: none | in_progress | pending_admin | approved | rejected
+  facePhotoUrl           String    @default("")
+  faceVerificationStatus String    @default("none")
+  faceVerifiedAt         DateTime?
+  faceEnrollmentId       String    @default("")
+  faceRejectedReason     String    @default("")
+
+  role                String @default("normal_user")
+  hostType            String @default("")
+  hostApplicationPath String @default("")
+
+  agentId String?
+  agent   User?   @relation("AgentHosts", fields: [agentId], references: [id])
+  hosts   User[]  @relation("AgentHosts")
+
+  // Cumulative lifetime beans earned — drives per-host commission tier.
+  // Incremented inside distributeBeans; BigInt to tolerate long-running totals.
+  cumulativeBeansEarned BigInt @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  // Rooms
+  hostedRooms     Room[]       @relation("HostRooms")
+  occupiedSeats   RoomSeat[]   @relation("SeatOccupant")
+  roomAdminRoles  RoomAdmin[]  @relation("RoomAdminUser")
+  roomMemberships RoomMember[] @relation("RoomMemberships")
+
+  // Room messages
+  roomMessages RoomMessage[] @relation("RoomMessageSender") // nullable FK — system messages have no sender
+
+  // Direct messages
+  sentDMs            DirectMessage[]         @relation("DMSender")
+  receivedDMs        DirectMessage[]         @relation("DMRecipient")
+  hiddenDirectMessages DirectMessageHidden[] @relation("DMHiddenByUser")
+
+  // Wallet
+  wallet             Wallet?             @relation("UserWallet")
+  withdrawalRequests WithdrawalRequest[] @relation("UserWithdrawals")
+  paymentMethods     UserPaymentMethod[] @relation("UserPaymentMethods")
+
+  // Gifts
+  giftsSent     GiftTransaction[] @relation("GiftSender")
+  giftsReceived GiftTransaction[] @relation("GiftRecipient")
+
+  // Level
+  level UserLevel? @relation("UserLevel")
+
+  // Family
+  ownedFamilies     Family[]       @relation("FamilyOwner")
+  familyMemberships FamilyMember[] @relation("FamilyMemberships")
+
+  // Payments
+  paymentTransactions PaymentTransaction[] @relation("UserPayments")
+  agentSales          AgentTransaction[]   @relation("AgentSales")
+  customerPurchases   AgentTransaction[]   @relation("CustomerPurchases")
+
+  // Host level tasks (daily live / income rewards)
+  hostLevelTaskDaily HostLevelTaskDaily[] @relation("HostLevelTaskDaily")
+
+  // Host application
+  hostApplications HostApplication[] @relation("HostApplications")
+  agentInvitations HostApplication[] @relation("AgentInvitations")
+
+  faceVerificationSessions FaceVerificationSession[] @relation("FaceVerificationSessions")
+
+  // Invites
+  sentInvites    InviteCode[] @relation("SentInvites")
+  receivedInvite InviteCode?  @relation("ReceivedInvite")
+
+  // Notifications
+  notifications         Notification[]         @relation("UserNotifications")
+  teamAnnouncementReads TeamAnnouncementRead[] @relation("TeamAnnouncementReads")
+
+  // FCM device token
+  fcmToken String?
+
+  // Moderation
+  reportsMade Report[]  @relation("ReportsMade")
+  bans        Ban[]     @relation("UserBans")
+  tags        UserTag[] @relation("UserTags")
+
+  // Social graph
+  followedBy            Follow[]           @relation("FollowTarget") // users who follow me
+  following             Follow[]           @relation("FollowActor") // users I follow
+  specialAttention      SpecialAttention[] @relation("SpecialAttentionActor")
+  specialAttentionOf    SpecialAttention[] @relation("SpecialAttentionTarget")
+  profileVisitsGiven    ProfileVisit[]     @relation("VisitActor") // profiles I visited
+  profileVisitsReceived ProfileVisit[]     @relation("VisitTarget") // visits to my profile
+
+  // Moments
+  moments        Moment[]        @relation("MomentAuthor")
+  momentLikes    MomentLike[]    @relation("MomentLikeUser")
+  momentComments MomentComment[] @relation("MomentCommentUser")
+
+  // Store
+  storeItems              UserStoreItem[]           @relation("UserStoreItems")
+  storeItemDistributions  StoreItemDistribution[] @relation("StoreItemDistributions")
+
+  // Special IDs
+  activeSpecialId          String? // 6-digit number currently displayed
+  activeSpecialIdLevel     String? // tier level of active special ID (SSS/SS/S/A/B)
+  activeSpecialIdExpiresAt DateTime? // expiration of the active special ID
+  specialIdInventory       SpecialIdInventory[] @relation("UserSpecialIdInventory")
+
+  // Coin seller
+  coinSellerProfile          CoinSellerProfile?      @relation("CoinSellerUser")
+  coinSellerTransactions     CoinSellerTransaction[] @relation("CoinSellerTransactions")
+  coinSellerCounterpartyTxns CoinSellerTransaction[] @relation("CoinSellerCounterparty")
+  sellerRechargeRequests     SellerRechargeRequest[] @relation("SellerRechargeRequests")
+  sellerExchangeRequests     SellerExchangeRequest[] @relation("SellerExchangeRequests")
+
+  // Agency
+  ownedAgency Agency? @relation("AgencyOwner")
+
+  // Risk control
+  riskControls AccountRisk[] @relation("UserRiskControls")
+
+  // Device tracking
+  devices UserDevice[] @relation("UserDevices")
+
+  // Host centre
+  micSessions                           HostMicSession[]            @relation("HostMicSessions")
+  pkPresenceSessions                    HostPkPresenceSession[]     @relation("HostPkPresenceSessions")
+  hostLevelTaskClaims                   HostLevelTaskClaim[]        @relation("HostLevelTaskClaims")
+  agencyChangeRequests                  AgencyChangeRequest[]       @relation("HostChangeRequests")
+  agentApplications                     AgentApplication[]          @relation("AgentApplications")
+  agentApplicationsAsParent             AgentApplication[]          @relation("AgentApplicationParent")
+  subAgentInvitesSent                   SubAgentInvitation[]        @relation("SubAgentInvitesSent")
+  subAgentInvitesReceived               SubAgentInvitation[]        @relation("SubAgentInvitesReceived")
+  hostAgencyOwnershipChangesAsHost      HostAgencyOwnershipChange[] @relation("HostAgencyOwnershipHost")
+  hostAgencyOwnershipChangesAsFromAgent HostAgencyOwnershipChange[] @relation("HostAgencyOwnershipFromAgent")
+  hostAgencyOwnershipChangesAsToAgent   HostAgencyOwnershipChange[] @relation("HostAgencyOwnershipToAgent")
+
+  // Settings + blocklist
+  settings       UserSettings? @relation("UserSettingsOwner")
+  blocksMade     BlockedUser[] @relation("BlockActor")
+  blocksReceived BlockedUser[] @relation("BlockTarget")
+
+  // Support tickets
+  supportTickets SupportTicket[] @relation("UserSupportTickets")
+
+  // Calculator
+  calculatorScores                CalculatorSeatScore[]        @relation("CalculatorScores")
+  calculatorContributions         CalculatorGiftContribution[] @relation("CalcContribSender")
+  calculatorContributionsReceived CalculatorGiftContribution[] @relation("CalcContribRecipient")
+
+  // Payroll
+  payrollRecords       PayrollRecord[]      @relation("PayrollRecipient")
+  assignedWithdrawals  WithdrawalRequest[]  @relation("WithdrawalAssignedAgent")
+  payrollAgentProfile  PayrollAgentProfile? @relation("PayrollAgentProfile")
+  payrollLedgerEntries PayrollLedgerEntry[] @relation("PayrollLedgerAgent")
+
+  musicTracks UserMusicTrack[] @relation("UserMusicLibrary")
+
+  @@index([agentId])
+  @@map("users")
+}
+
+// ── UserSettings ──────────────────────────────────────────────────────────────
+model UserSettings {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation("UserSettingsOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Notifications
+  liveRoomAlerts       Boolean @default(true)
+  messageNotifications Boolean @default(true)
+  soundEnabled         Boolean @default(true)
+  vibrateEnabled       Boolean @default(true)
+  whoCanMessage        String  @default("everyone") // everyone | mutual | following
+
+  // Device permissions (last known grant state — OS is authoritative)
+  cameraAccess   Boolean @default(false)
+  voiceAccess    Boolean @default(false)
+  locationAccess Boolean @default(false)
+
+  // Privileges
+  invisibleVisitor           Boolean @default(false)
+  mysteryManLive             Boolean @default(false)
+  mysteryManRank             Boolean @default(false)
+  invisibleOnline            Boolean @default(false)
+  exclusiveEmailNotification Boolean @default(false)
+  hideLivestreamLevel        Boolean @default(false)
+  /// In-app moderation immunity + kick override + invisible room join (distinct from AdminTag).
+  superAdminPower            Boolean @default(false)
+
+  // Call preference
+  callsEnabled Boolean @default(true) // false = no one can call this user
+
+  // Language
+  language          String  @default("")
+  useSystemLanguage Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+// ── BlockedUser ───────────────────────────────────────────────────────────────
+model BlockedUser {
+  id        String   @id @default(uuid())
+  actorId   String
+  actor     User     @relation("BlockActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetId  String
+  target    User     @relation("BlockTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([actorId, targetId])
+  @@index([actorId, createdAt])
+  @@map("blocked_users")
+}
+
+// ── Room ──────────────────────────────────────────────────────────────────────
+model Room {
+  id               String    @id @default(uuid())
+  roomCode         String?   @unique // 6-digit public room ID
+  hostId           String
+  host             User      @relation("HostRooms", fields: [hostId], references: [id])
+  title            String
+  description      String    @default("")
+  coverImage       String    @default("")
+  category         String    @default("general") // general | music | talk | gaming | dating | education
+  type             String    @default("public") // public | private
+  status           String    @default("idle") // idle | live | ended
+  roomMode         String    @default("chat") // chat | live
+  micConfig        Int       @default(5) // 5 | 10 | 15 | 20 | 25 | 30 seats
+  isLocked         Boolean   @default(false) // password-protected room
+  password         String? // optional room password
+  applyForMic      Boolean   @default(false) // if true, users must apply to get a seat
+  chatLocked       Boolean   @default(false) // if true, only host/admin can send messages
+  chatClearedAt    DateTime? // messages before this timestamp are hidden
+  gameType         String    @default("") // e.g. "lucky-wheel", ""
+  themeId          String? // FK → themes.id; null = no theme applied
+  theme            Theme?    @relation(fields: [themeId], references: [id], onDelete: SetNull)
+  fanBadge         String    @default("") // fan badge identifier
+  viewerCount      Int       @default(0)
+  agoraChannel     String    @unique // Agora channel = room id (set on create)
+  startedAt        DateTime?
+  endedAt          DateTime?
+  publicMsgEnabled Boolean   @default(true)
+  hdMicEnabled     Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  seats              RoomSeat[]
+  calculatorSessions CalculatorSession[]
+  messages           RoomMessage[]
+  admins             RoomAdmin[]
+  members            RoomMember[]        @relation("RoomMembers")
+  musicTracks        RoomMusicTrack[]
+  pin                RoomPin?
+
+  @@index([themeId])
+  @@index([status, type])
+  @@index([hostId])
+  @@map("rooms")
+}
+
+// ── RoomPin ──────────────────────────────────────────────────────────────────
+// Admin can pin a room to the top of the listing for a limited duration.
+model RoomPin {
+  id        String    @id @default(uuid())
+  roomId    String    @unique
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  pinnedBy  String // AdminUser id
+  reason    String    @default("")
+  expiresAt DateTime? // null = pinned indefinitely
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([expiresAt])
+  @@map("room_pins")
+}
+
+// ── RoomAdmin ────────────────────────────────────────────────────────────────
+// Users granted admin privileges in a specific room (moderation helpers).
+model RoomAdmin {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("RoomAdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roomId, userId])
+  @@map("room_admins")
+}
+
+// ── RoomMember ────────────────────────────────────────────────────────────────
+// Permanent DB-stored room membership (distinct from ephemeral Redis viewer tracking).
+model RoomMember {
+  id       String   @id @default(uuid())
+  roomId   String
+  userId   String
+  joinedAt DateTime @default(now())
+  room     Room     @relation("RoomMembers", fields: [roomId], references: [id], onDelete: Cascade)
+  user     User     @relation("RoomMemberships", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_members")
+}
+
+// ── RoomSeat ──────────────────────────────────────────────────────────────────
+// Seat position 1 = host mic. Positions 2..micConfig = speaker seats.
+model RoomSeat {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  position  Int // 1-based seat number
+  userId    String? // null = empty seat
+  user      User?    @relation("SeatOccupant", fields: [userId], references: [id], onDelete: SetNull)
+  isLocked  Boolean  @default(false)
+  isMuted   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roomId, position])
+  @@map("room_seats")
+}
+
+// ── RoomMessage ──────────────────────────────────────────────────────────────
+model RoomMessage {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  senderId  String?
+  sender    User?    @relation("RoomMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  content   String?  @db.VarChar(500) // nullable: caption when type="image"
+  type      String   @default("text") // text | quick | gift_notice | system | image
+  mediaUrl  String? // populated when type="image"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomId, createdAt])
+  @@map("room_messages")
+}
+
+// ── DirectMessage ────────────────────────────────────────────────────────────
+model DirectMessage {
+  id           String   @id @default(uuid())
+  senderId     String
+  sender       User     @relation("DMSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId  String
+  recipient    User     @relation("DMRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  content      String
+  isRead       Boolean  @default(false)
+  messageType  String   @default("text") // text | gift | image | agent_application | sub_agent_invite | coin_transfer | system_notice
+  mediaUrl     String?
+  giftId       String?
+  giftName     String   @default("")
+  giftImage    String   @default("")
+  giftIcon     String   @default("")
+  giftQty      Int      @default(0)
+  giftCoinCost    Int       @default(0)
+  deletedForAllAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  hiddenFor DirectMessageHidden[]
+
+  @@index([senderId, recipientId])
+  @@index([recipientId, senderId])
+  @@map("direct_messages")
+}
+
+model DirectMessageHidden {
+  id        String        @id @default(uuid())
+  messageId String
+  message   DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation("DMHiddenByUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@map("direct_message_hidden")
+}
+
+// ── TeamAnnouncement (admin broadcast — one logical “current” row; history optional) ──
+model TeamAnnouncement {
+  id               String     @id @default(uuid())
+  title            String
+  body             String     @db.Text
+  publishedAt      DateTime   @default(now())
+  createdByAdminId String?
+  createdByAdmin   AdminUser? @relation("TeamAnnouncementsCreated", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  reads TeamAnnouncementRead[]
+
+  @@index([publishedAt])
+  @@map("team_announcements")
+}
+
+model TeamAnnouncementRead {
+  id             String           @id @default(uuid())
+  userId         String
+  user           User             @relation("TeamAnnouncementReads", fields: [userId], references: [id], onDelete: Cascade)
+  announcementId String
+  announcement   TeamAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  readAt         DateTime         @default(now())
+
+  @@unique([userId, announcementId])
+  @@index([userId])
+  @@map("team_announcement_reads")
+}
+
+// ── RefreshToken ──────────────────────────────────────────────────────────────
+model RefreshToken {
+  id              String    @id @default(uuid())
+  token           String    @unique
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt       DateTime
+  // Rotation grace window: instead of hard-deleting on rotation, the old token is
+  // marked rotated and kept briefly so a concurrent/retried refresh (cold-start
+  // refresh + 401-triggered refresh racing on the same token) can converge on the
+  // successor instead of one of them 401ing and logging the user out.
+  rotatedAt       DateTime?
+  replacedByToken String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, rotatedAt])
+  @@map("refresh_tokens")
+}
+
+// ── PhoneOtp ────────────────────────────────────────────────────────────────────
+// Self-owned WhatsApp phone-login OTP (sent via Meta WhatsApp Cloud API).
+// Mirrors AdminEmergencyOtp: short TTL, single-use, bcrypt-hashed code, attempt cap.
+// Not relation-bound to User — identity is resolved by phone at verify time.
+model PhoneOtp {
+  id        String    @id @default(uuid())
+  phone     String // E.164
+  codeHash  String // bcrypt hash of the 6-digit code
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0) // wrong-guess counter
+  createdAt DateTime  @default(now())
+
+  @@index([phone, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("phone_otps")
+}
+
+// ── Follow ────────────────────────────────────────────────────────────────────
+model Follow {
+  id        String   @id @default(uuid())
+  actorId   String // the user who follows
+  targetId  String // the user being followed
+  actor     User     @relation("FollowActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target    User     @relation("FollowTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([actorId, targetId])
+  @@index([actorId])
+  @@map("follows")
+}
+
+// ── SpecialAttention ──────────────────────────────────────────────────────────
+// A curated list (max 50) of users whose activity the actor wants to prioritise.
+model SpecialAttention {
+  id        String   @id @default(uuid())
+  actorId   String
+  targetId  String
+  actor     User     @relation("SpecialAttentionActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target    User     @relation("SpecialAttentionTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([actorId, targetId])
+  @@map("special_attention")
+}
+
+// ── ProfileVisit ──────────────────────────────────────────────────────────────
+// Records the last time a visitor viewed a profile (upsert on repeat visit).
+model ProfileVisit {
+  id        String   @id @default(uuid())
+  actorId   String
+  targetId  String
+  actor     User     @relation("VisitActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target    User     @relation("VisitTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([actorId, targetId])
+  @@map("profile_visits")
+}
+
+// ── Wallet ───────────────────────────────────────────────────────────────────
+model Wallet {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation("UserWallet", fields: [userId], references: [id], onDelete: Cascade)
+  coinBalance BigInt   @default(0)
+  beanBalance BigInt   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+// ── WalletTransaction ────────────────────────────────────────────────────────
+model WalletTransaction {
+  id              String   @id @default(uuid())
+  walletId        String
+  wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transactionType String // credit | debit
+  currency        String // coins | beans
+  amount          BigInt
+  balanceAfter    BigInt
+  reference       String   @default("") // gift_sent | gift_received | gift_commission | top_up | withdrawal | exchange
+  description     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
+}
+
+// ── Gift ─────────────────────────────────────────────────────────────────────
+model Gift {
+  id            String   @id @default(uuid())
+  name          String
+  icon          String   @default("") // legacy; catalogue uses image / SVGA
+  image         String? // optional thumbnail image path
+  svgaAsset     String? // optional SVGA animation file path
+  coinCost      Int
+  beanValue     Int
+  category      String   @default("basic") // basic | premium | special
+  animationType String   @default("") // fireworks | hearts_shower | star_burst | ""
+  soundKey      String   @default("") // fanfare | sparkle | boom | ""
+  isActive      Boolean  @default(true)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions GiftTransaction[]
+
+  @@map("gifts")
+}
+
+// ── GiftTransaction ──────────────────────────────────────────────────────────
+model GiftTransaction {
+  id                String   @id @default(uuid())
+  senderId          String
+  sender            User     @relation("GiftSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId       String // always populated (user)
+  recipient         User     @relation("GiftRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientType     String   @default("user") // "user" | "agency"
+  recipientAgencyId String?
+  recipientAgency   Agency?  @relation("GiftRecipientAgency", fields: [recipientAgencyId], references: [id])
+  giftId            String
+  gift              Gift     @relation(fields: [giftId], references: [id])
+  roomId            String?
+  qty               Int      @default(1)
+  coinCost          Int
+  beanValue         Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ledgerRows GiftCommissionLedger[] @relation("TxLedger")
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([recipientAgencyId, createdAt])
+  @@map("gift_transactions")
+}
+
+// ── GiftCommissionLedger ──────────────────────────────────────────────────────
+// One row per commission movement (direct | parent_delta | gift_bonus | company_share).
+// Written inside the same prisma.$transaction as the gift. Immutable after insert.
+// company_share rows have agencyId = null — they represent platform (company) revenue.
+model GiftCommissionLedger {
+  id                String          @id @default(uuid())
+  giftTransactionId String
+  giftTransaction   GiftTransaction @relation("TxLedger", fields: [giftTransactionId], references: [id], onDelete: Cascade)
+  agencyId          String? // null for company_share rows
+  agency            Agency?         @relation("AgencyLedger", fields: [agencyId], references: [id])
+  userId            String? // null when destination is Agency.beanBalance or company
+  amount            BigInt
+  commissionType    String // "direct" | "parent_delta" | "gift_bonus" | "company_share"
+  rateApplied       Decimal // what we paid, not absolute parent rate
+  createdAt         DateTime        @default(now())
+
+  @@index([giftTransactionId])
+  @@index([agencyId, createdAt])
+  @@index([commissionType, createdAt])
+  @@map("gift_commission_ledger")
+}
+
+// ── GiftBonusSetting ──────────────────────────────────────────────────────────
+// Singleton (id = "singleton"). Reads use findUniqueOrThrow.
+// When `enabled` is false, no gift-bonus payouts (tiers, fallback, or per-agency override).
+model GiftBonusSetting {
+  id        String   @id @default("singleton")
+  enabled   Boolean  @default(true)
+  bonusRate Decimal  @default(0.15)
+  updatedBy String   @default("")
+  updatedAt DateTime @updatedAt
+
+  @@map("gift_bonus_settings")
+}
+
+// ── GiftBonusTier ─────────────────────────────────────────────────────────────
+// Rolling 7-day agency host-income (beans) thresholds → gift bonus rate on hostBeans.
+// Lookup: highest tier where rollingIncome >= minRollingIncome (like AgencyTier).
+model GiftBonusTier {
+  id               String   @id @default(uuid())
+  name             String
+  minRollingIncome BigInt   @default(0)
+  bonusRate        Decimal
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("gift_bonus_tiers")
+}
+
+// ── AgencyInvitation ──────────────────────────────────────────────────────────
+// A root agency proposes itself as parent to another agency; admin approves.
+// Routes come in Plan 2 — table is provisioned here so the FK is available.
+model AgencyInvitation {
+  id           String    @id @default(uuid())
+  fromAgencyId String
+  fromAgency   Agency    @relation("AgencyInvitesSent", fields: [fromAgencyId], references: [id])
+  toAgencyId   String
+  toAgency     Agency    @relation("AgencyInvitesReceived", fields: [toAgencyId], references: [id])
+  status       String    @default("pending") // pending | approved | rejected
+  note         String    @default("")
+  reviewedBy   String    @default("") // admin user id
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([toAgencyId, status])
+  @@index([fromAgencyId, status])
+  @@map("agency_invitations")
+}
+
+// ── WithdrawalRequest ────────────────────────────────────────────────────────
+// Status: pending_review → completed | rejected (admin approve / reject)
+// Legacy: pending, assigned, proof_submitted (payroll-agent flow), approved
+model WithdrawalRequest {
+  id          String    @id @default(uuid())
+  orderId     String    @unique @default("")
+  userId      String
+  user        User      @relation("UserWithdrawals", fields: [userId], references: [id], onDelete: Cascade)
+  beansAmount BigInt
+  status      String    @default("pending_review")
+  notes       String    @default("")
+  processedAt DateTime?
+
+  assignedAgentId   String?
+  assignedAgent     User?     @relation("WithdrawalAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  assignedByAdminId String?
+  proofUrl          String    @default("")
+  proofUploadedAt   DateTime?
+  agentProofNotes   String    @default("")
+  verifiedByAdminId String?
+  verifiedAt        DateTime?
+
+  adminRejectionNotes String @default("")
+
+  countryCode      String   @default("")
+  currency         String   @default("")
+  localAmount      Decimal? @db.Decimal(18, 6)
+  usdRateAtRequest Decimal? @db.Decimal(18, 6)
+
+  paymentMethodId       String?
+  paymentMethod         UserPaymentMethod? @relation("WithdrawalPaymentMethod", fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  payoutSnapshot        String             @default("")
+  externalTransactionId String             @default("")
+  proofContentHash      String             @default("")
+  escalatedAt           DateTime?
+  frozenByAdminId       String?
+
+  payrollLedgerEntry PayrollLedgerEntry? @relation("WithdrawalLedgerEntry")
+
+  acceptedAt       DateTime?
+  ipAddress        String    @default("")
+  ipRiskFlagged    Boolean   @default(false)
+  disputedAt       DateTime?
+  disputedByUserId String?
+  disputeReason    String    @default("")
+
+  // User acknowledged receipt (manual or 2h auto after proof upload)
+  userConfirmedAt   DateTime?
+  // Scheduled auto-confirm time (proofUploadedAt + 2h)
+  userConfirmAutoAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, proofUploadedAt])
+  @@index([assignedAgentId])
+  @@index([countryCode, status])
+  @@index([proofContentHash])
+  @@map("withdrawal_requests")
+}
+
+// ── UserPaymentMethod ──────────────────────────────────────────────────────
+model UserPaymentMethod {
+  id           String  @id @default(uuid())
+  userId       String
+  user         User    @relation("UserPaymentMethods", fields: [userId], references: [id], onDelete: Cascade)
+  methodType   String // epay | binance_bep20 | usdt_trc20 | bank_account | mobile_wallet | upi
+  countryCode  String  @default("") // ISO 3166 payout country (IN, PH, US, …)
+  provider     String  @default("") // gcash, upi, mpesa, …
+  accountLabel String  @default("") // display label / epay holder name
+  isDefault    Boolean @default(false)
+  nickname     String  @default("")
+
+  // Bank account fields (encrypted)
+  bankAccountNo     String?
+  bankName          String?
+  ifscCode          String?
+  accountHolderName String?
+  countryName       String?
+
+  // Epay fields (encrypted)
+  epayAccount String?
+
+  // Binance BEP20 fields (encrypted)
+  bep20Address String?
+
+  // USDT TRC20 fields (encrypted)
+  trc20Address String?
+
+  // Masked version (stored plain, safe for display)
+  maskedAccount String @default("")
+
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  withdrawalRequests WithdrawalRequest[] @relation("WithdrawalPaymentMethod")
+
+  @@index([userId])
+  @@map("user_payment_methods")
+}
+
+// ── UserLevel ────────────────────────────────────────────────────────────────
+// Rich Level = coins recharged (coin-seller transfer). Charm Level = gift beanValue received as host.
+model UserLevel {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation("UserLevel", fields: [userId], references: [id], onDelete: Cascade)
+  richLevel  Int      @default(1)
+  richXp     BigInt   @default(0)
+  charmLevel Int      @default(1)
+  charmXp    BigInt   @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("user_levels")
+}
+
+// ── Family ────────────────────────────────────────────────────────────────────
+// Gold tier: top 10 families by weekly beans. Silver: 11-50. Bronze: rest.
+model Family {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  ownerId      String
+  owner        User     @relation("FamilyOwner", fields: [ownerId], references: [id])
+  tier         String   @default("bronze") // gold | silver | bronze
+  badge        String   @default("")
+  announcement String   @default("")
+  weeklyBeans  BigInt   @default(0)
+  totalBeans   BigInt   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members FamilyMember[]
+
+  @@map("families")
+}
+
+// ── FamilyMember ──────────────────────────────────────────────────────────────
+model FamilyMember {
+  id        String   @id @default(uuid())
+  familyId  String
+  family    Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("FamilyMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("member") // owner | admin | member
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([familyId, userId])
+  @@unique([userId]) // one family per user
+  @@map("family_members")
+}
+
+// ── CoinPackage ───────────────────────────────────────────────────────────────
+model CoinPackage {
+  id         String   @id @default(uuid())
+  coins      Int
+  bonusCoins Int      @default(0)
+  priceGbp   Decimal
+  isActive   Boolean  @default(true)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  transactions PaymentTransaction[]
+
+  @@map("coin_packages")
+}
+
+// ── PaymentTransaction ────────────────────────────────────────────────────────
+model PaymentTransaction {
+  id                    String      @id @default(uuid())
+  userId                String
+  user                  User        @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  packageId             String
+  package               CoinPackage @relation(fields: [packageId], references: [id])
+  method                String // card | apple_pay | google_pay | razorpay_upi
+  stripePaymentIntentId String?     @unique
+  razorpayOrderId       String?     @unique
+  razorpayPaymentId     String?
+  amountGbp             Decimal
+  status                String      @default("pending") // pending | succeeded | failed
+  coinsCredited         Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("payment_transactions")
+}
+
+// ── AgentTransaction ──────────────────────────────────────────────────────────
+model AgentTransaction {
+  id              String   @id @default(uuid())
+  agentId         String
+  agent           User     @relation("AgentSales", fields: [agentId], references: [id])
+  customerId      String
+  customer        User     @relation("CustomerPurchases", fields: [customerId], references: [id])
+  coinsSold       BigInt
+  amountCollected Decimal
+  currency        String   @default("GBP")
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId, createdAt])
+  @@map("agent_transactions")
+}
+
+// ── SystemWallet ─────────────────────────────────────────────────────────────
+// Four system-level wallets: MASTER | RECOVERY | BONUS | REVENUE
+model SystemWallet {
+  id         String   @id @default(uuid())
+  walletType String   @unique // MASTER | RECOVERY | BONUS | REVENUE
+  balance    BigInt   @default(0)
+  totalIn    BigInt   @default(0)
+  totalOut   BigInt   @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sentTxs     SystemTransaction[] @relation("SysTxFrom")
+  receivedTxs SystemTransaction[] @relation("SysTxTo")
+
+  @@map("system_wallets")
+}
+
+// ── SystemTransaction ─────────────────────────────────────────────────────────
+// Ledger: every coin movement at the system level is recorded here.
+// status: active | reversed
+model SystemTransaction {
+  id               String        @id @default(uuid())
+  fromWalletId     String?
+  fromWallet       SystemWallet? @relation("SysTxFrom", fields: [fromWalletId], references: [id])
+  toWalletId       String?
+  toWallet         SystemWallet? @relation("SysTxTo", fields: [toWalletId], references: [id])
+  amount           BigInt
+  // MINT | CREDIT_USER | DEDUCT_USER | TRANSFER | REVERSAL | BURN
+  txType           String
+  targetUserId     String        @default("")
+  reference        String        @default("")
+  reason           String        @default("")
+  performedBy      String        @default("") // adminId
+  fromBalanceAfter BigInt? // balance of fromWallet after tx
+  toBalanceAfter   BigInt? // balance of toWallet after tx
+  status           String        @default("active") // active | reversed
+  reversalOf       String        @default("") // ID of original tx (if this is a reversal)
+  createdAt        DateTime      @default(now())
+
+  @@index([txType, createdAt])
+  @@index([targetUserId])
+  @@index([status])
+  @@map("system_transactions")
+}
+
+// ── MintRequest ───────────────────────────────────────────────────────────────
+// 2-step approval: requestedBy submits, a DIFFERENT super_admin approves.
+model MintRequest {
+  id           String   @id @default(uuid())
+  requestedBy  String // adminId who requested
+  approvedBy   String   @default("") // adminId who approved
+  amount       BigInt
+  reason       String
+  status       String   @default("pending") // pending | approved | rejected
+  rejectReason String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@map("mint_requests")
+}
+
+// ── AgencyTier ────────────────────────────────────────────────────────────────
+// Commission rate applied to agency turnover (hostBeans share). Tier thresholds are
+// compared against sliding 30-day rolling agency turnover (agent + agent_hosts).
+model AgencyTier {
+  id             String   @id @default(uuid())
+  name           String // A | B | C | D | E (admin-editable)
+  minHostIncome  BigInt   @default(0) // min rolling 30-day agency turnover (hostBeans sum) for this tier
+  commissionRate Decimal // 0.04 = 4%
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("agency_tiers")
+}
+
+// ── Host Level Task (New Level Task) ─────────────────────────────────────────
+model HostLevelTaskTier {
+  id                       String   @id @default(uuid())
+  levelCode                String   @unique // S | A | B | C | D | E
+  minSevenDayEarnings      BigInt
+  dailyTaskRewardBeans     Int
+  incomeTaskHourlyBeans    Int      @default(10000)
+  incomeTaskMaxHoursPerDay Int      @default(3)
+  hourlyMaxBeans           Int
+  sortOrder                Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("host_level_task_tiers")
+}
+
+model HostLevelTaskSettings {
+  id                          String   @id @default("singleton")
+  ordinaryMaxSevenDayEarnings BigInt   @default(1200000)
+  newHostProtectionDays       Int      @default(7)
+  newHostHourlyBeans          Int      @default(4000)
+  newHostHoursPerDay          Int      @default(3)
+  newHostTotalCapBeans        Int      @default(84000)
+  ordinaryLiveHourlyBeans     Int      @default(2000)
+  ordinaryLiveHoursPerDay     Int      @default(1)
+  ordinaryIncomeHourlyBeans   Int      @default(10000)
+  ordinaryIncomeHoursPerDay   Int      @default(3)
+  ordinaryHourlyMaxBeans      Int      @default(12000)
+  ordinaryDailyMaxBeans       Int      @default(32000)
+  incomeTaskThresholdBeans    Int      @default(50000)
+  liveClaimChunkMinutes       Int      @default(60)
+  /// When false, only chat-room mic time counts toward the live-duration task; flip on when live sessions launch.
+  countLiveMicTime            Boolean  @default(false)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@map("host_level_task_settings")
+}
+
+model HostLevelTaskDaily {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation("HostLevelTaskDaily", fields: [userId], references: [id], onDelete: Cascade)
+  taskDate           DateTime @db.Date
+  track              String // new_host | ordinary | level
+  levelCode          String   @default("")
+  liveMinutesClaimed Int      @default(0)
+  liveBeansClaimed   Int      @default(0)
+  incomeClaimsCount  Int      @default(0)
+  incomeBeansClaimed Int      @default(0)
+  totalBeansClaimed  Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([userId, taskDate])
+  @@index([userId, taskDate])
+  @@map("host_level_task_daily")
+}
+
+// ── FaceVerificationSession ───────────────────────────────────────────────────
+model FaceVerificationSession {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation("FaceVerificationSessions", fields: [userId], references: [id], onDelete: Cascade)
+  status            String    @default("in_progress")
+  challengeResults  Json      @default("[]")
+  referenceFrameUrl String    @default("")
+  frameUrls         Json      @default("{}")
+  rejectReason      String    @default("")
+  submittedAt       DateTime?
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("face_verification_sessions")
+}
+
+// ── HostApplication ───────────────────────────────────────────────────────────
+model HostApplication {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation("HostApplications", fields: [userId], references: [id], onDelete: Cascade)
+  agentId    String?
+  agent      User?     @relation("AgentInvitations", fields: [agentId], references: [id])
+  path       String // agency_invitation | self_apply_with_agent | self_apply_independent
+  status     String    @default("pending") // pending | approved | rejected
+  note       String    @default("")
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([agentId, createdAt])
+  @@map("host_applications")
+}
+
+// ── InviteCode ────────────────────────────────────────────────────────────────
+model InviteCode {
+  id            String    @id @default(uuid())
+  inviterId     String
+  inviter       User      @relation("SentInvites", fields: [inviterId], references: [id], onDelete: Cascade)
+  code          String    @unique
+  inviteeId     String?   @unique
+  invitee       User?     @relation("ReceivedInvite", fields: [inviteeId], references: [id])
+  status        String    @default("pending") // pending | accepted | expired
+  rewardClaimed Boolean   @default(false)
+  rewardCoins   Int       @default(100)
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([inviterId, createdAt])
+  @@map("invite_codes")
+}
+
+// ── Notification ──────────────────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type      String // new_follower | gift_received | room_invite | system | host_task_complete
+  title     String
+  body      String
+  imageUrl  String   @default("")
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+// ── Report ────────────────────────────────────────────────────────────────────
+model Report {
+  id          String    @id @default(uuid())
+  reporterId  String
+  reporter    User      @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType  String // user | room | message
+  targetId    String
+  reason      String
+  description String    @default("")
+  status      String    @default("pending") // pending | reviewed | dismissed
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([reporterId, createdAt])
+  @@index([targetType, targetId])
+  @@map("reports")
+}
+
+// ── Ban ───────────────────────────────────────────────────────────────────────
+model Ban {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation("UserBans", fields: [userId], references: [id], onDelete: Cascade)
+  adminId   String // legacy: kept for backwards-compat with existing rows
+  bannedBy  String    @default("") // adminId who applied (new field)
+  type      String    @default("platform") // platform | room
+  roomId    String? // set when type = "room"
+  reason    String
+  banType   String    @default("permanent") // permanent | temporary
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+  proofUrl  String    @default("") // evidence screenshot/URL attached by admin
+  result    String    @default("") // outcome note filled after review
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, isActive])
+  @@index([roomId, isActive])
+  @@map("bans")
+}
+
+// ── AdminTag ──────────────────────────────────────────────────────────────────
+// Catalogue of assignable tags. Any User can be granted one or more tags,
+// which confer admin-panel permissions on them. Built-in tags mirror the
+// AdminRole list (super_admin, admin, cs, moderator, assistant, operator,
+// bd, bdm); additional custom tags can be created.
+model AdminTag {
+  id          String   @id @default(uuid())
+  name        String   @unique // slug: "super_admin", "cs", etc.
+  displayName String
+  color       String   @default("#7B4FFF")
+  iconUrl     String   @default("") // relative path under admin public, e.g. /tag-icons/cs.png
+  permissions String[] @default([]) // empty for built-in ⇒ inherit ROLE_PERMISSIONS
+  isBuiltIn   Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userTags UserTag[] @relation("TagUsers")
+
+  @@map("admin_tags")
+}
+
+// ── UserTag ───────────────────────────────────────────────────────────────────
+model UserTag {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation("UserTags", fields: [userId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        AdminTag  @relation("TagUsers", fields: [tagId], references: [id], onDelete: Cascade)
+  assignedBy String // adminId
+  assigner   AdminUser @relation("UserTagAssigner", fields: [assignedBy], references: [id])
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, tagId])
+  @@index([tagId])
+  @@map("user_tags")
+}
+
+// ── DeviceBan ────────────────────────────────────────────────────────────────
+// When a device is banned, no account can log in or be created from it.
+model DeviceBan {
+  id        String    @id @default(uuid())
+  deviceId  String
+  adminId   String
+  reason    String
+  banType   String    @default("permanent") // permanent | temporary
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([deviceId, isActive])
+  @@map("device_bans")
+}
+
+// ── AccountRisk ───────────────────────────────────────────────────────────────
+// Financial + activity freeze applied by admins for fraud/scam investigation.
+model AccountRisk {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation("UserRiskControls", fields: [userId], references: [id])
+
+  // Which capabilities are frozen
+  freezeCoins  Boolean @default(false) // block coin spending (gifts, games)
+  freezeBeans  Boolean @default(false) // block bean usage (withdrawal, exchange)
+  disableGames Boolean @default(false) // block game participation
+  disableGifts Boolean @default(false) // block sending gifts
+  blockChat    Boolean @default(false) // restrict chat
+
+  // Why
+  reason   String // fraud_activity | suspicious_transactions | multiple_accounts | chargeback | manual_review
+  severity String @default("medium") // low | medium | high | critical
+  notes    String @default("")
+
+  // Duration
+  expiresAt DateTime? // null = permanent
+
+  // Evidence (URLs to uploaded files)
+  evidenceUrls String[] @default([])
+
+  // Lifecycle
+  isActive   Boolean   @default(true)
+  releasedAt DateTime?
+  releasedBy String    @default("") // adminId who released
+  appliedBy  String // adminId who applied
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isActive])
+  @@index([isActive, severity])
+  @@map("account_risks")
+}
+
+// ── UserDevice ────────────────────────────────────────────────────────────────
+// Records every unique (user, device) pair. Upserted on each login.
+// Enables "same device" detection: find other accounts that logged in on the
+// same physical device.
+model UserDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation("UserDevices", fields: [userId], references: [id], onDelete: Cascade)
+  deviceId    String // stable identifier sent by the mobile app
+  deviceModel String   @default("") // e.g. "iPhone 15 Pro", "Samsung Galaxy S24"
+  platform    String   @default("") // ios | android
+  appVersion  String   @default("")
+  lastLoginAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@map("user_devices")
+}
+
+// ── AdminUser ─────────────────────────────────────────────────────────────────
+// Separate from User — admin staff use email/password, not Firebase.
+model AdminUser {
+  id                 String        @id @default(uuid())
+  email              String        @unique
+  passwordHash       String
+  passwordSnapshot   String        @default("") // encrypted plaintext for super-admin display
+  displayName        String
+  role               String        @default("admin") // PRIMARY role (roles[0]); kept for display/back-compat. super_admin | admin | bd | bdm | cs | moderator | assistant | operator
+  roles              String[]      @default([]) // all staff roles held by this account; permissions = union. Backfilled to [role].
+  customPermissions  String[] // if non-empty, overrides role-based permissions
+  /// When true, this staff account has no effective permissions (instant security lock).
+  permissionsRevoked Boolean       @default(false)
+  avatarUrl          String        @default("")
+  isActive           Boolean       @default(true)
+  hakaId             String? // staff member's in-app Haka ID (display only, optional)
+  region             String? // FK-by-name to Region.code; null = unassigned
+  managerId          String? // parent admin for a BD (self-relation); null for top-level admins
+  manager            AdminUser?    @relation("AdminHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
+  reports            AdminUser[]   @relation("AdminHierarchy")
+  managedBdAgencies  Agency[]      @relation("AgencyBd")
+  staffTargets       StaffTarget[] @relation("StaffTargetOwner")
+  lastLoginAt        DateTime?
+  username           String?       @unique // optional login/display handle
+  phone              String? // contact number
+  country            String        @default("")
+  riskLevel          String        @default("low") // low | medium | high (manual)
+  riskNote           String        @default("")
+  payoutFrozen       Boolean       @default(false) // blocks payouts for this staff + subtree
+  payoutFrozenReason String        @default("")
+  payoutFrozenAt     DateTime?
+  mustChangePassword Boolean       @default(false) // set by reset-password / OTP flows
+  deletedAt          DateTime? // soft delete
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  managedAgencies            AdminAgencyAssignment[]     @relation("AssignedAdminAgencies")
+  tagsAssigned               UserTag[]                   @relation("UserTagAssigner")
+  teamAnnouncementsCreated   TeamAnnouncement[]          @relation("TeamAnnouncementsCreated")
+  hostAgencyOwnershipChanges HostAgencyOwnershipChange[] @relation("HostAgencyOwnershipChangedByAdmin")
+  emergencyOtps              AdminEmergencyOtp[]         @relation("AdminEmergencyOtps")
+  AdminWithdrawalFreeze      AdminWithdrawalFreeze[]
+  designatedBecomeAgencyAdmin DesignatedBecomeAgencyAdmin? @relation("DesignatedBecomeAgencyAdminStaff")
+  agentApplicationsDesignated AgentApplication[]          @relation("AgentApplicationDesignatedAdmin")
+
+  @@map("admin_users")
+}
+
+// ── AdminRefreshToken ─────────────────────────────────────────────────────────
+model AdminRefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  adminId   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("admin_refresh_tokens")
+}
+
+// ── AdminEmergencyOtp ──────────────────────────────────────────────────────────
+// One-time emergency login code for admin staff accounts (short TTL, single-use).
+model AdminEmergencyOtp {
+  id          String    @id @default(uuid())
+  adminId     String
+  admin       AdminUser @relation("AdminEmergencyOtps", fields: [adminId], references: [id], onDelete: Cascade)
+  codeHash    String // bcrypt hash of the 6-digit code
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String    @default("") // super admin who generated it
+  createdAt   DateTime  @default(now())
+
+  @@index([adminId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("admin_emergency_otps")
+}
+
+// ── AdminWithdrawalFreeze ──────────────────────────────────────────────────────
+// Country-scoped withdrawals freeze switch (used by the admin panel).
+model AdminWithdrawalFreeze {
+  id          String    @id @default(uuid())
+  adminId     String
+  admin       AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  countryCode String
+  isFrozen    Boolean   @default(true)
+  reason      String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([countryCode])
+  @@index([adminId])
+  @@map("admin_withdrawal_freezes")
+}
+
+// ── AuditLog ──────────────────────────────────────────────────────────────────
+// Every mutating admin action is logged for accountability.
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  action     String // e.g. "user.ban", "room.force_close"
+  targetType String   @default("") // e.g. "User", "Room"
+  targetId   String   @default("")
+  metadata   Json?
+  ipAddress  String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+// ── AdminNotification ─────────────────────────────────────────────────────────
+// In-app inbox for admins when users submit withdrawals, reports, applications, etc.
+model AdminNotification {
+  id         String    @id @default(uuid())
+  type       String // withdrawal_requested | report_submitted | ...
+  title      String
+  body       String    @default("")
+  linkPath   String    @default("") // admin SPA path e.g. /withdrawals?focus=
+  entityType String    @default("") // WithdrawalRequest | Report | ...
+  entityId   String    @default("")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([createdAt(sort: Desc)])
+  @@index([readAt])
+  @@index([type, entityId])
+  @@map("admin_notifications")
+}
+
+// ── SystemSetting ─────────────────────────────────────────────────────────────
+// Key-value config store for admin-managed platform settings.
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedBy String   @default("")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("system_settings")
+}
+
+// ── Moment ────────────────────────────────────────────────────────────────────
+model Moment {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation("MomentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  postType      String   @default("moment") // moment | video
+  mediaUrl      String?
+  caption       String   @default("")
+  hashtag       String   @default("")
+  likesCount    Int      @default(0)
+  commentsCount Int      @default(0)
+  sharesCount   Int      @default(0)
+  giftsCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  likes    MomentLike[]
+  comments MomentComment[]
+
+  @@index([userId, createdAt])
+  @@index([postType, createdAt])
+  @@map("moments")
+}
+
+// ── MomentLike ────────────────────────────────────────────────────────────────
+model MomentLike {
+  id        String   @id @default(uuid())
+  momentId  String
+  moment    Moment   @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("MomentLikeUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([momentId, userId])
+  @@map("moment_likes")
+}
+
+// ── MomentComment ─────────────────────────────────────────────────────────────
+model MomentComment {
+  id         String   @id @default(uuid())
+  momentId   String
+  moment     Moment   @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("MomentCommentUser", fields: [userId], references: [id], onDelete: Cascade)
+  text       String
+  likesCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([momentId, createdAt])
+  @@map("moment_comments")
+}
+
+// ── StoreItem ─────────────────────────────────────────────────────────────────
+// Virtual goods available in the in-app store (frames, effects, badges, etc.)
+model StoreItem {
+  id           String   @id @default(uuid())
+  name         String
+  description  String   @default("")
+  image        String?
+  previewImage String?
+  category     String // frame | entry | chat_bubble | special_id | profile_card | mic_voice_wave | dynamic_profile | entry_tag | ring | theme
+  level        String   @default("") // SSS | SS | S | A | B | "" (only used by special_id)
+  coinCost     Int
+  durationDays Int      @default(0) // 0 = permanent
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  /// When false, item stays visible in the store but users cannot purchase (admin grant still allowed).
+  isForSale    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userItems           UserStoreItem[]
+  theme               Theme?
+  saleStatusLogs      StoreItemSaleStatusLog[]
+  saleSchedules       StoreItemSaleSchedule[]
+  distributions       StoreItemDistribution[]
+
+  @@index([category, sortOrder])
+  @@index([isActive, isForSale])
+  @@map("store_items")
+}
+
+// ── StoreItemSaleStatusLog ────────────────────────────────────────────────────
+model StoreItemSaleStatusLog {
+  id              String   @id @default(uuid())
+  itemId          String
+  item            StoreItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  previousForSale Boolean
+  newForSale      Boolean
+  adminId         String
+  reason          String   @default("")
+  source          String   @default("manual") // manual | bulk | schedule
+  scheduleId      String?
+  createdAt       DateTime @default(now())
+
+  @@index([itemId, createdAt])
+  @@map("store_item_sale_status_logs")
+}
+
+// ── StoreItemSaleSchedule ──────────────────────────────────────────────────────
+model StoreItemSaleSchedule {
+  id                String    @id @default(uuid())
+  itemId            String
+  item              StoreItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  targetForSale     Boolean
+  effectiveAt       DateTime
+  status            String    @default("pending") // pending | applied | cancelled
+  createdByAdminId  String
+  appliedAt         DateTime?
+  reason            String    @default("")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, effectiveAt])
+  @@index([itemId])
+  @@map("store_item_sale_schedules")
+}
+
+// ── StoreItemDistribution ─────────────────────────────────────────────────────
+model StoreItemDistribution {
+  id                String   @id @default(uuid())
+  itemId            String
+  item              StoreItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  recipientUserId   String
+  recipient         User     @relation("StoreItemDistributions", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  quantity          Int      @default(1)
+  reason            String   @default("")
+  adminId           String
+  channel           String   @default("single") // single | bulk | emergency
+  audienceType      String   @default("user_ids") // user_ids | agency | host_level | country | all
+  audienceMeta      Json?
+  coinValueSnapshot Int      @default(0)
+  bulkJobId         String   @default("")
+  createdAt         DateTime @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([bulkJobId])
+  @@map("store_item_distributions")
+}
+
+// ── UserStoreItem ─────────────────────────────────────────────────────────────
+model UserStoreItem {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation("UserStoreItems", fields: [userId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         StoreItem @relation(fields: [itemId], references: [id])
+  isEquipped   Boolean   @default(false)
+  // Custom 8-digit haka-style digits attached when item.category = 'special_id'.
+  // Overrides User.hakaId on display when this row is equipped and non-expired.
+  // Uniqueness is enforced here AND cross-checked against User.hakaId at write time.
+  customHakaId String?   @unique
+  expiresAt    DateTime?
+  purchasedAt  DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, itemId])
+  @@map("user_store_items")
+}
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+model Theme {
+  id                 String     @id @default(uuid())
+  name               String
+  gradientFrom       String     @default("#1E1A3C")
+  gradientTo         String     @default("#2A2550")
+  backgroundImageUrl String?
+  svgaUrl            String?
+  accentColor        String     @default("#7c3aed")
+  chatBubbleColor    String     @default("#2A2550")
+  storeItemId        String?    @unique
+  storeItem          StoreItem? @relation(fields: [storeItemId], references: [id], onDelete: SetNull)
+  rooms              Room[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@map("themes")
+}
+
+// ── CoinSellerProfile ─────────────────────────────────────────────────────────
+model CoinSellerProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation("CoinSellerUser", fields: [userId], references: [id], onDelete: Cascade)
+  whatsappNumber      String   @default("")
+  isAssistant         Boolean  @default(false)
+  totalCommissionRate Decimal  @default(0)
+  giftCommissionRate  Decimal  @default(0)
+  incomeRewardRate    Decimal  @default(0)
+  giftBonusRate       Decimal  @default(0)
+  levelUpRate         Decimal  @default(0)
+  availableBalance    BigInt   @default(0) // in coins
+  totalBalance        BigInt   @default(0)
+  securityDeposit     BigInt   @default(0)
+  sellerLevel         String   @default("Bronze") // Bronze | Silver | Gold | Diamond
+  quickMessage        String   @default("")
+  totalCoinsSold      BigInt   @default(0)
+  totalCustomers      Int      @default(0)
+  paymentMethods      String   @default("upi,epay,usdt,usdc")
+  pricePerCoin        Decimal  @default(0.001)
+  countryCode         String   @default("IN")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("coin_seller_profiles")
+}
+
+// ── CoinSellerTransaction ─────────────────────────────────────────────────────
+model CoinSellerTransaction {
+  id              String   @id @default(uuid())
+  sellerId        String
+  seller          User     @relation("CoinSellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
+  counterpartyId  String?
+  counterparty    User?    @relation("CoinSellerCounterparty", fields: [counterpartyId], references: [id], onDelete: SetNull)
+  transactionType String // transfer | recharge | exchange
+  targetType      String   @default("") // user | coin_seller | ""
+  coinsAmount     BigInt
+  operatorName    String   @default("")
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([sellerId, createdAt])
+  @@map("coin_seller_transactions")
+}
+
+// ── SellerRechargeRequest ─────────────────────────────────────────────────────
+model SellerRechargeRequest {
+  id            String    @id @default(uuid())
+  sellerId      String
+  seller        User      @relation("SellerRechargeRequests", fields: [sellerId], references: [id], onDelete: Cascade)
+  amountUsd     Decimal
+  coinsToCredit BigInt
+  paymentMethod String // upi | epay | usdt_trc20 | usdt_bep20
+  proofImageUrl String?
+  txHash        String    @default("")
+  status        String    @default("pending") // pending | approved | rejected
+  adminNotes    String    @default("")
+  processedAt   DateTime?
+  processedById String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([sellerId, status])
+  @@map("seller_recharge_requests")
+}
+
+// ── SellerExchangeRequest (wallet points → offline seller coins, admin-approved) ──
+model SellerExchangeRequest {
+  id            String    @id @default(uuid())
+  sellerId      String
+  seller        User      @relation("SellerExchangeRequests", fields: [sellerId], references: [id], onDelete: Cascade)
+  pointsAmount  BigInt
+  status        String    @default("pending") // pending | approved | rejected
+  adminNotes    String    @default("")
+  processedAt   DateTime?
+  processedById String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([sellerId, status])
+  @@map("seller_exchange_requests")
+}
+
+// ── Agency ────────────────────────────────────────────────────────────────────
+model Agency {
+  id      String @id @default(uuid())
+  name    String
+  ownerId String @unique
+  owner   User   @relation("AgencyOwner", fields: [ownerId], references: [id])
+  status  String @default("active") // active | suspended | banned
+
+  // Dead columns — kept so existing code reading them still compiles.
+  // Plan 2 deletes them once the admin UI stops referencing them.
+  hostRevenueShare  Decimal @default(0.70)
+  agentRevenueShare Decimal @default(0.20)
+  companyShare      Decimal @default(0.10)
+
+  description String     @default("")
+  bdId        String? // owning BD (AdminUser); null = unassigned
+  bd          AdminUser? @relation("AgencyBd", fields: [bdId], references: [id], onDelete: SetNull)
+  region      String? // FK-by-name to Region.code
+
+  // Parent-sub-agency chain (2 levels; grandparents do not earn).
+  parentAgencyId String?
+  parentAgency   Agency?  @relation("AgencyParent", fields: [parentAgencyId], references: [id])
+  subAgencies    Agency[] @relation("AgencyParent")
+
+  // Counters & overrides introduced by the commission system.
+  cumulativeHostIncome             BigInt    @default(0)
+  beanBalance                      BigInt    @default(0)
+  commissionRateOverride           Decimal?
+  commissionRateOverrideValidUntil DateTime?
+  giftBonusRateOverride            Decimal?
+  giftBonusRateOverrideValidUntil  DateTime?
+  /// Per-agency gift-bonus program (admin). Effective only when global GiftBonusSetting.enabled is also true.
+  giftBonusEnabled       Boolean   @default(true)
+  country                String    @default("")
+  riskLevel              String    @default("low") // low | medium | high (manual)
+  riskNote               String    @default("")
+  payoutFrozen           Boolean   @default(false)
+  payoutFrozenReason     String    @default("")
+  payoutFrozenAt         DateTime?
+
+  /// 0 = unlimited
+  hostLimit            Int    @default(0)
+  /// 0 = unlimited (beans)
+  withdrawalLimitBeans BigInt @default(0)
+  /// Optional monthly beans cap; null = unlimited
+  withdrawalLimitMonthly BigInt?
+
+  /// Soft delete (admin panel). When set, agency is hidden from default lists.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adminAssignments AdminAgencyAssignment[] @relation("AgencyAdminAssignments")
+
+  // Invitation & ledger relations (models defined below).
+  invitationsSent       AgencyInvitation[]     @relation("AgencyInvitesSent")
+  invitationsReceived   AgencyInvitation[]     @relation("AgencyInvitesReceived")
+  ledgerRows            GiftCommissionLedger[] @relation("AgencyLedger")
+  giftsReceivedAsAgency GiftTransaction[]      @relation("GiftRecipientAgency")
+
+  @@index([parentAgencyId])
+  @@index([bdId])
+  @@index([region])
+  @@map("agencies")
+}
+
+// ── AdminAgencyAssignment ─────────────────────────────────────────────────────
+model AdminAgencyAssignment {
+  id        String    @id @default(uuid())
+  agencyId  String
+  agency    Agency    @relation("AgencyAdminAssignments", fields: [agencyId], references: [id], onDelete: Cascade)
+  adminId   String
+  admin     AdminUser @relation("AssignedAdminAgencies", fields: [adminId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@unique([agencyId, adminId])
+  @@map("admin_agency_assignments")
+}
+
+// ── Region ──────────────────────────────────────────────────────────────────
+model Region {
+  code      String   @id // e.g. "SEA"
+  name      String // e.g. "Southeast Asia"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("regions")
+}
+
+// ── StaffTarget ─────────────────────────────────────────────────────────────
+// A revenue / onboarding goal for one BD or Admin, for one period bucket.
+model StaffTarget {
+  id            String    @id @default(uuid())
+  staffId       String
+  staff         AdminUser @relation("StaffTargetOwner", fields: [staffId], references: [id], onDelete: Cascade)
+  period        String // "week" | "month"
+  periodStart   DateTime // inclusive start of the bucket (UTC midnight)
+  revenueTarget BigInt    @default(0) // target commission beans
+  onboardTarget Int       @default(0) // target new agencies (BD) or new BDs (admin)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([staffId, period, periodStart])
+  @@index([staffId])
+  @@map("staff_targets")
+}
+
+// ── Game ──────────────────────────────────────────────────────────────────────
+model Game {
+  id           String    @id @default(uuid())
+  name         String
+  description  String    @default("")
+  imageUrl     String    @default("")
+  apiEndpoint  String    @default("")
+  apiKey       String    @default("")
+  rtpPercent   Decimal   @default(95.00)
+  isActive     Boolean   @default(true)
+  totalRevenue Decimal   @default(0)
+  totalBets    Int       @default(0)
+  lastPingAt   DateTime?
+  lastPingOk   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("games")
+}
+
+// ── CoinSellerLevelRule ───────────────────────────────────────────────────────
+model CoinSellerLevelRule {
+  id                  String   @id @default(uuid())
+  levelName           String   @unique // Bronze | Silver | Gold | Diamond
+  exchangeLimit       String   @default("")
+  sellerToUserRate    String   @default("")
+  userToSellerRate    String   @default("")
+  sellerListRule      String   @default("")
+  coinSellingListRule String   @default("")
+  sortOrder           Int      @default(0)
+  // Tier ladder — rolling 30-day all-transfer volume threshold (0 = base tier, no minimum)
+  minRollingCoins     Int      @default(0)
+  // Commission rates for this tier (0 = use admin-set override on CoinSellerProfile)
+  totalCommissionRate Decimal  @default(0) @db.Decimal(5, 4)
+  giftCommissionRate  Decimal  @default(0) @db.Decimal(5, 4)
+  incomeRewardRate    Decimal  @default(0) @db.Decimal(5, 4)
+  giftBonusRate       Decimal  @default(0) @db.Decimal(5, 4)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("coin_seller_level_rules")
+}
+
+// ── AdminCustomRole ───────────────────────────────────────────────────────────
+model AdminCustomRole {
+  id          String   @id @default(uuid())
+  name        String   @unique // slug, e.g. "content_manager"
+  displayName String
+  color       String   @default("#7B4FFF")
+  permissions Json // string[] of permission keys
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("admin_custom_roles")
+}
+
+// ── Event ─────────────────────────────────────────────────────────────────────
+model Event {
+  id                String        @id @default(uuid())
+  name              String
+  type              String // competition | festival | lucky_draw | game_event
+  status            String        @default("draft") // draft | upcoming | active | expired
+  startDate         DateTime
+  endDate           DateTime
+  bannerUrl         String        @default("")
+  description       String        @default("")
+  entryRequirement  String        @default("free") // free | coins
+  entryCost         Int           @default(0)
+  participationType String        @default("solo") // solo | team
+  scoringSystem     String        @default("gifts_received") // gifts_received | coins_spent | game_wins
+  rankingPeriod     String        @default("global") // daily | weekly | global
+  visibility        Json          @default("{\"homePage\":true,\"bannerSlider\":false,\"pushNotification\":false}")
+  rewards           EventReward[]
+  sliderBanner      Banner?
+  createdBy         String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([status, startDate])
+  @@map("events")
+}
+
+// ── EventReward ───────────────────────────────────────────────────────────────
+model EventReward {
+  id           String   @id @default(uuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  rank         Int
+  rewardType   String // coins | cash | badge | item
+  rewardLabel  String   @default("") // e.g. "VIP Badge", "Sports Car Frame"
+  rewardAmount Decimal  @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([eventId, rank])
+  @@map("event_rewards")
+}
+
+// ── Banner ────────────────────────────────────────────────────────────────────
+model Banner {
+  id            String   @id @default(uuid())
+  imageUrl      String
+  title         String
+  subtitle      String   @default("")
+  redirectType  String // event | external | user_profile | game
+  redirectValue String   @default("") // event id / url / user hakaId / game id
+  placement     String   @default("home_top") // home_top | profile_agent | discover_top | room_banner
+  priority      Int      @default(5) // 1 (highest) – 10 (lowest)
+  isActive      Boolean  @default(true)
+  startDate     DateTime
+  endDate       DateTime
+  eventId       String?  @unique
+  event         Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive, priority])
+  @@index([placement, isActive])
+  @@map("banners")
+}
+
+// ── Agency Learn Promotion (Agency Center — Earn Money tab) ───────────────────
+model AgencyLearnPromotion {
+  id          String   @id @default(uuid())
+  imageUrl    String
+  title       String
+  description String   @default("")
+  linkUrl     String   @default("")
+  viewCount   Int      @default(0)
+  likeCount   Int      @default(0)
+  tag         String   @default("Original")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("agency_learn_promotions")
+}
+
+// ── Host Centre ──────────────────────────────────────────────────────────────
+
+model HostTier {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  hourlyRateBeans Int
+  minWeeklyBeans  Int      @default(0)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("host_tiers")
+}
+
+model HostMicSession {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation("HostMicSessions", fields: [userId], references: [id], onDelete: Cascade)
+  roomId       String
+  roomMode     String    @default("chat") // chat | live — voice/audio party = chat; video live = live
+  seatIndex    Int
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  minutes      Int       @default(0)
+  beansAwarded Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, startedAt])
+  @@index([userId, endedAt])
+  @@index([userId, roomId, startedAt])
+  @@map("host_mic_sessions")
+}
+
+model HostPkPresenceSession {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation("HostPkPresenceSessions", fields: [userId], references: [id], onDelete: Cascade)
+  pkMatchId String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  minutes   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, startedAt])
+  @@index([pkMatchId])
+  @@map("host_pk_presence_sessions")
+}
+
+model HostLevelTaskClaim {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation("HostLevelTaskClaims", fields: [userId], references: [id], onDelete: Cascade)
+  taskDate     DateTime @db.Date
+  claimType    String // live | income
+  sequence     Int      @default(0)
+  status       String   @default("pending") // pending | completed | failed
+  beansAwarded Int      @default(0)
+  jobId        String   @unique
+  errorMessage String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, taskDate, claimType, sequence])
+  @@index([userId, status])
+  @@map("host_level_task_claims")
+}
+
+model AgencyChangeRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation("HostChangeRequests", fields: [userId], references: [id], onDelete: Cascade)
+  fromAgentId String?
+  toAgentId   String?
+  type        String // leave | change
+  status      String   @default("pending") // pending | approved | rejected
+  reason      String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, status])
+  @@map("agency_change_requests")
+}
+
+// ── HostAgencyOwnershipChange ──────────────────────────────────────────────────
+// History table for admin/agent-driven changes to a host's `agentId` association.
+// This enables multi-agency abuse detection (frequent changes) and an ownership timeline.
+model HostAgencyOwnershipChange {
+  id               String     @id @default(uuid())
+  hostId           String
+  host             User       @relation("HostAgencyOwnershipHost", fields: [hostId], references: [id], onDelete: Cascade)
+  fromAgentId      String?
+  fromAgent        User?      @relation("HostAgencyOwnershipFromAgent", fields: [fromAgentId], references: [id], onDelete: SetNull)
+  toAgentId        String?
+  toAgent          User?      @relation("HostAgencyOwnershipToAgent", fields: [toAgentId], references: [id], onDelete: SetNull)
+  changedByAdminId String?
+  changedByAdmin   AdminUser? @relation("HostAgencyOwnershipChangedByAdmin", fields: [changedByAdminId], references: [id], onDelete: SetNull)
+  reason           String     @default("")
+  createdAt        DateTime   @default(now())
+
+  @@index([hostId, createdAt])
+  @@index([fromAgentId, createdAt])
+  @@index([toAgentId, createdAt])
+  @@index([changedByAdminId, createdAt])
+  @@map("host_agency_ownership_changes")
+}
+
+model AgentApplication {
+  id                 String     @id @default(uuid())
+  userId             String
+  user               User       @relation("AgentApplications", fields: [userId], references: [id], onDelete: Cascade)
+  proposedName       String
+  country            String     @default("")
+  parentAgentId      String?
+  parentAgent        User?      @relation("AgentApplicationParent", fields: [parentAgentId], references: [id])
+  designatedAdminId  String?
+  designatedAdmin    AdminUser? @relation("AgentApplicationDesignatedAdmin", fields: [designatedAdminId], references: [id], onDelete: SetNull)
+  status             String     @default("pending") // pending | approved | rejected
+  note               String     @default("")
+  reviewedAt         DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([userId, status])
+  @@index([designatedAdminId])
+  @@map("agent_applications")
+}
+
+// ── DesignatedBecomeAgencyAdmin ───────────────────────────────────────────────
+// Staff AdminUser Haka IDs shown in mobile Become Agency (root auto-approve path).
+model DesignatedBecomeAgencyAdmin {
+  id        String    @id @default(uuid())
+  adminId   String    @unique
+  admin     AdminUser @relation("DesignatedBecomeAgencyAdminStaff", fields: [adminId], references: [id], onDelete: Cascade)
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("designated_become_agency_admins")
+}
+
+model SubAgentInvitation {
+  id                 String   @id @default(uuid())
+  inviterId          String
+  inviter            User     @relation("SubAgentInvitesSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  inviteeId          String
+  invitee            User     @relation("SubAgentInvitesReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+  proposedAgencyName String   @default("")
+  status             String   @default("pending") // pending | accepted | declined | cancelled
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([inviteeId, status])
+  @@index([inviterId, status])
+  @@map("sub_agent_invitations")
+}
+
+model CurrencyRate {
+  id                 String    @id @default(uuid())
+  countryCode        String    @unique // ISO 3166-1 alpha-2 (IN, US, GB, PH, ID)
+  countryName        String // Display name
+  currency           String // ISO 4217 (INR, USD, GBP, PHP, IDR)
+  symbol             String // ₹ $ £ ₱ Rp
+  usdRate            Decimal   @db.Decimal(18, 6) // 1 USD = usdRate {currency}
+  minWithdrawalBeans Int       @default(10000)
+  displayOrder       Int       @default(0)
+  isActive           Boolean   @default(true)
+  source             String    @default("manual") // manual | auto
+  lastSyncedAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([currency, isActive])
+  @@map("currency_rates")
+}
+
+// ── SpecialId ───────────────────────────────────────────────────────────────
+// Premium cosmetic 6-digit IDs created by admins. Displayed with SVGA animation.
+model SpecialId {
+  id           String   @id @default(uuid())
+  number       String   @unique // 6-digit unique number (never reused while owned)
+  price        Int // coin cost
+  durationDays Int // how long after activation
+  level        String // A | B | S | SS | SSS (determines SVGA)
+  status       String   @default("available") // available | owned
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  inventory SpecialIdInventory?
+
+  @@index([status, level])
+  @@map("special_ids")
+}
+
+// ── SpecialIdInventory ──────────────────────────────────────────────────────
+// Backpack entry: a user's purchased Special ID.
+model SpecialIdInventory {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation("UserSpecialIdInventory", fields: [userId], references: [id], onDelete: Cascade)
+  specialIdId String    @unique
+  specialId   SpecialId @relation(fields: [specialIdId], references: [id])
+  pricePaid   Int
+  purchasedAt DateTime  @default(now())
+  activatedAt DateTime?
+  expiresAt   DateTime?
+  status      String    @default("inactive") // inactive | active | expired
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@map("special_id_inventory")
+}
+
+// ── Support Ticket ───────────────────────────────────────────────────────────
+model SupportTicket {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation("UserSupportTickets", fields: [userId], references: [id], onDelete: Cascade)
+  description    String
+  screenshotUrl  String    @default("") // legacy — first image; prefer screenshotUrls
+  screenshotUrls String[]  @default([])
+  status         String    @default("pending") // pending | replied | closed
+  adminReply     String    @default("")
+  repliedAt      DateTime?
+  repliedBy      String    @default("")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("support_tickets")
+}
+
+// ── PkMatch ──────────────────────────────────────────────────────────────────
+// FK fields stored as bare strings (no Prisma relations) — PK records are ephemeral,
+// referenced entities are cleaned up independently at service layer.
+model PkMatch {
+  id           String    @id @default(uuid())
+  roomAId      String
+  roomBId      String
+  hostAId      String
+  hostBId      String
+  status       String    @default("active") // active | ended | cancelled
+  winnerId     String?
+  scoreA       Int       @default(0)
+  scoreB       Int       @default(0)
+  durationSecs Int
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([roomAId, status])
+  @@index([roomBId, status])
+  @@map("pk_matches")
+}
+
+// ── PkInvite ─────────────────────────────────────────────────────────────────
+// FK fields stored as bare strings (no Prisma relations) — PK records are ephemeral,
+// referenced entities are cleaned up independently at service layer.
+model PkInvite {
+  id           String   @id @default(uuid())
+  matchId      String?  @unique
+  fromRoomId   String
+  toRoomId     String
+  fromHostId   String
+  toHostId     String
+  durationSecs Int
+  status       String   @default("pending") // pending | accepted | declined | expired
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([toHostId, status])
+  @@map("pk_invites")
+}
+
+// ── NormalBattle ─────────────────────────────────────────────────────────────
+// FK fields stored as bare strings — battle records are ephemeral, referenced
+// entities are cleaned up independently at service layer.
+model NormalBattle {
+  id             String    @id @default(uuid())
+  roomId         String
+  hostId         String
+  participantAId String
+  participantBId String
+  mode           String
+  status         String    @default("active") // active | ended | cancelled
+  winnerId       String?
+  scoreA         Int       @default(0)
+  scoreB         Int       @default(0)
+  durationSecs   Int
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([roomId, status])
+  @@map("normal_battles")
+}
+
+// ── CalculatorSession ────────────────────────────────────────────────────────
+model CalculatorSession {
+  id              String                       @id @default(uuid())
+  roomId          String
+  room            Room                         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  status          String                       @default("active") // active | ended
+  durationSeconds Int?
+  endsAt          DateTime?
+  startedAt       DateTime                     @default(now())
+  endedAt         DateTime?
+  scores          CalculatorSeatScore[]
+  contributions   CalculatorGiftContribution[]
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  @@index([roomId, status])
+  @@map("calculator_sessions")
+}
+
+// ── CalculatorSeatScore ──────────────────────────────────────────────────────
+model CalculatorSeatScore {
+  id           String            @id @default(uuid())
+  sessionId    String
+  session      CalculatorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roomId       String
+  userId       String
+  user         User              @relation("CalculatorScores", fields: [userId], references: [id], onDelete: Cascade)
+  seatPosition Int
+  points       Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+  @@index([roomId])
+  @@map("calculator_seat_scores")
+}
+
+// ── CalculatorGiftContribution ───────────────────────────────────────────────
+// Tracks each gifter's running total for the session so the host/admin can
+// see who contributed how many points.
+model CalculatorGiftContribution {
+  id          String            @id @default(uuid())
+  sessionId   String
+  session     CalculatorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roomId      String
+  senderId    String
+  sender      User              @relation("CalcContribSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User              @relation("CalcContribRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  points      Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([sessionId, senderId, recipientId])
+  @@index([sessionId])
+  @@index([sessionId, recipientId])
+  @@map("calculator_gift_contributions")
+}
+
+// ── PayrollAgentProfile ───────────────────────────────────────────────────────
+// Country payroll holder for bean withdrawal payouts (distinct from PayrollRecord).
+model PayrollAgentProfile {
+  userId            String   @id
+  user              User     @relation("PayrollAgentProfile", fields: [userId], references: [id], onDelete: Cascade)
+  payrollId         String   @unique
+  countryCode       String
+  status            String   @default("active") // active | frozen | suspended
+  commissionPercent Decimal  @default(0) @db.Decimal(5, 2)
+  riskScore         Int      @default(0)
+  acceptingOrders   Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([countryCode, status])
+  @@map("payroll_agent_profiles")
+}
+
+// ── PayrollLedgerEntry ─────────────────────────────────────────────────────────
+model PayrollLedgerEntry {
+  id                  String            @id @default(uuid())
+  agentUserId         String
+  agent               User              @relation("PayrollLedgerAgent", fields: [agentUserId], references: [id], onDelete: Cascade)
+  withdrawalRequestId String            @unique
+  withdrawalRequest   WithdrawalRequest @relation("WithdrawalLedgerEntry", fields: [withdrawalRequestId], references: [id], onDelete: Cascade)
+  beansAmount         BigInt
+  commissionBeans     BigInt            @default(0)
+  type                String // withdrawal_payout | commission | adjustment | admin_override
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([agentUserId, createdAt])
+  @@map("payroll_ledger_entries")
+}
+
+// ── PayrollRecord ─────────────────────────────────────────────────────────────
+model PayrollRecord {
+  id            String    @id @default(uuid())
+  recipientId   String
+  recipientType String // host | agent
+  amountBeans   Int
+  periodStart   DateTime
+  periodEnd     DateTime
+  status        String    @default("pending") // pending | paid | rejected
+  notes         String    @default("")
+  paidAt        DateTime?
+  paidByAdminId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  recipient User @relation("PayrollRecipient", fields: [recipientId], references: [id])
+
+  @@index([recipientId])
+  @@index([status])
+  @@map("payroll_records")
+}
+
+// ── RoomMusicTrack ────────────────────────────────────────────────────────────
+model RoomMusicTrack {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name      String
+  url       String
+  position  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomId, position])
+  @@map("room_music_tracks")
+}
+
+// ── UserMusicTrack ────────────────────────────────────────────────────────────
+model UserMusicTrack {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation("UserMusicLibrary", fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  url       String
+  mimeType  String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_music_tracks")
+}

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "a77ae84c-cca1-4769-8ddb-43047ba94951"
+      }
+    },
+    "android": {
+      "package": "com.hakalive.app"
+    }
+  }
+}

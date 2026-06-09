@@ -1,0 +1,23 @@
+category,service,provider,purpose,plan_or_tier,monthly_cost_usd,billing_type,notes
+Hosting,Backend API,Render,Express API + Socket.io + Nginx,2x Standard Web Service,60,fixed,"Range $50-70/mo ($25/instance). Set ENABLE_SCHEDULER=false when worker service runs separately."
+Hosting,Background worker,Render,BullMQ + node-cron schedulers,1x Starter or Standard,15,fixed,"Range $7-25/mo. Run node dist/worker.js with ENABLE_SCHEDULER=true. Required for production; not optional."
+Hosting,Redis cache,Render,Socket.io pub/sub + leaderboards + BullMQ,1 GB managed Redis,20,fixed,Flat $20/mo. Predictable vs serverless Redis at high command volume.
+Hosting,Admin panel (optional),Render,Vue admin SPA static deploy,Static Site,7,fixed,Optional. $0 if admin is bundled in backend Docker image. Add $7 to total only if using isolated staging static site.
+Data,Database + Auth + Storage,Supabase,Postgres + Supabase Auth + Storage + Realtime,Pro plan,25,fixed,Includes 8GB Postgres 100GB storage unlimited Auth users. DATABASE_URL points here.
+Data,Extra storage (optional),Supabase,Media over 100GB included,Pay-as-you-go,0,fixed,Budget $10-20/mo when heavy uploads exceed 100GB ($0.021/GB). Set monthly_cost_usd when needed.
+Mobile,EAS Build,Expo,Android/iOS CI builds,Free tier,0,included_in_plan,30 builds/month total (up to ~15 iOS + 15 Android). Upgrade Production plan $29/mo only if needed.
+Stores,Google Play Console,Google,Android app distribution,Developer registration (one-time $25),2.08,one_time_amortized,$25 one-time fee amortized over 12 months. No recurring monthly platform fee.
+Stores,Apple Developer Program,Apple,iOS TestFlight + App Store,$99/year,8.25,one_time_amortized,Required for iOS distribution. Amortized over 12 months.
+AWS,Rekognition face auth,AWS,Face verification (IndexFaces DetectFaces),Pay per image,0,usage_based_excluded,"~$0.001/image tier 1. No monthly platform fee. Run apps/backend/scripts/setup-rekognition.ts per env. See production-stack.md."
+AWS,S3 (optional),AWS,Object storage if not on Supabase,Standard storage,0,fixed,Optional. Most assets use Supabase Storage; set cost if using S3 alongside.
+Auth,SMS OTP (via Supabase),Twilio,Phone OTP when Twilio is Supabase SMS provider,Per verification,0,usage_based_excluded,Billed per SMS through Twilio or provider configured in Supabase dashboard—not a fixed subscription. Mobile uses supabase.auth.signInWithOtp.
+Auth,Push notifications,Firebase,FCM via Firebase Admin SDK,Blaze (FCM free tier),0,included_in_plan,Free up to ~1M messages/day. Keep Firebase project for FCM even when auth is Supabase-first.
+Payments,Stripe,Stripe,Coin purchases (card Apple Pay Google Pay),Per transaction,0,usage_based_excluded,No monthly platform fee; card processing fees per payment. Coins credited only in webhook handler.
+Payments,Razorpay,Razorpay,Regional payment gateway (if enabled),Per transaction,0,usage_based_excluded,No monthly platform fee; per-transaction fees when enabled.
+Live streaming,Agora RTC,Agora,Live audio/video rooms,Per participant-minute,0,usage_based_excluded,"Largest variable cost. Audio ~$0.99/1000 participant-minutes. Set hard spend alert in Agora dashboard. See production-stack.md."
+Monitoring,Sentry / Better Stack,Sentry / Better Stack,Error tracking + uptime,Free / Starter,0,included_in_plan,Free tier sufficient early stage; budget up to ~$20/mo at scale.
+CDN,Cloudflare (optional),Cloudflare,CDN + WAF,Pro,0,fixed,Optional $20/mo Pro plan per production-stack.md. Use $0 row if on free tier.
+Domain,Domain name,Registrar,DNS + app links,hakalive.com etc,1.25,one_time_amortized,~$12-15/year amortized. Required for production invite universal links (docs/deploy/invite-universal-links/).
+Reference,Variable usage,,,Not in fixed total,,0,usage_based_excluded,"Agora OTP SMS Rekognition Stripe/Razorpay fees: see docs/production-stack.md Variable (Usage-Based) section."
+,,,,,,,,
+TOTAL_FIXED_MONTHLY,,,,Recommended base stack (mid-range),130.33,fixed,"Sum: API 60 + worker 15 + redis 20 + supabase 25 + Play 2.08 + Apple 8.25. Excludes domain ($1.25 amortized) optional admin static ($7) extra Supabase storage Cloudflare Pro. Lean ~$110-135/mo; with optionals ~$165-210/mo."
