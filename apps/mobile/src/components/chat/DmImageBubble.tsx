@@ -53,7 +53,6 @@ export function DmImageBubble({ mediaUrl, caption, isMine, onPress }: Props) {
 
 const styles = StyleSheet.create({
   bubble: {
-    maxWidth: '72%',
     borderRadius: Radius.lg,
     padding: Spacing.xs,
     backgroundColor: '#FFF',

@@ -829,6 +829,18 @@ export function DMConversationScreen({ route, navigation }: Props) {
               avatar: item.sender.avatar ?? null,
             };
 
+            const structuredCard = resolveStructuredDmCard(item.messageType, item.content);
+            const bubbleMaxWidthRatio =
+              structuredCard === 'withdrawal_update'
+                ? 0.64
+                : item.messageType === 'agent_application' ||
+                    item.messageType === 'sub_agent_invite' ||
+                    structuredCard === 'coin_transfer' ||
+                    structuredCard === 'seller_recharge_approved' ||
+                    structuredCard === 'support_reply'
+                  ? 0.92
+                  : undefined;
+
             const bubbleContent = item.isDeleted ? (
               <DmDeletedBubble isMine={isMine} />
             ) : resolveStructuredDmCard(item.messageType, item.content) === 'coin_transfer' ? (
@@ -1096,11 +1108,10 @@ export function DMConversationScreen({ route, navigation }: Props) {
                   mineUser={mineUser}
                   theirsUser={theirsUser}
                   isRead={item.isRead}
+                  maxWidthRatio={bubbleMaxWidthRatio}
                   onBubbleLongPress={item.isDeleted ? undefined : () => openActions(item)}
                   avatarAtTop={
-                    !isMine &&
-                    withdrawalPeer &&
-                    resolveStructuredDmCard(item.messageType, item.content) === 'withdrawal_update'
+                    !isMine && withdrawalPeer && structuredCard === 'withdrawal_update'
                   }
                   peerLocalAvatar={
                     !isMine && hakaPeer
@@ -1428,11 +1439,6 @@ const styles = StyleSheet.create({
   },
 
   bubble: {
-    // flexShrink lets the bubble's text receive its proper available width (up
-    // to maxWidth) inside the flexDirection:'row' message row. Without it, RN
-    // measures the text at min-content width and wraps it character-by-character.
-    flexShrink: 1,
-    maxWidth: '72%',
     borderRadius: Radius.lg,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
@@ -1441,13 +1447,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: '#E8E0F5',
-    maxWidth: '92%',
     paddingVertical: Spacing.md,
   },
   withdrawalCardWrap: {
     alignSelf: 'flex-start',
-    flexShrink: 1,
-    maxWidth: '64%',
   },
   bubbleAgencyTitle: {
     fontSize: 13,

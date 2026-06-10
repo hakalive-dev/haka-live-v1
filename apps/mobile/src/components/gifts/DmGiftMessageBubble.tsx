@@ -86,7 +86,6 @@ export function DmGiftMessageBubble({
 
 const styles = StyleSheet.create({
   bubble: {
-    maxWidth: '72%',
     borderRadius: Radius.lg,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
