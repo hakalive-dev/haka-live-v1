@@ -6,6 +6,11 @@ import StatusBadge from '@/components/common/StatusBadge.vue'
 import RowActionMenu from '@/components/common/RowActionMenu.vue'
 import RowActionMenuItem from '@/components/common/RowActionMenuItem.vue'
 import { useAuthStore } from '@/stores/auth'
+import {
+  formatGiftCategory,
+  GIFT_CATEGORY_OPTIONS,
+  normalizeGiftFormCategory,
+} from '@/lib/giftCategories'
 
 const auth = useAuthStore()
 
@@ -18,7 +23,7 @@ const gifts = ref<any[]>([])
 const loading = ref(true)
 const showForm = ref(false)
 const editingGift = ref<any>(null)
-const form = ref({ name: '', coinCost: 0, beanValue: 0, category: 'basic', svgaAsset: '' })
+const form = ref({ name: '', coinCost: 0, beanValue: 0, category: 'bag', svgaAsset: '' })
 const formError = ref('')
 const submitting = ref(false)
 
@@ -49,7 +54,7 @@ async function fetchGifts() {
 
 function openCreate() {
   editingGift.value = null
-  form.value = { name: '', coinCost: 0, beanValue: 0, category: 'basic', svgaAsset: '' }
+  form.value = { name: '', coinCost: 0, beanValue: 0, category: 'bag', svgaAsset: '' }
   imageFile.value = null
   svgaFile.value = null
   imagePreview.value = ''
@@ -63,7 +68,7 @@ function openEdit(gift: any) {
     name: gift.name,
     coinCost: gift.coinCost,
     beanValue: gift.beanValue,
-    category: gift.category,
+    category: normalizeGiftFormCategory(gift.category),
     svgaAsset: isRemoteUrl(gift.svgaAsset) ? gift.svgaAsset : '',
   }
   imageFile.value = null
@@ -230,7 +235,7 @@ onMounted(fetchGifts)
             </td>
             <td>{{ gift.coinCost.toLocaleString() }}</td>
             <td>{{ gift.beanValue.toLocaleString() }}</td>
-            <td><StatusBadge :value="gift.category" /></td>
+            <td><StatusBadge :value="formatGiftCategory(gift.category)" /></td>
             <td class="cell-assets">
               <span v-if="gift.image" class="asset-tag">IMG</span>
               <span v-if="gift.svgaAsset" class="asset-tag asset-svga">SVGA</span>
@@ -268,9 +273,13 @@ onMounted(fetchGifts)
               <div class="form-group">
                 <label>Category</label>
                 <select v-model="form.category" class="form-input">
-                  <option value="basic">Basic</option>
-                  <option value="premium">Premium</option>
-                  <option value="special">Special</option>
+                  <option
+                    v-for="opt in GIFT_CATEGORY_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
                 </select>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import {
+  isBagGiftCategory,
   mergeGiftEffectQueueSorted,
   normalizeGiftCoinCost,
   type GiftSpecialEffect,
@@ -50,8 +51,7 @@ export function useGiftEffectPlayback() {
     (gift: Gift, qty: number, senderName: string) => {
       const hasSvga =
         typeof gift.svgaAsset === 'string' && gift.svgaAsset.trim().length > 0;
-      const isBasic = (gift.category ?? '').toLowerCase() === 'basic';
-      if (isBasic && !hasSvga) return;
+      if (isBagGiftCategory(gift.category) && !hasSvga) return;
 
       enqueueGiftEffects(buildGiftEffectEntries(gift, qty, senderName));
     },

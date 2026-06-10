@@ -203,23 +203,23 @@ async function ensureSeedAgentAgency() {
 
 const GIFTS = [
   // Basic gifts — beanValue now matches coinCost; distribution math applies the 70% once.
-  { name: 'Rose',        icon: '🌹', image: null, svgaAsset: null, coinCost: 10,     beanValue: 10,     category: 'basic',   animationType: '',           soundKey: '',        order: 0  },
-  { name: 'Heart',       icon: '❤️', image: null, svgaAsset: null, coinCost: 50,     beanValue: 50,     category: 'basic',   animationType: '',           soundKey: '',        order: 1  },
-  { name: 'Lollipop',    icon: '🍭', image: null, svgaAsset: null, coinCost: 99,     beanValue: 99,     category: 'basic',   animationType: '',           soundKey: '',        order: 2  },
-  { name: 'Ice Cream',   icon: '🍦', image: null, svgaAsset: null, coinCost: 199,    beanValue: 199,    category: 'basic',   animationType: '',           soundKey: '',        order: 3  },
-  { name: 'Teddy Bear',  icon: '🧸', image: null, svgaAsset: null, coinCost: 299,    beanValue: 299,    category: 'basic',   animationType: '',           soundKey: '',        order: 4  },
+  { name: 'Rose',        icon: '🌹', image: null, svgaAsset: null, coinCost: 10,     beanValue: 10,     category: 'bag',   animationType: '',           soundKey: '',        order: 0  },
+  { name: 'Heart',       icon: '❤️', image: null, svgaAsset: null, coinCost: 50,     beanValue: 50,     category: 'bag',   animationType: '',           soundKey: '',        order: 1  },
+  { name: 'Lollipop',    icon: '🍭', image: null, svgaAsset: null, coinCost: 99,     beanValue: 99,     category: 'bag',   animationType: '',           soundKey: '',        order: 2  },
+  { name: 'Ice Cream',   icon: '🍦', image: null, svgaAsset: null, coinCost: 199,    beanValue: 199,    category: 'bag',   animationType: '',           soundKey: '',        order: 3  },
+  { name: 'Teddy Bear',  icon: '🧸', image: null, svgaAsset: null, coinCost: 299,    beanValue: 299,    category: 'bag',   animationType: '',           soundKey: '',        order: 4  },
 
   // Premium gifts (emoji + sound)
-  { name: 'Fireworks',   icon: '🎆', image: null, svgaAsset: null, coinCost: 500,    beanValue: 500,    category: 'premium', animationType: '',           soundKey: 'fanfare', order: 5  },
-  { name: 'Crown',       icon: '👑', image: null, svgaAsset: null, coinCost: 1_000,  beanValue: 1_000,  category: 'premium', animationType: '',           soundKey: 'sparkle', order: 6  },
-  { name: 'Diamond',     icon: '💎', image: null, svgaAsset: null, coinCost: 2_000,  beanValue: 2_000,  category: 'premium', animationType: '',           soundKey: 'sparkle', order: 7  },
-  { name: 'Rocket',      icon: '🚀', image: null, svgaAsset: null, coinCost: 5_000,  beanValue: 5_000,  category: 'premium', animationType: '',           soundKey: 'boom',    order: 8  },
+  { name: 'Fireworks',   icon: '🎆', image: null, svgaAsset: null, coinCost: 500,    beanValue: 500,    category: 'hot', animationType: '',           soundKey: 'fanfare', order: 5  },
+  { name: 'Crown',       icon: '👑', image: null, svgaAsset: null, coinCost: 1_000,  beanValue: 1_000,  category: 'hot', animationType: '',           soundKey: 'sparkle', order: 6  },
+  { name: 'Diamond',     icon: '💎', image: null, svgaAsset: null, coinCost: 2_000,  beanValue: 2_000,  category: 'hot', animationType: '',           soundKey: 'sparkle', order: 7  },
+  { name: 'Rocket',      icon: '🚀', image: null, svgaAsset: null, coinCost: 5_000,  beanValue: 5_000,  category: 'hot', animationType: '',           soundKey: 'boom',    order: 8  },
 
   // Special gifts (SVGA animation + thumbnail)
-  { name: 'Love Ride',     icon: '💕', image: 'gifts/86.png',  svgaAsset: 'gifts/86.svga',  coinCost: 9_999,  beanValue: 9_999,  category: 'special', animationType: 'svga', soundKey: 'fanfare', order: 9  },
-  { name: 'Golden Palace', icon: '🕌', image: 'gifts/93.png',  svgaAsset: 'gifts/93.svga',  coinCost: 15_000, beanValue: 15_000, category: 'special', animationType: 'svga', soundKey: 'fanfare', order: 10 },
-  { name: 'Moonlight',     icon: '🌙', image: 'gifts/116.png', svgaAsset: 'gifts/116.svga', coinCost: 25_000, beanValue: 25_000, category: 'special', animationType: 'svga', soundKey: 'sparkle', order: 11 },
-  { name: 'Magic Lamp',    icon: '🧞', image: 'gifts/121.png', svgaAsset: 'gifts/121.svga', coinCost: 50_000, beanValue: 50_000, category: 'special', animationType: 'svga', soundKey: 'boom',    order: 12 },
+  { name: 'Love Ride',     icon: '💕', image: 'gifts/86.png',  svgaAsset: 'gifts/86.svga',  coinCost: 9_999,  beanValue: 9_999,  category: 'lucky', animationType: 'svga', soundKey: 'fanfare', order: 9  },
+  { name: 'Golden Palace', icon: '🕌', image: 'gifts/93.png',  svgaAsset: 'gifts/93.svga',  coinCost: 15_000, beanValue: 15_000, category: 'lucky', animationType: 'svga', soundKey: 'fanfare', order: 10 },
+  { name: 'Moonlight',     icon: '🌙', image: 'gifts/116.png', svgaAsset: 'gifts/116.svga', coinCost: 25_000, beanValue: 25_000, category: 'lucky', animationType: 'svga', soundKey: 'sparkle', order: 11 },
+  { name: 'Magic Lamp',    icon: '🧞', image: 'gifts/121.png', svgaAsset: 'gifts/121.svga', coinCost: 50_000, beanValue: 50_000, category: 'lucky', animationType: 'svga', soundKey: 'boom',    order: 12 },
 ];
 
 async function main() {

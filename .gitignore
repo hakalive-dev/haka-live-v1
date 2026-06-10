@@ -13,6 +13,10 @@ build/
 # Local dev uploads (fallback when Supabase not configured)
 uploads/
 
+# Database backups (contain real user data — NEVER commit)
+backups/
+*.dump
+
 # Node / React Native
 node_modules/
 .expo/

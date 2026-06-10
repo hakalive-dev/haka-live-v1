@@ -261,16 +261,17 @@ describe('GET /api/v1/chat/conversations', () => {
       { ...recipientProfile, settings: { invisibleOnline: false } },
     ]);
     mockFollow.findMany.mockResolvedValue([]);
-    mockDM.findFirst.mockResolvedValue({ id: 'dm-1' });
-    mockDM.findUnique.mockResolvedValue({
-      id: 'dm-1',
-      content: 'Latest message',
-      isRead: false,
-      createdAt: '2026-04-07T10:00:00Z',
-      sender: recipientProfile,
-      recipient: senderProfile,
-      ...baseDmFields(),
-    });
+    mockDM.findMany.mockResolvedValue([
+      {
+        id: 'dm-1',
+        content: 'Latest message',
+        isRead: false,
+        createdAt: '2026-04-07T10:00:00Z',
+        sender: recipientProfile,
+        recipient: senderProfile,
+        ...baseDmFields(),
+      },
+    ]);
 
     const res = await request(app)
       .get('/api/v1/chat/conversations')

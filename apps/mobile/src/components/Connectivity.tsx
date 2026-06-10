@@ -28,8 +28,8 @@ const ConnectivityContext = createContext<ConnectivityValue>({
   recheck: () => {},
 });
 
-/** Re-probe roughly this often while we believe the backend is unreachable. */
-const AUTO_RETRY_MS = 10_000;
+/** Re-probe while unreachable — spaced out so we don't stack 25s probes. */
+const AUTO_RETRY_MS = 45_000;
 
 export function ConnectivityProvider({ children }: React.PropsWithChildren) {
   const [reachable, setReachable] = useState<boolean | null>(null);

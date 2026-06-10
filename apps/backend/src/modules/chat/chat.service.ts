@@ -694,15 +694,6 @@ export async function forwardDirectMessage(
   return serializeDM(dm);
 }
 
-async function resolveVisibleLastMessageId(userId: string, otherId: string): Promise<string | null> {
-  const row = await prisma.directMessage.findFirst({
-    where: dmVisibleWhere(userId, otherId),
-    orderBy: { createdAt: 'desc' },
-    select: { id: true },
-  });
-  return row?.id ?? null;
-}
-
 /**
  * Get conversation list for a user (latest message per conversation partner).
  */
@@ -728,6 +719,10 @@ export async function getConversations(userId: string) {
       JOIN direct_messages dm
         ON (dm."senderId" = ${userId} AND dm."recipientId" = p."otherId")
         OR (dm."senderId" = p."otherId" AND dm."recipientId" = ${userId})
+      WHERE NOT EXISTS (
+        SELECT 1 FROM direct_message_hidden h
+        WHERE h."messageId" = dm.id AND h."userId" = ${userId}
+      )
       ORDER BY p."otherId", dm."createdAt" DESC
     ),
     unreads AS (
@@ -778,32 +773,34 @@ export async function getConversations(userId: string) {
   );
   const userMap = new Map(users.map((u) => [u.id, serializeUserSummary(u)]));
 
-  const rows = await Promise.all(
-    conversations.map(async (c) => {
-      const visibleId = await resolveVisibleLastMessageId(userId, c.otherId);
-      let lastMessage = null;
-      if (visibleId) {
-        const fetched = await prisma.directMessage.findUnique({
-          where: { id: visibleId },
+  const lastMessageIds = conversations
+    .map((c) => c.lastMessageId)
+    .filter((id): id is string => Boolean(id));
+
+  const lastMessages =
+    lastMessageIds.length === 0
+      ? []
+      : await prisma.directMessage.findMany({
+          where: { id: { in: lastMessageIds } },
           select: dmSelect(),
         });
-        if (fetched) lastMessage = serializeDM(fetched);
-      }
 
-      return {
-        otherUser: userMap.get(c.otherId) ?? null,
-        lastMessage,
-        unreadCount: Number(c.unreadCount),
-        isFollowing: iFollowSet.has(c.otherId),
-        isFamiliar: mutualSet.has(c.otherId),
-        isOnline: isVisibleOnlineToViewer(
-          c.otherId,
-          userId,
-          invisibleMap.get(c.otherId) ?? false,
-        ),
-      };
-    }),
+  const lastMessageMap = new Map(
+    lastMessages.map((dm) => [dm.id, serializeDM(dm)]),
   );
+
+  const rows = conversations.map((c) => ({
+    otherUser: userMap.get(c.otherId) ?? null,
+    lastMessage: lastMessageMap.get(c.lastMessageId) ?? null,
+    unreadCount: Number(c.unreadCount),
+    isFollowing: iFollowSet.has(c.otherId),
+    isFamiliar: mutualSet.has(c.otherId),
+    isOnline: isVisibleOnlineToViewer(
+      c.otherId,
+      userId,
+      invisibleMap.get(c.otherId) ?? false,
+    ),
+  }));
 
   // Always surface Haka Team in the inbox so users can open one-way notices before any DM exists.
   const hakaTeamId = getHakaTeamUserId();

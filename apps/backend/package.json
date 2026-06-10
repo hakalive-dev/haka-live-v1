@@ -12,6 +12,7 @@
     "otp:smoke": "ts-node scripts/email-otp-smoke.ts",
     "test": "jest --runInBand --forceExit --detectOpenHandles",
     "test:db:reset": "bash scripts/test-db-reset.sh",
+    "backup:db": "bash scripts/backup-db.sh",
     "prisma:resolve:add_room_members": "npx prisma migrate resolve --schema prisma/schema.prisma --applied 20260508185200_add_room_members",
     "lint": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",

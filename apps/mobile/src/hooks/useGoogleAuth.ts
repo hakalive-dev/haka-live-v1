@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Constants from 'expo-constants';
 import { useDispatch } from 'react-redux';
 import { authApi } from '@api/auth';
+import { warmBackendForAuth } from '@api/client';
 import { AppDispatch } from '../store';
 import { supabase } from '../lib/supabase';
 import { persistAuthSession } from '../utils/persistAuthSession';
@@ -45,6 +46,7 @@ export function useGoogleAuth() {
     setLoading(true);
     setError(null);
     const t0 = authTimingMark();
+    const backendWarm = warmBackendForAuth();
     try {
       if (!playServicesVerified) {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -72,6 +74,7 @@ export function useGoogleAuth() {
         throw new Error(sbError?.message ?? 'Supabase sign-in failed.');
       }
 
+      await backendWarm;
       const tBackend = authTimingMark();
       const result = await authApi.loginWithSupabase(sessionData.session.access_token);
       logAuthTimingElapsed('backend_auth_done', tBackend);

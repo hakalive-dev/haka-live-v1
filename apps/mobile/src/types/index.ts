@@ -340,7 +340,7 @@ export interface Gift {
   svgaAsset: string | null;
   coinCost: number;
   beanValue: number;
-  category: "basic" | "premium" | "special";
+  category: "bag" | "hot" | "lucky" | "event" | "svip" | "customized";
   animationType: string;
   soundKey: string;
   order: number;

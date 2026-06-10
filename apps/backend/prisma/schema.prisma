@@ -593,7 +593,7 @@ model Gift {
   svgaAsset     String? // optional SVGA animation file path
   coinCost      Int
   beanValue     Int
-  category      String   @default("basic") // basic | premium | special
+  category      String   @default("bag") // bag | hot | lucky | event | svip | customized
   animationType String   @default("") // fireworks | hearts_shower | star_burst | ""
   soundKey      String   @default("") // fanfare | sparkle | boom | ""
   isActive      Boolean  @default(true)

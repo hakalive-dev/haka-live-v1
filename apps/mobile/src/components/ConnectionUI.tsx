@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getApiHost } from '@api/client';
 import { Colors, Spacing } from '@/theme';
 
 /**
@@ -31,8 +32,8 @@ export function BackendUnreachable({
       />
       <Text style={styles.title}>Can’t reach Haka Live</Text>
       <Text style={styles.body}>
-        We couldn’t connect to the server. It may be starting up — please check your
-        connection and try again.
+        We couldn’t connect to {getApiHost()}. The server may be starting up — check
+        your internet connection and try again.
       </Text>
       <TouchableOpacity
         style={[styles.button, checking && styles.buttonDisabled]}

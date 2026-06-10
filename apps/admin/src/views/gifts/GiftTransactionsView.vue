@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import * as giftsApi from '@/api/gifts'
 import Pagination from '@/components/common/Pagination.vue'
+import { formatGiftCategory } from '@/lib/giftCategories'
 
 function isRemoteUrl(value: string | null | undefined): boolean {
   return !!value && /^https?:\/\//.test(value)
@@ -95,7 +96,7 @@ watch(() => pagination.value.page, fetchTransactions)
             <span v-else class="hero-thumb-placeholder">{{ (selected.gift?.name || '?').charAt(0).toUpperCase() }}</span>
             <div>
               <div class="hero-name">{{ selected.gift?.name }}</div>
-              <div class="hero-cat dim">{{ selected.gift?.category }}</div>
+              <div class="hero-cat dim">{{ formatGiftCategory(selected.gift?.category) }}</div>
             </div>
           </div>
           <div class="detail-grid">

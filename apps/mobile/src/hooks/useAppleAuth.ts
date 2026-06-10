@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { useDispatch } from 'react-redux';
 import { authApi } from '@api/auth';
+import { warmBackendForAuth } from '@api/client';
 import { AppDispatch } from '../store';
 import { supabase } from '../lib/supabase';
 import { persistAuthSession } from '../utils/persistAuthSession';
@@ -69,6 +70,7 @@ export function useAppleAuth() {
     setLoading(true);
     setError(null);
     const t0 = authTimingMark();
+    const backendWarm = warmBackendForAuth();
     try {
       const rawNonce = Crypto.randomUUID();
       const hashedNonce = await Crypto.digestStringAsync(
@@ -106,6 +108,7 @@ export function useAppleAuth() {
         throw new Error(sbError?.message ?? 'Supabase sign-in failed.');
       }
 
+      await backendWarm;
       const tBackend = authTimingMark();
       const result = await authApi.loginWithSupabase(sessionData.session.access_token);
       logAuthTimingElapsed('backend_auth_done', tBackend);

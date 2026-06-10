@@ -239,15 +239,21 @@ function getBackendOrigin(): string {
   }
 }
 
-/**
- * Lightweight reachability probe used by the startup connectivity gate.
- * Resolves `true` if the backend answers with ANY HTTP response (even an error
- * status — that still proves the server is up), `false` on a network error or
- * timeout. Hits the unauthenticated `/health` endpoint.
- */
-export async function checkBackendReachable(timeoutMs = 10_000): Promise<boolean> {
+/** Per-attempt timeout — Render cold starts can exceed 10s on mobile networks. */
+const REACHABILITY_TIMEOUT_MS = 25_000;
+const REACHABILITY_ATTEMPTS = 2;
+const REACHABILITY_RETRY_DELAY_MS = 2_000;
+
+let healthProbeInFlight: Promise<boolean> | null = null;
+
+function reachabilityDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function probeBackendHealthOnce(timeoutMs: number, attempt: number): Promise<boolean> {
   const origin = getBackendOrigin();
   if (!origin) return false;
+
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -259,18 +265,65 @@ export async function checkBackendReachable(timeoutMs = 10_000): Promise<boolean
     logDiagnostic('lifecycle', 'reachability_ok', {
       status: res.status,
       elapsedMs: Date.now() - startedAt,
+      attempt,
     });
+    if (__DEV__) {
+      console.log(`[Haka] Backend reachable at ${origin}/health (attempt ${attempt})`);
+    }
     return true;
   } catch (err) {
     const isAbort = err instanceof Error && err.name === 'AbortError';
     logDiagnostic(isAbort ? 'api_timeout' : 'api_network', 'reachability_failed', {
       origin,
       elapsedMs: Date.now() - startedAt,
+      attempt,
     });
+    if (__DEV__) {
+      console.warn(
+        `[Haka] Reachability attempt ${attempt} failed for ${origin}`,
+        isAbort ? 'timeout' : err,
+      );
+    }
     return false;
   } finally {
     clearTimeout(tid);
   }
+}
+
+/**
+ * Lightweight reachability probe used by the startup connectivity gate.
+ * Resolves `true` if the backend answers with ANY HTTP response (even an error
+ * status — that still proves the server is up), `false` on a network error or
+ * timeout. Hits the unauthenticated `/health` endpoint.
+ */
+export async function checkBackendReachable(
+  timeoutMs = REACHABILITY_TIMEOUT_MS,
+  maxAttempts = REACHABILITY_ATTEMPTS,
+): Promise<boolean> {
+  if (healthProbeInFlight) {
+    return healthProbeInFlight;
+  }
+
+  healthProbeInFlight = (async () => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (await probeBackendHealthOnce(timeoutMs, attempt)) {
+        return true;
+      }
+      if (attempt < maxAttempts) {
+        await reachabilityDelay(REACHABILITY_RETRY_DELAY_MS);
+      }
+    }
+    return false;
+  })().finally(() => {
+    healthProbeInFlight = null;
+  });
+
+  return healthProbeInFlight;
+}
+
+/** Warm Render while the user completes Google/Apple UI (runs in parallel with native auth). */
+export function warmBackendForAuth(): Promise<boolean> {
+  return checkBackendReachable(REACHABILITY_TIMEOUT_MS, REACHABILITY_ATTEMPTS);
 }
 
 async function _request<T>(spec: RequestSpec, _retry = false): Promise<FetchResponse<T>> {
@@ -448,29 +501,7 @@ export const apiClient = {
   },
 };
 
-/** Fire-and-forget warm-up ping so Render.com cold-starts complete before the user hits a real endpoint. */
+/** Fire-and-forget warm-up ping — shares the deduped reachability probe. */
 export function pingBackend(): void {
-  const origin = getBackendOrigin();
-  if (!origin) return;
-  const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 35_000);
-  const healthStarted = Date.now();
-  fetch(`${origin}/health`, {
-    headers: { 'ngrok-skip-browser-warning': 'true' },
-    signal: controller.signal,
-  })
-    .then((res) => {
-      logDiagnostic('lifecycle', 'health_ping', {
-        status: res.status,
-        elapsedMs: Date.now() - healthStarted,
-      });
-    })
-    .catch((err) => {
-      const isAbort = err instanceof Error && err.name === 'AbortError';
-      logDiagnostic(isAbort ? 'api_timeout' : 'api_network', 'health_ping_failed', {
-        origin,
-        elapsedMs: Date.now() - healthStarted,
-      });
-    })
-    .finally(() => clearTimeout(tid));
+  void checkBackendReachable(35_000, 1);
 }

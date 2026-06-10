@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthStackParamList } from '@navigation/types';
-import { pingBackend, warmRequestAuthCache } from '../../api/client';
+import { warmRequestAuthCache } from '../../api/client';
 import { useGoogleAuth } from '../../hooks/useGoogleAuth';
 import { useAppleAuth } from '../../hooks/useAppleAuth';
 import { HAKA_LOGO_MARK } from '@/constants/app-logo';
@@ -49,7 +49,6 @@ export function LoginScreen() {
 
   useEffect(() => {
     void warmRequestAuthCache();
-    pingBackend();
   }, []);
 
   const authError = googleError ?? appleError;

@@ -16,13 +16,15 @@ export type GiftSpecialEffect = {
   coinCost: number;
 };
 
+import {
+  isBagGiftCategory,
+  isLuckyGiftCategory,
+  normalizeGiftCategory,
+} from '@haka-live/shared-types/gifts';
+
 export type GiftPanelTabKey = 'bag' | 'hot' | 'lucky' | 'event' | 'svip' | 'customized';
 
-const LEGACY_TAB_CATEGORY: Record<'bag' | 'hot' | 'lucky', 'basic' | 'premium' | 'special'> = {
-  bag: 'basic',
-  hot: 'premium',
-  lucky: 'special',
-};
+export { isBagGiftCategory, isLuckyGiftCategory };
 
 /** Coerce API / DM fields that may arrive as strings. */
 export function normalizeGiftCoinCost(
@@ -57,12 +59,11 @@ export function normalizeCatalogueGifts(gifts: Gift[]): Gift[] {
   );
 }
 
-/** Gifts shown per panel tab — includes event / svip / customized category values from the API. */
+/** Gifts shown per panel tab — category matches tab key (legacy values normalized). */
 export function getGiftsForTab(catalogue: Gift[], tab: GiftPanelTabKey): Gift[] {
-  const legacy = LEGACY_TAB_CATEGORY[tab as keyof typeof LEGACY_TAB_CATEGORY];
-  const list = legacy
-    ? catalogue.filter((g) => (g.category ?? '').toLowerCase() === legacy)
-    : catalogue.filter((g) => (g.category ?? '').toLowerCase() === tab);
+  const list = catalogue.filter(
+    (g) => normalizeGiftCategory(g.category) === tab,
+  );
   return sortGiftsByCoinAsc(list);
 }
 

@@ -25,7 +25,7 @@ import { PurchaseSuccessProvider } from './src/components/PurchaseSuccessModal';
 import { SeatInvitePromptProvider } from './src/components/SeatInvitePrompt';
 import { KeyboardSetup } from './src/components/keyboard';
 import { preloadSvgaAssets } from './src/screens/room/SVGAGiftEffect';
-import { pingBackend } from './src/api/client';
+import { API_BASE_URL, pingBackend } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ConnectivityProvider } from './src/components/Connectivity';
 
@@ -33,6 +33,9 @@ function App() {
   useKeepAwake();
 
   React.useEffect(() => {
+    if (__DEV__) {
+      console.log('[Haka] API_BASE_URL:', API_BASE_URL);
+    }
     pingBackend();
     void preloadSvgaAssets();
     // Persist the query cache to disk so warm launches paint from cache.

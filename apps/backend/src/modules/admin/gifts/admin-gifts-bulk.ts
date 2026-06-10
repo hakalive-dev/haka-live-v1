@@ -4,19 +4,21 @@ import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
 import { AppError } from '../../../middleware/error.middleware';
 import { uploadToStorage } from '../../../utils/storage';
+import { GIFT_CATEGORIES, normalizeGiftCategory } from '../../../shared-types/gifts';
 import * as giftsService from './admin-gifts.service';
 
 export const BULK_MAX_ROWS = 50;
 export const BULK_MAX_ZIP_BYTES = 100 * 1024 * 1024;
 export const BULK_CONCURRENCY = 4;
 
-const GIFT_CATEGORIES = ['basic', 'premium', 'special'] as const;
-
 const manifestRowSchema = z.object({
   name: z.string().min(1),
   coinCost: z.coerce.number().int().positive(),
   beanValue: z.coerce.number().int().positive(),
-  category: z.enum(GIFT_CATEGORIES).optional().default('basic'),
+  category: z
+    .string()
+    .optional()
+    .transform((s) => normalizeGiftCategory(s, GIFT_CATEGORIES.BAG)),
   imageFile: z.string().optional().transform((s) => (s?.trim() ? s.trim() : undefined)),
   svgaFile: z.string().optional().transform((s) => (s?.trim() ? s.trim() : undefined)),
   svgaAsset: z
@@ -47,8 +49,8 @@ const TEMPLATE_PNG = Buffer.from(
 const TEMPLATE_SVGA = Buffer.from('<?xml version="1.0"?><svg></svg>', 'utf8');
 
 const TEMPLATE_MANIFEST = `name,coinCost,beanValue,category,imageFile,svgaFile,order,animationType,soundKey,icon
-Sample Rose,10,10,basic,sample.png,,0,,,
-Sample Special,9999,9999,special,sample.png,sample.svga,1,svga,fanfare,
+Sample Rose,10,10,bag,sample.png,,0,,,
+Sample Lucky Gift,9999,9999,lucky,sample.png,sample.svga,1,svga,fanfare,
 `;
 
 export function buildBulkTemplateZip(): Buffer {

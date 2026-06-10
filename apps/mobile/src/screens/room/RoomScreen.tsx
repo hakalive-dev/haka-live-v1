@@ -67,6 +67,8 @@ import { canKickRoomMember, formatRoomKickBanMessage } from "@/utils/roomKick";
 import { bootstrapRoomMusicFromLibrary } from "@/utils/roomMusicBootstrap";
 import { normalizeSeatInvitationPayload } from "@/utils/seatInvitePayload";
 import {
+  isBagGiftCategory,
+  isLuckyGiftCategory,
   mergeGiftEffectQueueSorted,
   normalizeGiftCoinCost,
   type GiftSpecialEffect,
@@ -711,9 +713,9 @@ export function RoomScreen({ route, navigation }: Props) {
         const urls = (catalogue ?? [])
           .filter((g) => typeof g?.svgaAsset === "string" && g.svgaAsset.trim().length > 0)
           .sort((a, b) => {
-            // Prefer specials first, then by order ascending.
-            const aSpecial = String(a.category ?? "").toLowerCase() === "special" ? 0 : 1;
-            const bSpecial = String(b.category ?? "").toLowerCase() === "special" ? 0 : 1;
+            // Prefer lucky-tier gifts first, then by order ascending.
+            const aSpecial = isLuckyGiftCategory(a.category) ? 0 : 1;
+            const bSpecial = isLuckyGiftCategory(b.category) ? 0 : 1;
             if (aSpecial !== bSpecial) return aSpecial - bSpecial;
             return (a.order ?? 0) - (b.order ?? 0);
           })
@@ -749,8 +751,7 @@ export function RoomScreen({ route, navigation }: Props) {
       // Basic gifts only show the toast — unless the gift has an SVGA asset.
       const hasSvga =
         typeof svgaAsset === "string" && svgaAsset.trim().length > 0;
-      const isBasic = (category ?? "").toLowerCase() === "basic";
-      if (isBasic && !hasSvga) return;
+      if (isBagGiftCategory(category) && !hasSvga) return;
       if (!giftEffectsEnabled) return;
       const playCount = Math.max(1, Math.min(50, Math.floor(qty)));
       const baseId = Date.now();
@@ -1244,7 +1245,7 @@ export function RoomScreen({ route, navigation }: Props) {
         const hasSvga =
           typeof (data.gift?.svgaAsset ?? data.svgaKey) === "string" &&
           String(data.gift?.svgaAsset ?? data.svgaKey).trim().length > 0;
-        const isBasic = (data.gift?.category ?? "").toLowerCase() === "basic";
+        const isBagGift = isBagGiftCategory(data.gift?.category);
         const recipientSeat = room?.seats?.find(
           (s) => s.user?.id === data.recipientId,
         );
@@ -1260,7 +1261,7 @@ export function RoomScreen({ route, navigation }: Props) {
           currentUser &&
           (data.senderId === currentUser.id ||
             data.sender?.id === currentUser.id);
-        if (isBasic && !hasSvga && targetPosition != null) {
+        if (isBagGift && !hasSvga && targetPosition != null) {
           const flyId = `fly-${Date.now()}-${Math.random()}`;
           if (!isSelfSend) {
             setFlyingGifts((prev) => [
@@ -2132,8 +2133,7 @@ export function RoomScreen({ route, navigation }: Props) {
     setCoinBalance((prev) => Math.max(0, prev - gift.coinCost * step));
     const hasSvga =
       typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-    const isBasic = (gift.category ?? "").toLowerCase() === "basic";
-    if (isBasic && !hasSvga && seatPosition) {
+    if (isBagGiftCategory(gift.category) && !hasSvga && seatPosition) {
       const flyId = `fly-${Date.now()}-${Math.random()}`;
       setFlyingGifts((prev) => [
         ...prev,
@@ -2244,8 +2244,7 @@ export function RoomScreen({ route, navigation }: Props) {
       // Trigger animation immediately — no waiting for the server
       const hasSvga =
         typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-      const isBasic = (gift.category ?? "").toLowerCase() === "basic";
-      if (isBasic && !hasSvga && seated.position) {
+      if (isBagGiftCategory(gift.category) && !hasSvga && seated.position) {
         const flyId = `fly-${Date.now()}-${Math.random()}`;
         setFlyingGifts((prev) => [
           ...prev,

@@ -32,6 +32,7 @@ import { DmGiftMessageBubble } from '@components/gifts/DmGiftMessageBubble';
 import { DmGiftPopEffect, type DmGiftPopItem } from '@components/gifts/DmGiftPopEffect';
 import {
   GiftEffectOverlay,
+  isBagGiftCategory,
   mergeDmGiftPopQueueSorted,
   normalizeGiftCoinCost,
 } from '@components/gifts/GiftEffectOverlay';
@@ -291,8 +292,7 @@ export function InboxOverlay({ visible, onClose, currentUserId }: Props) {
     (gift: Gift, qty: number, senderName: string) => {
       const hasSvga =
         typeof gift.svgaAsset === 'string' && gift.svgaAsset.trim().length > 0;
-      const isBasic = (gift.category ?? '').toLowerCase() === 'basic';
-      if (isBasic && !hasSvga) {
+      if (isBagGiftCategory(gift.category) && !hasSvga) {
         enqueuePop(gift, qty);
       } else {
         playGiftEffect(gift, qty, senderName);

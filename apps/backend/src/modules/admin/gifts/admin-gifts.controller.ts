@@ -9,6 +9,7 @@ import { bulkImportGiftsFromZip, buildBulkTemplateZip } from './admin-gifts-bulk
 import { ok, created } from '../../../utils/response';
 import { uploadToStorage } from '../../../utils/storage';
 import { AppError } from '../../../middleware/error.middleware';
+import { normalizeGiftCategory, GIFT_CATEGORIES } from '../../../shared-types/gifts';
 
 // Multer — memory storage, max 30 MB per file
 export const uploadMiddleware = multer({
@@ -33,7 +34,10 @@ const createGiftSchema = z.object({
   icon: z.string().optional().transform((s) => (typeof s === 'string' ? s.trim() : '')),
   coinCost: z.coerce.number().int().positive(),
   beanValue: z.coerce.number().int().positive(),
-  category: z.string().optional(),
+  category: z
+    .string()
+    .optional()
+    .transform((s) => (s !== undefined ? normalizeGiftCategory(s, GIFT_CATEGORIES.BAG) : undefined)),
   animationType: z.string().optional(),
   soundKey: z.string().optional(),
   order: z.coerce.number().int().optional(),
@@ -51,7 +55,10 @@ const updateGiftSchema = z.object({
   icon: z.string().optional(),
   coinCost: z.coerce.number().int().positive().optional(),
   beanValue: z.coerce.number().int().positive().optional(),
-  category: z.string().optional(),
+  category: z
+    .string()
+    .optional()
+    .transform((s) => (s !== undefined ? normalizeGiftCategory(s, GIFT_CATEGORIES.BAG) : undefined)),
   animationType: z.string().optional(),
   soundKey: z.string().optional(),
   order: z.coerce.number().int().optional(),

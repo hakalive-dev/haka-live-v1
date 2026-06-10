@@ -81,8 +81,8 @@ describe('admin-gifts-bulk — HTTP', () => {
     const roseName = `Bulk Rose ${suffix}`;
     const starName = `Bulk Star ${suffix}`;
     const manifest = `name,coinCost,beanValue,category,imageFile,svgaFile
-${roseName},100,100,basic,rose.png,
-${starName},200,200,premium,star.png,`;
+${roseName},100,100,bag,rose.png,
+${starName},200,200,hot,star.png,`;
 
     const zip = buildTestZip({
       'manifest.csv': manifest,

@@ -43,6 +43,7 @@ import { DmGiftMessageBubble } from '@components/gifts/DmGiftMessageBubble';
 import { DmGiftPopEffect, type DmGiftPopItem } from '@components/gifts/DmGiftPopEffect';
 import {
   GiftEffectOverlay,
+  isBagGiftCategory,
   mergeDmGiftPopQueueSorted,
   normalizeGiftCoinCost,
 } from '@components/gifts/GiftEffectOverlay';
@@ -340,8 +341,7 @@ export function DMConversationScreen({ route, navigation }: Props) {
     (gift: Gift, qty: number, senderName: string) => {
       const hasSvga =
         typeof gift.svgaAsset === 'string' && gift.svgaAsset.trim().length > 0;
-      const isBasic = (gift.category ?? '').toLowerCase() === 'basic';
-      if (isBasic && !hasSvga) {
+      if (isBagGiftCategory(gift.category) && !hasSvga) {
         enqueuePop(gift, qty);
       } else {
         playGiftEffect(gift, qty, senderName);
@@ -370,7 +370,7 @@ export function DMConversationScreen({ route, navigation }: Props) {
       svgaAsset: null,
       coinCost: normalizeGiftCoinCost({ coinCost: msg.giftCoinCost }),
       beanValue: 0,
-      category: 'basic',
+      category: 'bag',
       animationType: '',
       soundKey: '',
       order: 0,

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma';
 import { AppError } from '../../../middleware/error.middleware';
+import { GIFT_CATEGORIES, normalizeGiftCategory } from '../../../shared-types/gifts';
 import { logAdminAction } from '../../../utils/audit';
 
 export interface ListGiftTransactionsParams {
@@ -32,7 +33,7 @@ export async function createGift(
       icon: data.icon ?? '',
       coinCost: data.coinCost,
       beanValue: data.beanValue,
-      category: data.category || 'basic',
+      category: normalizeGiftCategory(data.category, GIFT_CATEGORIES.BAG),
       animationType: data.animationType || '',
       soundKey: data.soundKey || '',
       order: data.order || 0,
@@ -54,7 +55,12 @@ export async function updateGift(
   const gift = await prisma.gift.findUnique({ where: { id: giftId } });
   if (!gift) throw new AppError('Gift not found', 404);
 
-  const updated = await prisma.gift.update({ where: { id: giftId }, data });
+  const updateData = { ...data };
+  if (updateData.category !== undefined) {
+    updateData.category = normalizeGiftCategory(updateData.category, GIFT_CATEGORIES.BAG);
+  }
+
+  const updated = await prisma.gift.update({ where: { id: giftId }, data: updateData });
   await logAdminAction(adminId, 'gift.update', 'Gift', giftId, data, ipAddress);
   return updated;
 }
