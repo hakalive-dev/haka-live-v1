@@ -10,8 +10,7 @@
     </array>
     <key>com.apple.developer.associated-domains</key>
     <array>
-      <string>applinks:hakalive.app</string>
-      <string>applinks:www.hakalive.app</string>
+      <string>applinks:www.hakalive.com</string>
     </array>
   </dict>
 </plist>

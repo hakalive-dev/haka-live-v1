@@ -21,6 +21,7 @@ import * as Clipboard from "expo-clipboard";
 
 import { invitesApi } from "@api/invites";
 import { buildInviteShareMessage } from "../../invite/buildInviteShareMessage";
+import { buildInviteUrl } from "../../invite/buildInviteUrl";
 import type { RootState } from "../../store";
 import { CopyableId } from "@components/CopyableId";
 import { UserIdBadge } from "@components/UserIdBadge";
@@ -187,8 +188,8 @@ export function InviteCreatorScreen() {
       return;
     }
     try {
-      await Clipboard.setStringAsync(buildInviteShareMessage(myHakaId));
-      Alert.alert("Copied", "Invite message copied to clipboard!");
+      await Clipboard.setStringAsync(buildInviteUrl(myHakaId));
+      Alert.alert("Copied", "Invite link copied to clipboard!");
     } catch (e: unknown) {
       Alert.alert(
         "Error",

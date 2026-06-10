@@ -61,5 +61,10 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
     return true;
   }
 
+  if (type === 'invite_accepted') {
+    navigationRef.navigate('InviteCreator');
+    return true;
+  }
+
   return false;
 }

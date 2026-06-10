@@ -14,8 +14,7 @@
       "bundleIdentifier": "com.hakalive.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "associatedDomains": [
-        "applinks:hakalive.app",
-        "applinks:www.hakalive.app"
+        "applinks:www.hakalive.com"
       ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -32,7 +31,7 @@
     "android": {
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.hakalive.app",
-      "versionCode": 4,
+      "versionCode": 6,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -40,12 +39,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "hakalive.app",
-              "pathPrefix": "/invite"
-            },
-            {
-              "scheme": "https",
-              "host": "www.hakalive.app",
+              "host": "www.hakalive.com",
               "pathPrefix": "/invite"
             }
           ],

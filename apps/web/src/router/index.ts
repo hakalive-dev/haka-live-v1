@@ -32,6 +32,11 @@ const router = createRouter({
       component: () => import('@/views/DeleteAccountView.vue'),
     },
     {
+      path: '/invite',
+      name: 'Invite',
+      component: () => import('@/views/InviteView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },

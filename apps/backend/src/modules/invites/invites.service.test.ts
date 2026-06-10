@@ -27,9 +27,14 @@ jest.mock('../leaderboard/leaderboard.service', () => ({
   updateInviteScore: jest.fn(),
 }));
 
+jest.mock('../notifications/notifications.service', () => ({
+  notifyAccountAlert: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { AppError } from '../../middleware/error.middleware';
 import { prisma } from '../../config/prisma';
 import * as leaderboard from '../leaderboard/leaderboard.service';
+import { notifyAccountAlert } from '../notifications/notifications.service';
 import { resolveUserId } from '../users/users.service';
 import { creditCoinsInTransaction } from '../wallet/wallet.service';
 import {
@@ -43,6 +48,9 @@ const mockLeaderboard = leaderboard as jest.Mocked<typeof leaderboard>;
 const mockResolveUserId = resolveUserId as jest.MockedFunction<typeof resolveUserId>;
 const mockCreditCoinsInTransaction = creditCoinsInTransaction as jest.MockedFunction<
   typeof creditCoinsInTransaction
+>;
+const mockNotifyAccountAlert = notifyAccountAlert as jest.MockedFunction<
+  typeof notifyAccountAlert
 >;
 
 describe('referralCodeFromStoredCode', () => {
@@ -106,6 +114,18 @@ describe('acceptInvite', () => {
     );
     expect(result.code).toBe('500000042');
     expect(mockLeaderboard.updateInviteScore).toHaveBeenCalledWith('inviter-1', 1);
+    // Real-time: inviter is notified (in-app + push + socket via notifyAccountAlert).
+    expect(mockNotifyAccountAlert).toHaveBeenCalledWith(
+      'inviter-1',
+      'invite_accepted',
+      expect.any(String),
+      expect.stringContaining('Bob'),
+      expect.objectContaining({
+        type: 'invite_accepted',
+        inviteeDisplayName: 'Bob',
+        rewardCoins: 100,
+      }),
+    );
   });
 
   it('throws 404 when inviter cannot be resolved', async () => {
@@ -163,6 +183,11 @@ describe('getShareholderRewards', () => {
             hakaId: null,
             originalHakaId: null,
             equippedFrame: null,
+            equippedRing: null,
+            equippedChatBubble: null,
+            equippedMicVoiceWave: null,
+            equippedProfileCard: null,
+            equippedDynamicProfile: null,
             activeSpecialId: null,
             activeSpecialIdLevel: null,
             richLevel: 1,
@@ -180,6 +205,11 @@ describe('getShareholderRewards', () => {
             hakaId: null,
             originalHakaId: null,
             equippedFrame: null,
+            equippedRing: null,
+            equippedChatBubble: null,
+            equippedMicVoiceWave: null,
+            equippedProfileCard: null,
+            equippedDynamicProfile: null,
             activeSpecialId: null,
             activeSpecialIdLevel: null,
             richLevel: 1,
@@ -227,6 +257,11 @@ describe('getShareholderRewards', () => {
             hakaId: null,
             originalHakaId: null,
             equippedFrame: null,
+            equippedRing: null,
+            equippedChatBubble: null,
+            equippedMicVoiceWave: null,
+            equippedProfileCard: null,
+            equippedDynamicProfile: null,
             activeSpecialId: null,
             activeSpecialIdLevel: null,
             richLevel: 1,

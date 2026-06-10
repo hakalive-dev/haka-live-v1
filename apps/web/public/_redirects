@@ -1,1 +1,5 @@
+# Serve App Links / Universal Links association files as real files,
+# not the SPA shell. Must come before the catch-all below.
+/.well-known/*    /.well-known/:splat   200
+
 /*    /index.html   200

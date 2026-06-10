@@ -90,9 +90,9 @@ collects (verified from `apps/mobile/app.json` permissions/usage strings and bac
 
 | Listing item | Value / source |
 |---|---|
-| Privacy policy URL | `https://hakalive.app/privacy-policy` (page exists: `apps/web/src/views/legal/PrivacyPolicyView.vue`) |
-| Terms URL | `https://hakalive.app/terms` |
-| Community guidelines | `https://hakalive.app/community-guidelines` |
+| Privacy policy URL | `https://hakalive.com/privacy-policy` (page exists: `apps/web/src/views/legal/PrivacyPolicyView.vue`) |
+| Terms URL | `https://hakalive.com/terms` |
+| Community guidelines | `https://hakalive.com/community-guidelines` |
 | **Account deletion URL** | **MISSING — Play requires this.** No `/delete-account` route exists in `apps/web/src/router` yet, and there is no self-service deletion endpoint in the backend. **Build before submission** (flagged in `PLAN-handover.md`). |
 | Feature graphic 1024×500 + screenshots | Owner must produce/upload. |
 

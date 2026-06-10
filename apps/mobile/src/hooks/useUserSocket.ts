@@ -330,6 +330,13 @@ export function useUserSocket(enabled: boolean) {
         (payload: { type?: string; title?: string; body?: string }) => {
           if (payload?.type === "support_reply") {
             dispatch(bumpSupportTicketReply());
+          } else if (payload?.type === "invite_accepted") {
+            // Someone accepted this user's invite — surface it live and refresh
+            // the coin balance (reward was credited server-side on accept).
+            toast.show(payload?.body ?? "Your invite was accepted!", "success");
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.wallet.balance(),
+            });
           }
         },
       );

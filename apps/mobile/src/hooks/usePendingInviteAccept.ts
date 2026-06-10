@@ -1,11 +1,17 @@
 import { useEffect, useRef } from "react";
 import { Alert, Linking } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { invitesApi } from "../api/invites";
 import { TokenStorage } from "../storage";
-import { extractInviteCodeFromUrl } from "../invite/inviteDeepLink";
+import {
+  extractInviteCodeFromText,
+  extractInviteCodeFromUrl,
+} from "../invite/inviteDeepLink";
 
 /**
  * Captures `?code=` from invite URLs (cold start + while running) into secure storage.
+ * Also performs a one-time clipboard check on first launch so an invite code copied
+ * from the web /invite fallback page survives a store install (deferred deep link).
  */
 export function useInviteLinkCapture(): void {
   useEffect(() => {
@@ -14,13 +20,40 @@ export function useInviteLinkCapture(): void {
       if (code) await TokenStorage.setPendingInviteCode(code);
     };
 
-    void Linking.getInitialURL().then((url) => persist(url));
+    void Linking.getInitialURL().then(async (url) => {
+      await persist(url);
+      await checkClipboardForInviteCodeOnce();
+    });
 
     const sub = Linking.addEventListener("url", (ev) => {
       void persist(ev.url);
     });
     return () => sub.remove();
   }, []);
+}
+
+/**
+ * One-time, best-effort deferred-deep-link capture: if no invite link opened the
+ * app and we haven't checked before, read the clipboard once and, if it holds a
+ * valid invite code (e.g. copied from the web /invite page before installing),
+ * store it as the pending code. Runs at most once per install.
+ */
+async function checkClipboardForInviteCodeOnce(): Promise<void> {
+  try {
+    if (await TokenStorage.wasInviteClipboardChecked()) return;
+    // A link already captured a code — don't read the clipboard at all.
+    if (await TokenStorage.getPendingInviteCode()) {
+      await TokenStorage.markInviteClipboardChecked();
+      return;
+    }
+    const clip = await Clipboard.getStringAsync();
+    const code = extractInviteCodeFromText(clip);
+    if (code) await TokenStorage.setPendingInviteCode(code);
+  } catch {
+    /* clipboard unavailable */
+  } finally {
+    await TokenStorage.markInviteClipboardChecked().catch(() => {});
+  }
 }
 
 /**

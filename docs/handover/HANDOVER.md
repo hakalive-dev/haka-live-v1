@@ -38,7 +38,7 @@ Core product concepts:
 Production endpoints (verify against DNS at handover):
 
 - API: `https://api.hakalive.com/api/v1` — admin console at `https://api.hakalive.com/admin`
-- Web: `https://hakalive.app` (invite/app-link host; also `www.hakalive.app`)
+- Web: `https://hakalive.com` (invite/app-link host; also `www.hakalive.com`)
 
 ## 3. Documents in this pack
 
@@ -61,7 +61,7 @@ Production endpoints (verify against DNS at handover):
 | [../../user_role.md](../../user_role.md) | The full role capability matrix. |
 | [../deploy/payment-encryption-key.md](../deploy/payment-encryption-key.md) | How to generate/set `PAYMENT_ENCRYPTION_KEY` on Render. |
 | [../deploy/supabase-storage-buckets.md](../deploy/supabase-storage-buckets.md) | Exact Supabase Storage buckets the backend expects. |
-| [../deploy/invite-universal-links/README.md](../deploy/invite-universal-links/README.md) | iOS AASA + Android assetlinks for `hakalive.app/invite` deep links. |
+| [../deploy/invite-universal-links/README.md](../deploy/invite-universal-links/README.md) | iOS AASA + Android assetlinks for `hakalive.com/invite` deep links. |
 | [../../README.md](../../README.md) | Quick-start dev setup. |
 | [../../TEST_CREDENTIALS.md](../../TEST_CREDENTIALS.md) | Dev/test logins. **Contains plaintext dev passwords — must be rotated/removed at handover.** |
 | `docs/superpowers/plans/` & `specs/` | Per-feature design docs (gifting commission, PK battle, payroll, agency invitations, etc.). |

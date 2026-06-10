@@ -9,7 +9,7 @@ flowchart TB
   subgraph Clients
     MOB[Mobile app<br/>Expo / React Native<br/>com.hakalive.app]
     ADM[Admin console<br/>Vue 3 SPA]
-    WEB[Marketing + legal site<br/>Vue 3 -> hakalive.app]
+    WEB[Marketing + legal site<br/>Vue 3 -> hakalive.com]
   end
 
   subgraph Edge

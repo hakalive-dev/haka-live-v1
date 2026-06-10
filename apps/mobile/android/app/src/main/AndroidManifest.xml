@@ -50,8 +50,7 @@
       </intent-filter>
       <intent-filter android:autoVerify="true" data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="https" android:host="hakalive.app" android:pathPrefix="/invite"/>
-        <data android:scheme="https" android:host="www.hakalive.app" android:pathPrefix="/invite"/>
+        <data android:scheme="https" android:host="www.hakalive.com" android:pathPrefix="/invite"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>

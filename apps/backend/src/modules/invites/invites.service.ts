@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middleware/error.middleware';
 import { creditCoinsInTransaction } from '../wallet/wallet.service';
+import { notifyAccountAlert } from '../notifications/notifications.service';
 import { resolveUserId } from '../users/users.service';
 import {
   getLeaderboard,
@@ -124,6 +125,21 @@ export async function acceptInvite(referralId: string, inviteeId: string) {
 
   updateInviteScore(result.inviterId, 1).catch((err) => {
     console.error('invite leaderboard update failed:', err?.message ?? err);
+  });
+
+  // Real-time: notify the inviter that their invite was accepted. notifyAccountAlert
+  // writes the in-app notification, sends the FCM push, AND emits `notification:new`
+  // (type `invite_accepted`) over the socket — the mobile client refreshes the wallet
+  // + invite stats off that event. Best-effort — never block the accept transaction.
+  const inviteeName = result.invitee?.displayName?.trim() || 'Someone';
+  notifyAccountAlert(
+    result.inviterId,
+    'invite_accepted',
+    'Invite accepted 🎉',
+    `${inviteeName} joined with your invite. You earned ${rewardCoins} coins!`,
+    { type: 'invite_accepted', inviteeDisplayName: inviteeName, rewardCoins },
+  ).catch((err) => {
+    console.error('invite accepted notification failed:', err?.message ?? err);
   });
 
   return {

@@ -20,7 +20,7 @@ the transfer worked. **Do not email any secret** — see §3.
 | **Stripe** | Coin top-up payments + payouts | Stripe Dashboard → Team → invite as **Admin**; for legal ownership use Stripe's account transfer/ownership-change. | Client sees live keys, webhook endpoints, and balance. |
 | **Razorpay** | India coin top-up payments | Razorpay Dashboard → add user / change account owner. | Client sees keys + webhook config. |
 | **AWS** | S3 storage + Rekognition face verification | IAM: create client admin user / transfer account ownership; rotate the access keys (`AWS_ACCESS_KEY_ID`/`SECRET`). | Client can access the S3 bucket + Rekognition collection (`npm run rekognition:check`). |
-| **Domain registrar + DNS** (`hakalive.com`, `hakalive.app`) | API + web hostnames, app-link `.well-known` files | Registrar account transfer (auth/EPP code) **and** DNS zone control. Both domains. | `dig`/`nslookup` resolve to client-controlled records; `.well-known` AASA + assetlinks reachable over HTTPS. |
+| **Domain registrar + DNS** (`hakalive.com`) | API + web hostnames, app-link `.well-known` files | Registrar account transfer (auth/EPP code) **and** DNS zone control. | `dig`/`nslookup` resolve to client-controlled records; `.well-known` AASA + assetlinks reachable over HTTPS. |
 | **Gmail / SMTP sending account** | Transactional email (`EMAIL_*`) | Hand over the mailbox/Workspace account; rotate the **app password**. | A test email sends from `DEFAULT_FROM_EMAIL`. |
 | **Apple Developer** (if iOS) | App Store distribution + bundle id | Apple → App Store Connect users / account holder transfer. | Client can create iOS builds/releases. |
 

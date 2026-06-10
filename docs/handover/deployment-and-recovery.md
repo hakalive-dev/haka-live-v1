@@ -95,7 +95,7 @@ cd apps/mobile && npm run type-check   # tsc --noEmit
 ## B. Production deployment
 
 Production runs on **Render** (backend API + Redis) with **Supabase** (Postgres + Auth + Storage). Domains:
-`api.hakalive.com` (API + admin), `hakalive.app` (web + app links).
+`api.hakalive.com` (API + admin), `hakalive.com` (web + app links).
 
 > **TODO(owner): confirm the exact Render service names and the build mode.** The repo supports two models and the
 > original Render setup is not fully described in code:
@@ -173,10 +173,10 @@ inactivity (any push re-enables); for a hard guarantee use a paid always-on Rend
 | Host | Points to | Used for |
 |---|---|---|
 | `api.hakalive.com` | Render backend service | API + admin console + webhooks |
-| `hakalive.app` / `www.hakalive.app` | Web app host | Marketing, legal pages, app-link association files |
+| `hakalive.com` / `www.hakalive.com` | Web app host | Marketing, legal pages, app-link association files |
 
 For deep links you must serve, over HTTPS with correct content type:
-`https://hakalive.app/.well-known/apple-app-site-association` and `.../assetlinks.json`
+`https://hakalive.com/.well-known/apple-app-site-association` and `.../assetlinks.json`
 (templates in [../deploy/invite-universal-links/](../deploy/invite-universal-links/)). The Android `assetlinks.json`
 SHA-256 must be the **Play App Signing** certificate fingerprint (see [signing-and-play-store.md](./signing-and-play-store.md)).
 `TODO(owner): confirm DNS registrar and that A/CNAME + TLS for both domains are in place.`
@@ -288,7 +288,7 @@ provider. Order matters because later steps depend on credentials from earlier o
     — if the Expo account/project was transferred, the keystore travels with it; if you create a brand-new Expo
     project you get a **new upload key** and must enroll/update Play App Signing accordingly.)
 
-13. **DNS** — point `api.hakalive.com` at the new Render service and `hakalive.app` at the new web host; re-deploy the
+13. **DNS** — point `api.hakalive.com` at the new Render service and `hakalive.com` at the new web host; re-deploy the
     `.well-known` association files with the new signing fingerprint.
 
 14. **Smoke test:** `GET /health` 200; admin login at `/admin`; phone OTP send/verify; create a room + fetch an Agora

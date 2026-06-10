@@ -6,6 +6,8 @@ const REFRESH_KEY = "refresh_token";
 /** Legacy SecureStore key — user JSON moved to disk (see USER_CACHE_FILE). */
 const USER_KEY = "user_cache_v1";
 const PENDING_INVITE_CODE_KEY = "pending_invite_code_v1";
+/** Set once after the first-launch clipboard check for a deferred invite code. */
+const INVITE_CLIPBOARD_CHECKED_KEY = "invite_clipboard_checked_v1";
 const USER_CACHE_FILE = `${FileSystem.documentDirectory ?? ""}user-session.json`;
 
 async function readUserJsonFromDisk(): Promise<string | null> {
@@ -67,6 +69,10 @@ export const TokenStorage = {
       /* missing key */
     }
   },
+  wasInviteClipboardChecked: async () =>
+    (await SecureStore.getItemAsync(INVITE_CLIPBOARD_CHECKED_KEY)) === "1",
+  markInviteClipboardChecked: () =>
+    SecureStore.setItemAsync(INVITE_CLIPBOARD_CHECKED_KEY, "1"),
   clear: async () => {
     const userJson = (await readUserJsonFromDisk()) ?? (await SecureStore.getItemAsync(USER_KEY));
     if (userJson) {
