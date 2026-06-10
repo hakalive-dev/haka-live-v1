@@ -297,6 +297,13 @@ export function RoomScreen({ route, navigation }: Props) {
 
   /** When true, the next `beforeRemove` skip runs cleanup — intentional exits already ran unjoin/seat/session. */
   const skipBeforeRemoveCleanupRef = useRef(false);
+  /**
+   * Set on every exit path before stopSession(). Blocks the foreground-session sync
+   * effect from re-running setForegroundSession after stopSession (e.g. when the
+   * seat.updated from our own leaveSeat lands during the nav-close window), which
+   * would resurrect an invisible Agora session that nothing can ever tear down.
+   */
+  const sessionEndedRef = useRef(false);
   const roomSession = useRoomSession();
   const { setMusic, clearMusic, musicPlayerRef } = roomSession;
 
@@ -1100,6 +1107,10 @@ export function RoomScreen({ route, navigation }: Props) {
             : reason === "host_banned"
               ? "This room has been closed by an administrator."
               : "The host has ended this room.";
+        // Stop audio/socket immediately — the room is gone; waiting for OK would
+        // keep playing whatever is still in the Agora channel.
+        sessionEndedRef.current = true;
+        roomSession.stopSession();
         Alert.alert("Room Ended", message, [
           {
             text: "OK",
@@ -1117,6 +1128,8 @@ export function RoomScreen({ route, navigation }: Props) {
           setPasswordOverlayMode("enter");
           setPasswordOverlayVisible(true);
         } else if (data.kicked) {
+          sessionEndedRef.current = true;
+          roomSession.stopSession();
           Alert.alert(
             "Cannot join",
             formatRoomKickBanMessage(data.cooldownMinutes),
@@ -1138,6 +1151,9 @@ export function RoomScreen({ route, navigation }: Props) {
         const kickMsg =
           data.reason ??
           formatRoomKickBanMessage(data.cooldownMinutes);
+        // Kicked users must stop hearing (and publishing to) the room at once.
+        sessionEndedRef.current = true;
+        roomSession.stopSession();
         Alert.alert(
           "Kicked",
           kickMsg,
@@ -1352,6 +1368,7 @@ export function RoomScreen({ route, navigation }: Props) {
       setMusic,
       clearMusic,
       batchWsState,
+      roomSession,
     ],
   );
 
@@ -1389,6 +1406,10 @@ export function RoomScreen({ route, navigation }: Props) {
   // Keep the shared room session in sync with current screen state.
   useEffect(() => {
     if (!realtimeEnabled) return;
+    // Exiting (or kicked/ended): never re-establish the session. Without this,
+    // a seat.updated arriving mid-exit flips canPublish, re-runs this effect
+    // after stopSession() and resurrects an invisible, unstoppable session.
+    if (sessionEndedRef.current) return;
     roomSession.setForegroundSession(
       {
         roomId,
@@ -2411,6 +2432,7 @@ export function RoomScreen({ route, navigation }: Props) {
   // Host exit: clear mic + socket presence for others, then leave screen.
   const handleHostExitRoom = useCallback(async () => {
     skipBeforeRemoveCleanupRef.current = true;
+    sessionEndedRef.current = true;
     setEndModalVisible(false);
     clearRoomChat();
     const pos = mySeatedPosition ?? mySeatPositionRef.current;
@@ -2458,6 +2480,7 @@ export function RoomScreen({ route, navigation }: Props) {
 
   const handleGuestExit = useCallback(async () => {
     skipBeforeRemoveCleanupRef.current = true;
+    sessionEndedRef.current = true;
     setEndModalVisible(false);
     clearRoomChat();
     if (mySeatedPosition !== null) {
@@ -2480,6 +2503,7 @@ export function RoomScreen({ route, navigation }: Props) {
         skipBeforeRemoveCleanupRef.current = false;
         return;
       }
+      sessionEndedRef.current = true;
       clearRoomChat();
       void (async () => {
         const pos = mySeatPositionRef.current;

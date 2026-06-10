@@ -138,6 +138,11 @@ export function useRoomConnection({
   );
 
   const engineRef  = useRef<any>(null);
+  // Serialize the async Agora lifecycle: each effect run gets a generation; a
+  // bumped generation cancels any in-flight connect, and the next connect waits
+  // for the previous teardown so leave/release and init/join never interleave.
+  const agoraGenRef = useRef(0);
+  const agoraTeardownRef = useRef<Promise<void>>(Promise.resolve());
   const ws         = useRef<SocketIOClient | null>(null);
   const onWsRef    = useRef(onWsEvent);
   onWsRef.current  = onWsEvent;
@@ -250,7 +255,10 @@ export function useRoomConnection({
 
   // ── Agora RTC ──────────────────────────────────────────────────────────────
 
-  const connectAgora = useCallback(async () => {
+  // `isCurrent` is checked after every await: the token fetch (and permission
+  // prompts) can outlive the session, and a join completing after teardown
+  // leaves an orphaned engine playing room audio with no owner to release it.
+  const connectAgora = useCallback(async (isCurrent: () => boolean = () => true) => {
     if (!enabled || IS_EXPO_GO) return;
     try {
       const {
@@ -278,11 +286,14 @@ export function useRoomConnection({
         }
       }
 
+      if (!isCurrent()) return;
+
       const tokenResult = await roomsApi.getToken(
         roomId,
         canPublish ? 'publisher' : 'subscriber',
       );
       if (!tokenResult.token || !tokenResult.appId) return;
+      if (!isCurrent()) return;
 
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
@@ -367,6 +378,22 @@ export function useRoomConnection({
         autoSubscribeVideo:      subscribeVideo,
       });
 
+      if (!isCurrent()) {
+        // Superseded mid-join. If a concurrent disconnect already claimed the
+        // ref it owns the teardown; otherwise release the engine ourselves.
+        if (engineRef.current === engine) {
+          engineRef.current = null;
+          try {
+            await engine.leaveChannel();
+            engine.unregisterEventHandler({});
+            engine.release();
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
+
       if (canPublish) {
         setMicEnabled(true);
         if (publishVideo) setCamEnabled(true);
@@ -402,8 +429,17 @@ export function useRoomConnection({
   ]);
 
   const disconnectAgora = useCallback(async () => {
+    // Claim the engine synchronously: a connect overlapping this teardown must
+    // never have its freshly-created engine ref nulled out after our awaits
+    // (that leaks a joined engine that keeps playing room audio forever).
     const engine = engineRef.current;
+    engineRef.current = null;
     if (!engine) return;
+    try {
+      engine.enableAudioVolumeIndication(0, 3, false);
+    } catch {
+      /* ignore */
+    }
     try {
       await engine.leaveChannel();
       engine.unregisterEventHandler({});
@@ -411,7 +447,6 @@ export function useRoomConnection({
     } catch (err) {
       console.warn('[Agora] disconnect error:', err);
     }
-    engineRef.current = null;
     setAgoraJoined(false);
     setMicEnabled(false);
     setCamEnabled(false);
@@ -419,11 +454,6 @@ export function useRoomConnection({
     setLocalUid(0);
     setRemoteUids([]);
     clearSpeakingState();
-    try {
-      engine.enableAudioVolumeIndication(0, 3, false);
-    } catch {
-      /* ignore */
-    }
   }, [clearSpeakingState]);
 
   const toggleMic = useCallback(() => {
@@ -528,7 +558,10 @@ export function useRoomConnection({
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: 10,
+      // No attempt cap: Agora publishes independently for hours (24h RTC token),
+      // so a socket that gives up leaves a ghost publisher — seat cleared
+      // server-side after 2s, voice still audible, and no rejoin ever reconciles
+      // it. Infinite retries guarantee the seats.snapshot resync on recovery.
     });
     ws.current = socket;
 
@@ -755,9 +788,17 @@ export function useRoomConnection({
   // Reconnect when room switches or live/video subscription flags change (e.g. roomMode from API).
   useEffect(() => {
     if (!enabled) return;
-    connectAgora();
+    agoraGenRef.current += 1;
+    const gen = agoraGenRef.current;
+    const isCurrent = () => gen === agoraGenRef.current;
+    void (async () => {
+      await agoraTeardownRef.current;
+      if (!isCurrent()) return;
+      await connectAgora(isCurrent);
+    })();
     return () => {
-      void disconnectAgora();
+      agoraGenRef.current += 1;
+      agoraTeardownRef.current = disconnectAgora();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, roomId, publishVideo, subscribeVideo]);
