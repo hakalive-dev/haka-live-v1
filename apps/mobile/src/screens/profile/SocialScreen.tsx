@@ -16,7 +16,8 @@ import { setPendingVisitor } from '../../store/profileSlice';
 import { Colors, Spacing } from '@/theme';
 import { ListRowSkeleton } from '@components/Skeleton';
 import { UserAvatar } from '@components/UserAvatar';
-import { UserLevelBadges } from '@components/UserLevelBadges';
+import { RichLevelBadge } from '@components/RichLevelBadge';
+import { CharmLevelBadge } from '@components/CharmLevelBadge';
 import type { PublicUser, VisitorEntry, SpecialAttentionEntry } from '@/types';
 import type { RootStackScreenProps } from '@navigation/types';
 import type { RootState } from '@store/index';
@@ -209,11 +210,14 @@ export function SocialScreen({ route, navigation }: Props) {
         <Text style={styles.userName} numberOfLines={1}>
           {item.displayName}
         </Text>
-        <UserLevelBadges
-          richLevel={item.richLevel}
-          charmLevel={item.charmLevel}
-          compact
-        />
+        <View style={styles.levelPillRow}>
+          {(item.richLevel ?? 0) > 0 ? (
+            <RichLevelBadge level={item.richLevel as number} size={20} />
+          ) : null}
+          {(item.charmLevel ?? 0) > 0 ? (
+            <CharmLevelBadge level={item.charmLevel as number} size={20} />
+          ) : null}
+        </View>
       </View>
 
       {/* Action buttons */}
@@ -490,6 +494,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#000',
+  },
+  levelPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
   },
   // Actions
   actionArea: {

@@ -987,7 +987,10 @@ const styles = StyleSheet.create({
   levelCard: {
     width: LEVEL_CARD_WIDTH,
     height: LEVEL_CARD_HEIGHT,
-    borderRadius: 14,
+    // Match the bg art's baked-in corner radius (~8px in the 360px source →
+    // ~4px at this display width). A larger radius clips past the artwork's
+    // corners and lets the solid `bg` fill show through as a mismatched wedge.
+    borderRadius: 4,
     overflow: 'hidden',
   },
   // Full-bleed level background art; stretched to the card (the source images
@@ -1024,11 +1027,19 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   levelMetaRow: {
-    backgroundColor: 'rgba(0,0,0,0.18)',
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  levelMeta: { fontSize: 11, color: '#FFFFFF', fontWeight: '700' },
+  // Text shadow (matching the title/level labels) keeps the white meta readable
+  // on both light and dark background tiers — no dark overlay band needed.
+  levelMeta: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
 
   supporterSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
