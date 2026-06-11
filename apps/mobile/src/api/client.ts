@@ -137,7 +137,13 @@ async function performRefreshSession(
     const tid = setTimeout(() => controller.abort(), 30_000);
     const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        // Identity key for the backend rate limiter — without it, refreshes
+        // from every user behind one carrier-NAT IP share a single bucket.
+        ...(device.deviceId ? { 'X-Device-Id': device.deviceId } : {}),
+      },
       body: JSON.stringify({ refreshToken, ...device }),
       signal: controller.signal,
     });
@@ -150,8 +156,13 @@ async function performRefreshSession(
     }
 
     if (!res.ok) {
-      if (res.status >= 500) {
-        logDiagnostic('api_http', 'auth_refresh_server_error', { status: res.status });
+      // 429 (rate limited) and 5xx are transient server-side conditions, not a
+      // verdict on the refresh token — keep the session and let a later
+      // refresh succeed. Revoking here logged users out during 429 storms.
+      if (res.status === 429 || res.status >= 500) {
+        logDiagnostic('api_http', res.status === 429
+          ? 'auth_refresh_rate_limited'
+          : 'auth_refresh_server_error', { status: res.status });
         clearRequestAuthCache();
         return { status: 'network' };
       }

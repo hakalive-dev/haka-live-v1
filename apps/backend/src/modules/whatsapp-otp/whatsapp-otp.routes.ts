@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.middleware';
+import { credentialLimiter } from '../../middleware/rate-limit.middleware';
 import * as ctrl from './whatsapp-otp.controller';
 
 const router = Router();
 
 // ── Public (no auth) — phone-login OTP ────────────────────────────────────────
 // Send a WhatsApp OTP to a phone number.
-router.post('/whatsapp/send', ctrl.send);
+router.post('/whatsapp/send', credentialLimiter, ctrl.send);
 
 // Verify the OTP → find-or-create user by phone → return backend JWT pair + user.
-router.post('/whatsapp/verify', ctrl.verify);
+router.post('/whatsapp/verify', credentialLimiter, ctrl.verify);
 
 // ── Protected — bind a phone to the current account ───────────────────────────
 router.patch('/whatsapp/bind', authenticate, ctrl.bind);

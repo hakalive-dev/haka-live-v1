@@ -1,14 +1,18 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.middleware';
+import { credentialLimiter } from '../../middleware/rate-limit.middleware';
 import * as ctrl from './accounts.controller';
 import * as deletionCtrl from './account-deletion.controller';
 
 const router = Router();
 
 // ── Public endpoints (no auth required) ───────────────────────────────────────
+// Credential endpoints get the strict IP-keyed limiter (brute-force protection).
+// /refresh and /logout deliberately do NOT: they run routinely for every active
+// session, and an IP-keyed cap shared across carrier-NAT users caused 429s.
 
 // Verify Supabase access token → return backend JWT pair + user (Google / Apple / Phone OTP)
-router.post('/supabase', ctrl.loginWithSupabase);
+router.post('/supabase', credentialLimiter, ctrl.loginWithSupabase);
 
 // Rotate refresh token
 router.post('/refresh', ctrl.refresh);
@@ -17,13 +21,13 @@ router.post('/refresh', ctrl.refresh);
 router.post('/logout', ctrl.logout);
 
 // Dev-only: login without Firebase (creates test user, returns JWTs)
-router.post('/dev-login', ctrl.devLogin);
+router.post('/dev-login', credentialLimiter, ctrl.devLogin);
 
 // Haka ID + password (production; requires bcrypt password on user)
-router.post('/login', ctrl.loginWithHakaId);
+router.post('/login', credentialLimiter, ctrl.loginWithHakaId);
 
 // Dev-only: login by Haka ID + password (seeded test users)
-router.post('/dev-login-haka', ctrl.devLoginWithHakaId);
+router.post('/dev-login-haka', credentialLimiter, ctrl.devLoginWithHakaId);
 
 // ── Protected endpoints (Bearer token required) ────────────────────────────────
 

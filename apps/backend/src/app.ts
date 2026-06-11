@@ -1,9 +1,7 @@
-import express, { Request } from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
-import jwt from 'jsonwebtoken';
 
 // Teach JSON.stringify how to serialize Prisma BigInt columns (e.g.
 // User.cumulativeBeansEarned, Wallet.balance) — without this, any endpoint
@@ -14,6 +12,7 @@ import jwt from 'jsonwebtoken';
 import { env } from './config/env';
 import { errorHandler } from './middleware/error.middleware';
 import { maintenanceGate } from './middleware/maintenance.middleware';
+import { globalLimiter } from './middleware/rate-limit.middleware';
 import accountsRouter from './modules/accounts/accounts.routes';
 import whatsappOtpRouter from './modules/whatsapp-otp/whatsapp-otp.routes';
 import emailOtpRouter from './modules/email-otp/email-otp.routes';
@@ -70,59 +69,10 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Rate limiting (disabled in development) ───────────────────────────────────
-const isDev = env.NODE_ENV !== 'production';
-
-/**
- * Bucket the global limiter by *identity*, not raw IP. Mobile carriers route
- * thousands of subscribers through a handful of carrier-grade NAT egress IPs,
- * so an IP-keyed limit makes every user on a carrier share one bucket — which
- * is exactly why normal navigation was returning 429s. Preference order:
- *   1. authenticated user (JWT `sub`)  2. device id  3. client IP (fallback).
- *
- * The limiter runs before the auth middleware, so we DECODE (not verify) the
- * bearer token purely to read its subject for bucketing. Keying needs no
- * cryptographic trust: a forged `sub` only spreads the forger's own load, and
- * without a valid signature they can't reach any protected handler anyway.
- * Keys are prefixed so a user id can never collide with a device id or IP.
- */
-function rateLimitKey(req: Request): string {
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) {
-    try {
-      const decoded = jwt.decode(header.slice(7)) as { sub?: string } | null;
-      if (decoded?.sub) return `u:${decoded.sub}`;
-    } catch {
-      /* malformed token — fall through to device/IP keying */
-    }
-  }
-  const rawDeviceId = req.headers['x-device-id'];
-  const deviceId = Array.isArray(rawDeviceId) ? rawDeviceId[0] : rawDeviceId;
-  if (deviceId) return `d:${deviceId}`;
-  return `ip:${req.ip}`;
-}
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 10_000 : env.RATE_LIMIT_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: rateLimitKey,
-});
-app.use(limiter);
-
-// Auth stays IP-keyed on purpose: brute-force protection wants per-origin
-// limiting, and device-keying would let an attacker rotate device ids for
-// fresh buckets. Kept stricter than the global limiter.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 10_000 : env.AUTH_RATE_LIMIT_MAX,
-  message: { success: false, data: null, message: 'Too many requests, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 // ── Root + health ───────────────────────────────────────────────────────────
+// Mounted BEFORE the rate limiter: these answer uptime monitors and the mobile
+// app's reachability probes, which carry no auth/device headers and would
+// otherwise drain the shared per-IP bucket (one carrier-NAT IP = many users).
 // The API base path has no UI; without this, GET / falls through to the 404
 // handler. Return a friendly 200 so browsers, uptime monitors, and scanners
 // hitting the bare domain get an OK instead of a logged 404.
@@ -134,6 +84,11 @@ app.get('/health', (_req, res) => {
   res.json({ success: true, data: { status: 'ok' }, message: '' });
 });
 
+// ── Rate limiting (disabled in development) ───────────────────────────────────
+// Identity-keyed global limiter; strict IP-keyed limiting now lives on the
+// credential endpoints themselves (see rate-limit.middleware.ts).
+app.use(globalLimiter);
+
 // ── Global kill switch ────────────────────────────────────────────────────────
 // When maintenance mode is active (super_admin toggle, Redis-backed), every
 // user-facing route returns 503. The gate self-allow-lists /health, the admin
@@ -143,9 +98,11 @@ app.use(maintenanceGate);
 // ── API routes ────────────────────────────────────────────────────────────────
 // WhatsApp OTP routes must mount BEFORE accountsRouter: accountsRouter's path-less
 // `router.use(authenticate)` would otherwise intercept the public /whatsapp/* routes.
-app.use('/api/v1/auth',  authLimiter, whatsappOtpRouter);
-app.use('/api/v1/auth',  authLimiter, emailOtpRouter);
-app.use('/api/v1/auth',  authLimiter, accountsRouter);
+// Credential endpoints inside these routers apply `credentialLimiter` per-route;
+// session routes (/refresh, /me, /logout) ride the global limiter only.
+app.use('/api/v1/auth',  whatsappOtpRouter);
+app.use('/api/v1/auth',  emailOtpRouter);
+app.use('/api/v1/auth',  accountsRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/profile', profileRouter);
 app.use('/api/v1/face-verification', faceVerificationRouter);
