@@ -38,14 +38,19 @@ export const KEYS = {
   CREATOR_DAILY:   'leaderboard:creators:daily',
   CREATOR_WEEKLY:  'leaderboard:creators:weekly',
   CREATOR_MONTHLY: 'leaderboard:creators:monthly',
+
+  // Lucky Winners — total coins WON playing lucky gifts (wins only)
+  LUCKY_WINNERS_DAILY:   'leaderboard:lucky_winners:daily',
+  LUCKY_WINNERS_WEEKLY:  'leaderboard:lucky_winners:weekly',
+  LUCKY_WINNERS_MONTHLY: 'leaderboard:lucky_winners:monthly',
 } as const;
 
 export type LeaderboardKey = (typeof KEYS)[keyof typeof KEYS];
 
 export const PERIODIC_KEYS: Record<Period, string[]> = {
-  daily:   [KEYS.GIFTERS_DAILY,   KEYS.EARNERS_DAILY,   KEYS.AGENCY_DAILY,   KEYS.CREATOR_DAILY],
-  weekly:  [KEYS.GIFTERS_WEEKLY,  KEYS.EARNERS_WEEKLY,  KEYS.AGENCY_WEEKLY,  KEYS.INVITES_WEEKLY, KEYS.CREATOR_WEEKLY],
-  monthly: [KEYS.GIFTERS_MONTHLY, KEYS.EARNERS_MONTHLY, KEYS.AGENCY_MONTHLY, KEYS.CREATOR_MONTHLY],
+  daily:   [KEYS.GIFTERS_DAILY,   KEYS.EARNERS_DAILY,   KEYS.AGENCY_DAILY,   KEYS.CREATOR_DAILY,   KEYS.LUCKY_WINNERS_DAILY],
+  weekly:  [KEYS.GIFTERS_WEEKLY,  KEYS.EARNERS_WEEKLY,  KEYS.AGENCY_WEEKLY,  KEYS.INVITES_WEEKLY, KEYS.CREATOR_WEEKLY,  KEYS.LUCKY_WINNERS_WEEKLY],
+  monthly: [KEYS.GIFTERS_MONTHLY, KEYS.EARNERS_MONTHLY, KEYS.AGENCY_MONTHLY, KEYS.CREATOR_MONTHLY, KEYS.LUCKY_WINNERS_MONTHLY],
 };
 
 function gifterKeys(): string[] {
@@ -62,6 +67,10 @@ function agencyKeys(): string[] {
 
 function creatorKeys(): string[] {
   return [KEYS.CREATOR_DAILY, KEYS.CREATOR_WEEKLY, KEYS.CREATOR_MONTHLY];
+}
+
+function luckyWinnerKeys(): string[] {
+  return [KEYS.LUCKY_WINNERS_DAILY, KEYS.LUCKY_WINNERS_WEEKLY, KEYS.LUCKY_WINNERS_MONTHLY];
 }
 
 export const CREATOR_KEY_BY_PERIOD = {
@@ -133,6 +142,17 @@ export async function updateEarnerScore(userId: string, beans: number): Promise<
  */
 export async function updateInviteScore(userId: string, count = 1): Promise<void> {
   await redis.zincrby(KEYS.INVITES_WEEKLY, count, userId);
+}
+
+/**
+ * Increment a user's Lucky Winners score by coins won, across all three periods.
+ * Wins only — losses and the host's receiver cut do not score.
+ */
+export async function updateLuckyWinnerScore(userId: string, rewardCoins: number): Promise<void> {
+  if (rewardCoins <= 0) return;
+  const pipeline = redis.pipeline();
+  for (const key of luckyWinnerKeys()) pipeline.zincrby(key, rewardCoins, userId);
+  await pipeline.exec();
 }
 
 // ── Leaderboard query helpers ─────────────────────────────────────────────────

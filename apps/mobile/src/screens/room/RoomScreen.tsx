@@ -747,6 +747,7 @@ export function RoomScreen({ route, navigation }: Props) {
       svgaAsset?: string | null,
       qty: number = 1,
       coinCost: number = 0,
+      targetSeatPosition: number | null = null,
     ) => {
       // Basic gifts only show the toast — unless the gift has an SVGA asset.
       const hasSvga =
@@ -768,6 +769,7 @@ export function RoomScreen({ route, navigation }: Props) {
           giftName,
           qty: 1,
           coinCost: normalizedCost,
+          targetSeatPosition,
         }),
       );
       setSpecialEffectQueue((prev) => mergeGiftEffectQueueSorted(prev, entries));
@@ -1291,6 +1293,7 @@ export function RoomScreen({ route, navigation }: Props) {
             normalizeGiftCoinCost({
               coinCost: data.gift?.coinCost ?? data.coinCost,
             }),
+            targetPosition ?? null,
           );
         }
         // Refresh wallet if the current user is the recipient (beans were credited)
@@ -2155,6 +2158,7 @@ export function RoomScreen({ route, navigation }: Props) {
         gift.svgaAsset,
         1,
         gift.coinCost,
+        seatPosition ?? null,
       );
     }
     setComboState((prev) => (prev ? { ...prev, count: prev.count + step } : null));
@@ -2268,6 +2272,7 @@ export function RoomScreen({ route, navigation }: Props) {
           gift.svgaAsset,
           1,
           gift.coinCost,
+          seated.position ?? null,
         );
       }
       startCombo(gift, recipient, seated.position, qty);
@@ -4576,6 +4581,11 @@ export function RoomScreen({ route, navigation }: Props) {
           senderName={specialEffect.senderName}
           giftName={specialEffect.giftName}
           qty={specialEffect.qty}
+          targetRef={
+            specialEffect.targetSeatPosition != null
+              ? (seatRefs.current[specialEffect.targetSeatPosition] ?? null)
+              : null
+          }
           onComplete={advanceGiftEffectQueue}
         />
       ) : null}

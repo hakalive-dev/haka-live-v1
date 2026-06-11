@@ -4,6 +4,7 @@ export const WS_EVENTS = {
   ROLE_CHANGED: 'role.changed',
   SEAT_UPDATED: 'seat.updated',
   GIFT_SENT: 'gift.sent',
+  LUCKY_REWARD: 'lucky.reward',
   MESSAGE_SENT: 'message.sent',
   ROOM_ENDED: 'room.ended',
   LISTENER_COUNT: 'listener.count',

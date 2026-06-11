@@ -5,6 +5,7 @@ export const WS_EVENTS = {
   SEAT_UPDATED: 'seat.updated',
   SEAT_INVITATION: 'seat.invitation',
   GIFT_SENT: 'gift.sent',
+  LUCKY_REWARD: 'lucky.reward',
   MESSAGE_SENT: 'message.sent',
   ROOM_ENDED: 'room.ended',
   LISTENER_COUNT: 'listener.count',

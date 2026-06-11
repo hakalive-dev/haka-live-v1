@@ -10,6 +10,7 @@ import * as normalBattleService from '../normal-battle/normal-battle.service';
 import { BATTLE_EVENTS } from '../../shared-types';
 import * as calcService from '../rooms/calculator.service';
 import { redis } from '../../config/redis';
+import * as luckyGiftsService from '../lucky-gifts/lucky-gifts.service';
 
 const sendGiftSchema = z
   .object({
@@ -183,6 +184,35 @@ export async function getReceived(req: Request, res: Response, next: NextFunctio
     const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? '16'), 10)));
     const data = await giftsService.getReceivedGiftGallery(req.params.userId, limit);
     ok(res, data);
+  } catch (err) { next(err); }
+}
+
+const historyQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/** GET /gifts/lucky/history — caller's lucky-draw history */
+export async function getLuckyHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit } = historyQuerySchema.parse(req.query);
+    ok(res, await luckyGiftsService.getLuckyHistory(req.user!.id, page, limit));
+  } catch (err) { next(err); }
+}
+
+/** GET /gifts/lucky/room/:roomId/winners — recent lucky winners in a room */
+export async function getRoomLuckyWinners(req: Request, res: Response, next: NextFunction) {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '30'), 10)));
+    ok(res, await luckyGiftsService.getRoomLuckyWinners(req.params.roomId, limit));
+  } catch (err) { next(err); }
+}
+
+/** GET /gifts/history — caller's sent-gift history (normal + lucky) */
+export async function getSentHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit } = historyQuerySchema.parse(req.query);
+    ok(res, await luckyGiftsService.getSentGiftHistory(req.user!.id, page, limit));
   } catch (err) { next(err); }
 }
 

@@ -602,6 +602,7 @@ model Gift {
   updatedAt     DateTime @updatedAt
 
   transactions GiftTransaction[]
+  luckyDraws   LuckyGiftDraw[]   @relation("GiftLuckyDraws")
 
   @@map("gifts")
 }
@@ -626,6 +627,7 @@ model GiftTransaction {
   updatedAt         DateTime @updatedAt
 
   ledgerRows GiftCommissionLedger[] @relation("TxLedger")
+  luckyDraw  LuckyGiftDraw?         @relation("TxLuckyDraw")
 
   @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
@@ -681,6 +683,50 @@ model GiftBonusTier {
   updatedAt        DateTime @updatedAt
 
   @@map("gift_bonus_tiers")
+}
+
+// ── LuckyGiftSetting ──────────────────────────────────────────────────────────
+// Singleton (id = "singleton") — the whole lucky-gift game config.
+// The draw runs only for gifts with category = 'lucky' AND enabled = true.
+// On a lucky gift the host's bean pool = round(coinCost × receiverBenefitPercent / 100)
+// instead of the normal beanValue; the reduced cut funds sender wins.
+model LuckyGiftSetting {
+  id                     String   @id @default("singleton")
+  enabled                Boolean  @default(false)
+  winProbability         Decimal  @default(0.2) // 0 ≤ p ≤ 1, chance of a win per send
+  winMultiplier          Decimal  @default(3.0) // win payout = round(coinCost × multiplier)
+  receiverBenefitPercent Decimal  @default(1.5) // 0 ≤ x ≤ 1.5 (% of gift value → host bean pool)
+  dailyUserWinCapCoins   BigInt   @default(0) // 0 = no cap (enforcement deferred)
+  updatedBy              String   @default("")
+  updatedAt              DateTime @updatedAt
+
+  @@map("lucky_gift_settings")
+}
+
+// ── LuckyGiftDraw ─────────────────────────────────────────────────────────────
+// Immutable result log — one row per lucky-gift send, win or lose. Created inside
+// the same prisma.$transaction as the gift; unique on giftTransactionId so the
+// retry wrapper can never double-log/credit a single gift transaction.
+model LuckyGiftDraw {
+  id                String          @id @default(uuid())
+  giftTransactionId String          @unique
+  giftTransaction   GiftTransaction @relation("TxLuckyDraw", fields: [giftTransactionId], references: [id], onDelete: Cascade)
+  userId            String // sender (reward destination)
+  giftId            String
+  gift              Gift            @relation("GiftLuckyDraws", fields: [giftId], references: [id])
+  roomId            String?
+  coinCost          Int // total coins paid (gift coinCost × qty)
+  isWin             Boolean
+  rewardCoins       Int             @default(0) // coins credited to sender; 0 on lose
+  receiverBeans     Int             @default(0) // reduced host cut actually credited
+  winProbability    Decimal // config snapshot at draw time
+  winMultiplier     Decimal // config snapshot at draw time
+  createdAt         DateTime        @default(now())
+
+  @@index([userId, createdAt])
+  @@index([giftId, createdAt])
+  @@index([roomId, createdAt])
+  @@map("lucky_gift_draws")
 }
 
 // ── AgencyInvitation ──────────────────────────────────────────────────────────

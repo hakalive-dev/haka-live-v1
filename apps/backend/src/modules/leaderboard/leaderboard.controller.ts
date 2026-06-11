@@ -33,6 +33,12 @@ const GIFTER_KEY_BY_PERIOD = {
   monthly: 'GIFTERS_MONTHLY',
 } as const;
 
+const LUCKY_WINNER_KEY_BY_PERIOD = {
+  daily:   'LUCKY_WINNERS_DAILY',
+  weekly:  'LUCKY_WINNERS_WEEKLY',
+  monthly: 'LUCKY_WINNERS_MONTHLY',
+} as const;
+
 const CREATOR_KEY_BY_PERIOD = leaderboardService.CREATOR_KEY_BY_PERIOD;
 
 /** GET /leaderboard/rich */
@@ -170,6 +176,30 @@ export async function getMyGifterRank(req: Request, res: Response, next: NextFun
   try {
     const { period } = z.object({ period: z.enum(['daily', 'weekly', 'monthly']).default('daily') }).parse(req.query);
     const key = leaderboardService.KEYS[GIFTER_KEY_BY_PERIOD[period]];
+    const data = await leaderboardService.getMyRank(key, req.user!.id);
+    ok(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /leaderboard/lucky?period=daily|weekly|monthly — ranked by total coins won on lucky gifts */
+export async function getLuckyWinnersLeaderboard(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit, period } = periodQuerySchema.parse(req.query);
+    const key = leaderboardService.KEYS[LUCKY_WINNER_KEY_BY_PERIOD[period]];
+    const data = await leaderboardService.getLeaderboard(key, page, limit);
+    ok(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** GET /leaderboard/lucky/me?period=daily|weekly|monthly */
+export async function getMyLuckyWinnerRank(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { period } = z.object({ period: z.enum(['daily', 'weekly', 'monthly']).default('daily') }).parse(req.query);
+    const key = leaderboardService.KEYS[LUCKY_WINNER_KEY_BY_PERIOD[period]];
     const data = await leaderboardService.getMyRank(key, req.user!.id);
     ok(res, data);
   } catch (err) {

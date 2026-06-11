@@ -8,6 +8,8 @@ export type GiftSideEffectsJobData = {
   roomId: string | null;
   recipientId: string | null;
   skipEarnerLeaderboard: boolean;
+  /** Coins won on the lucky draw (0 = no win / not a lucky gift). Optional for in-flight jobs from older deploys. */
+  luckyRewardCoins?: number;
 };
 
 export async function enqueueGiftSideEffects(
@@ -30,6 +32,7 @@ export async function processGiftSideEffects(
     updateCharmScore,
     updateGifterScore,
     updateEarnerScore,
+    updateLuckyWinnerScore,
   } = await import("../modules/leaderboard/leaderboard.service");
   void updateRichScore(data.senderId, data.totalCoinCost).catch(
     () => undefined,
@@ -43,6 +46,12 @@ export async function processGiftSideEffects(
 
   if (!data.skipEarnerLeaderboard) {
     void updateEarnerScore(data.hostUserId, data.totalBeanValue).catch(
+      () => undefined,
+    );
+  }
+
+  if ((data.luckyRewardCoins ?? 0) > 0) {
+    void updateLuckyWinnerScore(data.senderId, data.luckyRewardCoins!).catch(
       () => undefined,
     );
   }

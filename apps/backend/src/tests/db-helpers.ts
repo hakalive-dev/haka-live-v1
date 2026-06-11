@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { prisma } from '../config/prisma';
+import { clearLuckySettingCache } from '../modules/lucky-gifts/lucky-setting';
 
 /**
  * Truncate all transactional tables between tests. Reference tables
@@ -23,12 +24,18 @@ export async function resetDb(): Promise<void> {
       "admin_users"
     RESTART IDENTITY CASCADE
   `);
-  // Reset the singleton to defaults.
+  // Reset the singletons to defaults.
   await prisma.giftBonusSetting.upsert({
     where: { id: 'singleton' },
     update: { enabled: true, bonusRate: 0.15, updatedBy: '' },
     create: { id: 'singleton', enabled: true, bonusRate: 0.15, updatedBy: '' },
   });
+  await prisma.luckyGiftSetting.upsert({
+    where: { id: 'singleton' },
+    update: { enabled: false, winProbability: 0.2, winMultiplier: 3.0, receiverBenefitPercent: 1.5, updatedBy: '' },
+    create: { id: 'singleton' },
+  });
+  clearLuckySettingCache();
 }
 
 interface CreateUserInput {

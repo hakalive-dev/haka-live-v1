@@ -10,6 +10,7 @@ import {
   updateCharmScore,
   updateGifterScore,
   updateEarnerScore,
+  updateLuckyWinnerScore,
 } from "../leaderboard/leaderboard.service";
 import {
   userSummarySelect,
@@ -40,6 +41,13 @@ import {
   syncCoinSellerProfileRatesFromTier,
   type TierRates,
 } from "../payments/coinSeller.service";
+import { isLuckyGiftCategory } from "../../shared-types/gifts";
+import { getLuckySetting } from "../lucky-gifts/lucky-setting";
+import { runLuckyDraw, luckyReceiverBeans } from "../lucky-gifts/lucky-draw";
+import {
+  broadcastLuckyDraw,
+  type LuckyDrawOutcome,
+} from "../lucky-gifts/lucky-gifts.service";
 
 const COMBO_WINDOW_SECONDS = 5;
 
@@ -381,7 +389,20 @@ export async function sendGift(input: GiftSendInput) {
   }
 
   const totalCoinCost = gift.coinCost * qty;
-  const totalBeanValue = gift.beanValue * qty;
+
+  // Lucky gifts (Lucky-tab category) run a server-side win/lose draw — resolve
+  // the cached game config up front. When active, the host's bean pool is the
+  // small receiver % of gift value instead of the normal beanValue; using it as
+  // `totalBeanValue` keeps distributeBeans, charm XP, leaderboards, and the
+  // GiftTransaction row consistent without forking any distribution logic.
+  const luckySetting = isLuckyGiftCategory(gift.category)
+    ? await getLuckySetting()
+    : null;
+  const luckyActive = luckySetting?.enabled === true;
+  const totalBeanValue =
+    luckyActive && luckySetting
+      ? luckyReceiverBeans(luckySetting, totalCoinCost)
+      : gift.beanValue * qty;
 
   const giftSummary: GiftAnimationGift = {
     id: gift.id,
@@ -529,13 +550,77 @@ export async function sendGift(input: GiftSendInput) {
       await addCharmXp(ctx.hostUser.id, totalBeanValue, tx);
     }
 
+    // Lucky draw — runs AFTER the debit + bean distribution so coins are always
+    // deducted first and the win credit is atomic with the gift. One draw per
+    // send (qty is batched into a single stake). The LuckyGiftDraw row is unique
+    // on giftTransactionId, so a retried transaction can never double-log.
+    let luckyOutcome: LuckyDrawOutcome | null = null;
+    if (luckyActive && luckySetting) {
+      const draw = runLuckyDraw(luckySetting, totalCoinCost);
+      let senderBalanceAfterDraw = newSenderCoinBalance;
+      if (draw.isWin && draw.rewardCoins > 0) {
+        senderBalanceAfterDraw = newSenderCoinBalance + draw.rewardCoins;
+        await tx.wallet.update({
+          where: { id: senderWallet.id },
+          data: { coinBalance: senderBalanceAfterDraw },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            walletId: senderWallet.id,
+            transactionType: "credit",
+            currency: "coins",
+            amount: draw.rewardCoins,
+            balanceAfter: senderBalanceAfterDraw,
+            reference: "lucky_reward",
+            description: `Lucky gift win: ${gift.name}`,
+          },
+        });
+      }
+      const drawRow = await tx.luckyGiftDraw.create({
+        data: {
+          giftTransactionId: giftTx.id,
+          userId: senderId,
+          giftId: gift.id,
+          roomId,
+          coinCost: totalCoinCost,
+          isWin: draw.isWin,
+          rewardCoins: draw.rewardCoins,
+          receiverBeans: distributedHostBeans,
+          winProbability: luckySetting.winProbability,
+          winMultiplier: luckySetting.winMultiplier,
+        },
+      });
+      luckyOutcome = {
+        drawId: drawRow.id,
+        isWin: draw.isWin,
+        rewardCoins: draw.rewardCoins,
+        coinCost: totalCoinCost,
+        senderCoinBalance: senderBalanceAfterDraw,
+      };
+    }
+
     return {
       giftTx,
       commissionCredits,
       hostBeans: distributedHostBeans,
       coinSellerRates,
+      luckyOutcome,
     };
   });
+
+  // Lucky result — post-commit: sender popup (win and lose), room announcement
+  // + winners feed (wins only).
+  if (result.luckyOutcome) {
+    broadcastLuckyDraw({
+      senderId,
+      senderName: senderSummary.displayName,
+      roomId,
+      giftId: gift.id,
+      giftName: gift.name,
+      giftIcon: gift.icon,
+      outcome: result.luckyOutcome,
+    });
+  }
 
   // Real-time agency summary (rolling gift-bonus inputs, tier ladders): notify
   // agency + parent owners on every qualifying gift so mobile can refetch summary
@@ -590,6 +675,7 @@ export async function sendGift(input: GiftSendInput) {
     );
   }
 
+  const luckyRewardCoins = result.luckyOutcome?.rewardCoins ?? 0;
   const { enqueueGiftSideEffects } =
     await import("../../queues/gift-side-effects");
   void enqueueGiftSideEffects({
@@ -600,6 +686,7 @@ export async function sendGift(input: GiftSendInput) {
     roomId: roomId ?? null,
     recipientId: input.recipientId ?? null,
     skipEarnerLeaderboard,
+    luckyRewardCoins,
   }).catch(() => {
     void updateRichScore(senderId, totalCoinCost).catch(() => undefined);
     void updateCharmScore(ctx.hostUser.id, totalBeanValue).catch(
@@ -608,6 +695,11 @@ export async function sendGift(input: GiftSendInput) {
     void updateGifterScore(senderId, totalCoinCost).catch(() => undefined);
     if (!skipEarnerLeaderboard) {
       void updateEarnerScore(ctx.hostUser.id, totalBeanValue).catch(
+        () => undefined,
+      );
+    }
+    if (luckyRewardCoins > 0) {
+      void updateLuckyWinnerScore(senderId, luckyRewardCoins).catch(
         () => undefined,
       );
     }
@@ -622,6 +714,7 @@ export async function sendGift(input: GiftSendInput) {
     hostBeans: result.hostBeans,
     coinSellerUserId: ctx.coinSeller?.userId,
     sellerRatesPayload,
+    luckyDraw: result.luckyOutcome,
   };
 }
 

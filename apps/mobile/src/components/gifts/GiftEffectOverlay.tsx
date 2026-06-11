@@ -14,6 +14,8 @@ export type GiftSpecialEffect = {
   giftName: string;
   qty: number;
   coinCost: number;
+  /** Recipient's seat — PNG (non-SVGA) effects fly here after the center zoom. */
+  targetSeatPosition?: number | null;
 };
 
 import {

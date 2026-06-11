@@ -23,6 +23,7 @@ import { Image } from 'expo-image';
 import { UserAvatar } from '@components/UserAvatar';
 
 import { giftsApi } from '@api/gifts';
+import { formatApiError } from '@api/client';
 import {
   getGiftsForTab,
   type GiftPanelTabKey,
@@ -124,14 +125,31 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
     }
   }, [visible, slideAnim]);
 
+  // A failed fetch must clear `loading` and surface the error — otherwise the
+  // panel is stuck on the skeleton with every tab empty and no way to recover.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
-    if (visible && catalogue.length === 0) {
-      giftsApi.catalogue().then((data) => {
+    if (!visible || catalogue.length > 0) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    giftsApi
+      .catalogue()
+      .then((data) => {
+        if (cancelled) return;
         setCatalogue(data);
         setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoading(false);
+        setLoadError(formatApiError(e));
       });
-    }
-  }, [visible, catalogue.length]);
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, catalogue.length, reloadKey]);
 
   const filtered = getGiftsForTab(catalogue, activeTab);
   const [selectedGiftId, setSelectedGiftId] = useState<string | null>(null);
@@ -244,6 +262,17 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
         <View style={styles.gridWrap}>
           {loading ? (
             <StoreGridSkeleton />
+          ) : loadError && catalogue.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>{loadError}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => setReloadKey((k) => k + 1)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <FlatList
               data={filtered}
@@ -558,6 +587,14 @@ const styles = StyleSheet.create({
   giftCostDisabled: { color: 'rgba(255,255,255,0.4)' },
   emptyBox: { height: 80, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
+  retryBtn: {
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  retryText: { color: Colors.textPrimary, fontSize: 13, fontWeight: '600' },
 
   // Footer
   footer: {
