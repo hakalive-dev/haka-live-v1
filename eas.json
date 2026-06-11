@@ -28,6 +28,14 @@
         "EXPO_PUBLIC_SKIP_AGENT_OTP": "true"
       }
     },
+    "staging": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging-api-gfun.onrender.com/api/v1",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://necppysukwggmfcgjasq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5lY3BweXN1a3dnZ21mY2dqYXNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzE2OTYsImV4cCI6MjA5Njc0NzY5Nn0.se49y5kgTI_061U4t8x-sDqy2BVfVPSPNCkJCqUH1bw"
+      }
+    },
     "production": {
       "extends": "base",
       "autoIncrement": true,
