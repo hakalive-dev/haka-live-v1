@@ -49,6 +49,9 @@ import type {
   PublicUser,
 } from '@/types';
 
+const MOMENT_CAMERA_ICON = require('../../../assets/discover/moment_camera_icon.png');
+const MOMENT_CAMERA_BTN_SIZE = 60;
+
 const GIFT_CATALOG_IMAGES: Record<string, ReturnType<typeof require>> = {
   'gifts/86.png': require('../../../assets/gifts/86.png'),
   'gifts/93.png': require('../../../assets/gifts/93.png'),
@@ -162,6 +165,42 @@ const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<
 function fmtCount(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
+}
+
+function MomentCameraButton({
+  size = MOMENT_CAMERA_BTN_SIZE,
+  onPress,
+  style,
+}: {
+  size?: number;
+  onPress?: () => void;
+  style?: object;
+}) {
+  const iconSize = Math.round(size * 0.4);
+  const circle = (
+    <View
+      style={[
+        styles.momentCameraCircle,
+        { width: size, height: size, borderRadius: size / 2 },
+      ]}
+    >
+      <Image
+        source={MOMENT_CAMERA_ICON}
+        style={{ width: iconSize, height: iconSize }}
+        contentFit="contain"
+      />
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity style={style} onPress={onPress} activeOpacity={0.85}>
+        {circle}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={style}>{circle}</View>;
 }
 
 function resolveAuthorAge(user: ApiMomentPost['user']): number | null {
@@ -420,11 +459,7 @@ const PostCard = React.memo(function PostCard({
           </View>
         )}
         {/* Camera / record button — video tab only, bottom-right of cover */}
-        {isVideo && (
-          <TouchableOpacity style={styles.postCameraBtn}>
-            <Ionicons name="camera" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
+        {isVideo && <MomentCameraButton style={styles.postCameraBtn} />}
       </View>
 
       {/* ── Hashtag ── */}
@@ -1163,13 +1198,10 @@ export function DiscoverScreen() {
 
       {/* ── FAB — visible on Moment and Video tabs ── */}
       {(activeTab === 'moment' || activeTab === 'video') && (
-        <TouchableOpacity
+        <MomentCameraButton
           style={[styles.fab, { bottom: insets.bottom + 70 }]}
           onPress={() => nav.navigate('CreateMoment', { postType: activeTab as 'moment' | 'video' })}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
+        />
       )}
 
       {/* ── Overlays ── */}
@@ -1403,15 +1435,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Camera button: bottom-right of cover, 60×60, rgba(223,223,223,0.5) (video tab)
+  // Camera button: bottom-right of cover, 60×60 (video tab)
   postCameraBtn: {
     position: 'absolute',
     bottom: 15,
     right: 15,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(223,223,223,0.5)',
+  },
+  momentCameraCircle: {
+    backgroundColor: 'rgba(58, 58, 58, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1831,18 +1862,12 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
+    zIndex: 20,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.28,
     shadowRadius: 8,
     elevation: 8,
-    zIndex: 20,
   },
   videoSkeleton: {
     flex: 1,
