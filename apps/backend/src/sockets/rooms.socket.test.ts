@@ -59,6 +59,13 @@ jest.mock('../config/prisma', () => {
     },
     userSettings: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null), // hasSuperAdminPower check on join
+    },
+    userStoreItem: {
+      findFirst: jest.fn().mockResolvedValue(null), // entry effect + theme entitlement
+    },
+    normalBattle: {
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     roomAdmin: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -273,6 +280,9 @@ describe('room:join / room:leave', () => {
       isLocked: false,
       password: null,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
     mockRoom.updateMany.mockClear();
 
@@ -301,6 +311,9 @@ describe('room:join / room:leave', () => {
       isLocked: false,
       password: null,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
     const seatedUser = {
       id: HOST_ID,
@@ -387,6 +400,9 @@ describe('room:join / room:leave', () => {
       isLocked: false,
       password: null,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
     mockRedis.set.mockClear();
 
@@ -424,7 +440,19 @@ describe('room:join / room:leave', () => {
   });
 
   it('does not broadcast user.joined when the socket is already in the room (Keep return)', async () => {
-    mockRoom.findUnique.mockResolvedValue({ id: ROOM_ID, status: 'live' });
+    // Full fixture: this test asserts ack.ok, and the ack path re-reads the
+    // room in getRtcUidsForRoom selecting hostId/agoraChannel/seats.
+    mockRoom.findUnique.mockResolvedValue({
+      id: ROOM_ID,
+      status: 'live',
+      hostId: HOST_ID,
+      viewerCount: 0,
+      isLocked: false,
+      password: null,
+      theme: null,
+      agoraChannel: 'test-channel',
+      seats: [],
+    });
     mockUser.findMany.mockResolvedValue([
       {
         id: USER_ID,
@@ -479,6 +507,9 @@ describe('room:join / room:leave', () => {
       isLocked: true,
       password: hash,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
     mockUser.findMany.mockResolvedValue([
       { id: USER_ID, username: 'viewer', displayName: 'Viewer', avatar: '', hakaId: null, activeSpecialId: null, activeSpecialIdLevel: null, activeSpecialIdExpiresAt: null, storeItems: [] },
@@ -508,6 +539,9 @@ describe('room:join / room:leave', () => {
       isLocked: true,
       password: hash,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
 
     const client = connectClient(makeToken(USER_ID));
@@ -537,6 +571,9 @@ describe('room:join / room:leave', () => {
       isLocked: true,
       password: hash,
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
     const roomAdminFindFirst = (prisma.roomAdmin as any).findFirst as jest.Mock;
     roomAdminFindFirst.mockResolvedValueOnce({ id: 'ra-1' });
@@ -567,6 +604,9 @@ describe('room:join / room:leave', () => {
       isLocked: true,
       password: '123456',
       theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
     });
 
     const client = connectClient(makeToken(USER_ID));
@@ -596,6 +636,9 @@ const LIVE_ROOM_FOR_JOIN = {
   isLocked: false,
   password: null,
   theme: null,
+      // getRtcUidsForRoom re-reads the room selecting these
+      agoraChannel: 'test-channel',
+      seats: [],
 };
 
 // ── disconnect / multi-socket leave (seat retention) ───────────────────────────

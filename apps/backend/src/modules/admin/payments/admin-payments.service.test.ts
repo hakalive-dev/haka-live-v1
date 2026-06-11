@@ -43,10 +43,16 @@ describe('admin payment transactions', () => {
     paymentTransaction.groupBy
       .mockResolvedValueOnce([{ status: 'succeeded', _count: { _all: 2 } }])
       .mockResolvedValueOnce([{ method: 'card', _count: { _all: 2 } }]);
-    paymentTransaction.findMany.mockResolvedValueOnce([
-      { package: { coins: 100, bonusCoins: 10 } },
-      { package: { coins: 200, bonusCoins: 0 } },
-    ]);
+    // The summary now runs two findMany queries (coins credited + all succeeded)
+    paymentTransaction.findMany
+      .mockResolvedValueOnce([
+        { package: { coins: 100, bonusCoins: 10 } },
+        { package: { coins: 200, bonusCoins: 0 } },
+      ])
+      .mockResolvedValueOnce([
+        { package: { coins: 100, bonusCoins: 10 } },
+        { package: { coins: 200, bonusCoins: 0 } },
+      ]);
 
     const summary = await paymentTransactionsSummary({ packageId: 'pkg-1' } as any);
 

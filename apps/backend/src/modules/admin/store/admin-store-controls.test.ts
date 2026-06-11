@@ -18,7 +18,7 @@ describe('admin store super-admin controls', () => {
     superAdminId = sa.id;
     superToken = mintAdminJwt(sa.id, 'super_admin');
 
-    const regularAdmin = await createTestAdmin({ role: 'admin', email: 'admin2@test.com' });
+    const regularAdmin = await createTestAdmin({ role: 'admin' });
     adminToken = mintAdminJwt(regularAdmin.id, 'admin');
 
     const user = await createTestUser();
@@ -38,8 +38,10 @@ describe('admin store super-admin controls', () => {
   });
 
   it('blocks purchase when isForSale is false', async () => {
-    await prisma.wallet.create({
-      data: { userId, coinBalance: 1000 },
+    // createTestUser auto-creates the wallet; just set the balance
+    await prisma.wallet.update({
+      where: { userId },
+      data: { coinBalance: 1000 },
     });
     await setItemSaleStatus(itemId, false, superAdminId, '127.0.0.1', { reason: 'test' });
 
@@ -60,8 +62,9 @@ describe('admin store super-admin controls', () => {
     const owned = await prisma.userStoreItem.findMany({ where: { userId, itemId } });
     expect(owned.length).toBe(1);
 
+    // Wallet exists (auto-created with the user) but no coins were charged
     const wallet = await prisma.wallet.findUnique({ where: { userId } });
-    expect(wallet).toBeNull();
+    expect(Number(wallet?.coinBalance)).toBe(0);
 
     const dist = await prisma.storeItemDistribution.findFirst({ where: { recipientUserId: userId } });
     expect(dist).toBeTruthy();

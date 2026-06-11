@@ -31,6 +31,7 @@ jest.mock('../../../config/prisma', () => {
     },
     hostMicSession: { findMany: jest.fn().mockResolvedValue([]) },
     auditLog: { create: jest.fn().mockResolvedValue({}) },
+    userSettings: { findUnique: jest.fn().mockResolvedValue(null) }, // hasSuperAdminPower
     $transaction: jest.fn(),
   };
   db.$transaction.mockImplementation((ops: any) =>

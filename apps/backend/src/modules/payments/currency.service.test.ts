@@ -101,8 +101,9 @@ describe('currency.service', () => {
       },
     });
 
+    // Multiple of WITHDRAWAL_BEAN_STEP so the step check doesn't fire first
     await expect(
-      walletService.requestWithdrawal(user.id, 99_999, 'test', 'IN', pm.id, ''),
+      walletService.requestWithdrawal(user.id, 99_990, 'test', 'IN', pm.id, ''),
     ).rejects.toThrow(/Minimum withdrawal is 100,000 beans/i);
 
     const req = await walletService.requestWithdrawal(user.id, 100_000, 'test', 'IN', pm.id, '');
@@ -141,7 +142,7 @@ describe('currency.service', () => {
 
   it('requestWithdrawal stores currency snapshot', async () => {
     const { createTestUser, mintJwt } = await import('../../tests/db-helpers');
-    const user = await createTestUser({ beanBalance: 50_000 });
+    const user = await createTestUser({ beanBalance: 500_000 });
     await prisma.currencyRate.upsert({
       where: { countryCode: 'PH' },
       update: {
@@ -165,10 +166,10 @@ describe('currency.service', () => {
     });
 
     const pm = await createTestPaymentMethod(user.id, 'PH');
-    const req = await walletService.requestWithdrawal(user.id, 20_000, 'test', 'PH', pm.id, '');
+    const req = await walletService.requestWithdrawal(user.id, 100_000, 'test', 'PH', pm.id, '');
     expect(req.countryCode).toBe('PH');
     expect(req.currency).toBe('PHP');
-    expect(Number(req.localAmount)).toBeCloseTo(112, 0);
+    expect(Number(req.localAmount)).toBeCloseTo(560, 0);
     expect(Number(req.usdRateAtRequest)).toBe(56);
   });
 

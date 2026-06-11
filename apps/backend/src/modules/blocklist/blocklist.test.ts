@@ -28,6 +28,7 @@ jest.mock('../../config/prisma', () => ({
       findFirst: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    userSettings: { findUnique: jest.fn().mockResolvedValue(null) }, // hasSuperAdminPower check
   },
 }));
 

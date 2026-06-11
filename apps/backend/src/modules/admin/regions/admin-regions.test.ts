@@ -6,6 +6,10 @@ describe('regions CRUD', () => {
   let token = '';
   beforeEach(async () => {
     await resetDb();
+    // resetDb truncates user/content tables but not reference tables; a SEA
+    // region left over from a previous run breaks the unique(code) insert.
+    const { prisma } = await import('../../../config/prisma');
+    await prisma.region.deleteMany({ where: { code: 'SEA' } });
     const sa = await createTestAdmin({ role: 'super_admin' });
     token = mintAdminJwt(sa.id, 'super_admin');
   });

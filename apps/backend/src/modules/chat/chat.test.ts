@@ -39,6 +39,7 @@ jest.mock('../../config/prisma', () => ({
     userSettings: { findUnique: jest.fn().mockResolvedValue(null) },
     ban: { findFirst: jest.fn().mockResolvedValue(null), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     accountRisk: { findFirst: jest.fn().mockResolvedValue(null) },
+    withdrawalRequest: { count: jest.fn().mockResolvedValue(0) },
     $queryRaw: jest.fn(),
     notification: {
       count: jest.fn(),
@@ -99,7 +100,8 @@ const mockNotification = prisma.notification as unknown as {
 const JWT_SECRET = 'test-jwt-access-secret-at-least-16';
 const USER_A = 'user-a-uuid';
 const USER_B = 'user-b-uuid';
-const USER_C = 'user-c-uuid';
+// Must be a real UUID: forwardDMSchema validates recipientId with z.string().uuid()
+const USER_C = '00000000-0000-4000-8000-00000000000c';
 
 function makeToken(userId = USER_A) {
   return jwt.sign({ sub: userId, role: 'normal_user' }, JWT_SECRET, { expiresIn: '15m' });
@@ -423,14 +425,15 @@ describe('DELETE /api/v1/chat/conversations/messages/:messageId', () => {
   });
 
   it('tombstones a message for everyone when sender deletes', async () => {
-    mockDM.findUnique
-      .mockResolvedValueOnce({
-        id: 'dm-1',
-        senderId: USER_A,
-        recipientId: USER_B,
-        deletedForAllAt: null,
-      })
-      .mockResolvedValueOnce(null);
+    // Single mockResolvedValueOnce: the service reads the message once on this
+    // path, and jest.clearAllMocks() does NOT drop unconsumed once-values — a
+    // leftover would leak a null into the next test's findUnique.
+    mockDM.findUnique.mockResolvedValueOnce({
+      id: 'dm-1',
+      senderId: USER_A,
+      recipientId: USER_B,
+      deletedForAllAt: null,
+    });
     mockDM.update.mockResolvedValue({
       id: 'dm-1',
       content: 'Secret',
@@ -438,8 +441,7 @@ describe('DELETE /api/v1/chat/conversations/messages/:messageId', () => {
       createdAt: '2026-04-07T10:00:00Z',
       sender: senderProfile,
       recipient: recipientProfile,
-      deletedForAllAt: new Date('2026-04-07T10:05:00Z'),
-      ...baseDmFields(),
+      ...baseDmFields({ deletedForAllAt: new Date('2026-04-07T10:05:00Z') }),
     });
 
     const res = await request(app)

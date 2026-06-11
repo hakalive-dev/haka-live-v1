@@ -241,7 +241,8 @@ describe('GET /api/v1/agency/hosts', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.items).toHaveLength(1);
     expect(res.body.data.items[0].id).toBe(host.id);
-    expect(res.body.data.items[0].wallet.beanBalance).toBe(5_000);
+    // BigInt wallet columns serialize to strings over JSON (BigInt.toJSON in app.ts)
+    expect(Number(res.body.data.items[0].wallet.beanBalance)).toBe(5_000);
     expect(res.body.data.total).toBe(1);
   });
 
@@ -317,17 +318,33 @@ describe('POST /api/v1/agency/sales', () => {
     await createTestAgency({ ownerId: agent.id });
     const customer = await createTestUser();
 
+    // logAgentSale validates the (default GBP) currency against active rates
+    await prisma.currencyRate.upsert({
+      where: { countryCode: 'GB' },
+      update: { isActive: true, currency: 'GBP' },
+      create: {
+        countryCode: 'GB',
+        countryName: 'United Kingdom',
+        currency: 'GBP',
+        symbol: '£',
+        usdRate: 1.27,
+        isActive: true,
+        source: 'manual',
+      },
+    });
+
     const res = await request(app)
       .post('/api/v1/agency/sales')
       .set('Authorization', `Bearer ${mintJwt(agent.id, 'agent')}`)
       .send({ customerId: customer.id, coinsSold: 500, amountCollected: 5.0 });
 
     expect(res.status).toBe(201);
-    expect(res.body.data.coinsSold).toBe(500);
+    // BigInt columns serialize to strings over JSON / stay BigInt from Prisma
+    expect(Number(res.body.data.coinsSold)).toBe(500);
     expect(res.body.data.agentId).toBe(agent.id);
     expect(res.body.data.customerId).toBe(customer.id);
 
-    expect((await getWalletBalance(customer.id)).coins).toBe(500);
+    expect(Number((await getWalletBalance(customer.id)).coins)).toBe(500);
   });
 
   it('rejects missing required fields', async () => {
@@ -1094,7 +1111,7 @@ describe('Sub-agent invitations', () => {
 });
 
 describe('Host application — agent path (no admin notification)', () => {
-  it('apply-with-agent notifies agent only; agent approves via agency route', async () => {
+  it('apply-with-agent auto-approves, promotes the host, and notifies the agent only', async () => {
     const agent = await createTestUser({ role: 'agent' });
     await createTestAgency({ ownerId: agent.id });
     const applicant = await createTestUser();
@@ -1106,21 +1123,20 @@ describe('Host application — agent path (no admin notification)', () => {
     expect(res.status).toBe(201);
     const applicationId = res.body.data.id as string;
 
+    // No admin notification on the agent path
     const adminRows = await prisma.adminNotification.findMany({
       where: { entityType: 'HostApplication', entityId: applicationId },
     });
     expect(adminRows).toHaveLength(0);
 
-    const n = await prisma.notification.findFirst({
-      where: { userId: agent.id, type: 'host_application_request' },
+    // The flow is now auto-approved in one transaction — no separate agent
+    // approval step. The applicant is promoted immediately.
+    const application = await prisma.hostApplication.findUniqueOrThrow({
+      where: { id: applicationId },
+      select: { status: true, path: true },
     });
-    expect(n).toBeTruthy();
-
-    const appr = await request(app)
-      .post(`/api/v1/agency/host-applications/${applicationId}/approve`)
-      .set('Authorization', `Bearer ${mintJwt(agent.id, 'agent')}`)
-      .send({ note: 'welcome' });
-    expect(appr.status).toBe(200);
+    expect(application.status).toBe('approved');
+    expect(application.path).toBe('self_apply_with_agent');
 
     const promoted = await prisma.user.findUnique({
       where: { id: applicant.id },
@@ -1129,6 +1145,17 @@ describe('Host application — agent path (no admin notification)', () => {
     expect(promoted?.role).toBe('host');
     expect(promoted?.hostType).toBe('agent_host');
     expect(promoted?.agentId).toBe(agent.id);
+
+    // The agent is informed via a fire-and-forget `host_joined_agency`
+    // notification; poll briefly since it's not awaited by the request.
+    let agentNotif = null;
+    for (let i = 0; i < 10 && !agentNotif; i++) {
+      agentNotif = await prisma.notification.findFirst({
+        where: { userId: agent.id, type: 'host_joined_agency' },
+      });
+      if (!agentNotif) await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(agentNotif).toBeTruthy();
   });
 
   it('returns 403 when another agent tries to approve', async () => {
@@ -1170,9 +1197,15 @@ describe('Agency change request — owner in-app notification, no admin row', ()
     const afterAdmin = await prisma.adminNotification.count();
     expect(afterAdmin).toBe(beforeAdmin);
 
-    const n = await prisma.notification.findFirst({
-      where: { userId: agent.id, type: 'agency_change_request' },
-    });
+    // The notification is fire-and-forget on the server; poll briefly so a
+    // slow full-suite run doesn't race it (passes-alone / flakes-together).
+    let n = null;
+    for (let i = 0; i < 10 && !n; i++) {
+      n = await prisma.notification.findFirst({
+        where: { userId: agent.id, type: 'agency_change_request' },
+      });
+      if (!n) await new Promise((r) => setTimeout(r, 100));
+    }
     expect(n).toBeTruthy();
     expect((n?.data as { requestId?: string })?.requestId).toBe(requestId);
   });

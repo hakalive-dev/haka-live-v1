@@ -31,6 +31,13 @@ jest.mock('../../config/prisma', () => ({
       update: jest.fn(),
     },
     ban: { findFirst: jest.fn().mockResolvedValue(null), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    // getPackages → currency ensureSeeded checks the rates table first
+    currencyRate: {
+      count: jest.fn().mockResolvedValue(1),
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     $transaction: jest.fn(),
   },
 }));

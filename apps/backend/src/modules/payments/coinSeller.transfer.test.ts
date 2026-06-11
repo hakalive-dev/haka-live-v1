@@ -40,8 +40,8 @@ describe("coinSellerService.transfer", () => {
     const wallet = await prisma.wallet.findUnique({
       where: { userId: seller.id },
     });
-    expect(profile!.availableBalance).toBe(1500);
-    expect(wallet!.coinBalance).toBe(500);
+    expect(Number(profile!.availableBalance)).toBe(1500);
+    expect(Number(wallet!.coinBalance)).toBe(500);
   });
 
   it("resolves recipient by active special id and credits their wallet", async () => {
@@ -66,11 +66,11 @@ describe("coinSellerService.transfer", () => {
     const buyerWallet = await prisma.wallet.findUnique({
       where: { userId: buyerId },
     });
-    expect(buyerWallet!.coinBalance).toBe(200);
+    expect(Number(buyerWallet!.coinBalance)).toBe(200);
     const sellerProfile = await prisma.coinSellerProfile.findUnique({
       where: { userId: seller.id },
     });
-    expect(sellerProfile!.availableBalance).toBe(1800);
+    expect(Number(sellerProfile!.availableBalance)).toBe(1800);
   });
 
   it("rejects self-transfer when target_type is coin_seller", async () => {
@@ -185,8 +185,8 @@ describe("coinSellerService.submitExchangeRequest (instant beans → seller coin
     const profile = await prisma.coinSellerProfile.findUnique({
       where: { userId: id },
     });
-    expect(wallet!.beanBalance).toBe(4000);
-    expect(profile!.availableBalance).toBe(1000);
+    expect(Number(wallet!.beanBalance)).toBe(4000);
+    expect(Number(profile!.availableBalance)).toBe(1000);
     const txs = await prisma.coinSellerTransaction.findMany({
       where: { sellerId: id },
     });

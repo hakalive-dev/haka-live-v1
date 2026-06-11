@@ -21,7 +21,7 @@ describe('foundation schema columns', () => {
     const owner = await prisma.user.create({ data: { displayName: 'Owner', hakaId: '500000900' } });
     const agency = await prisma.agency.create({ data: { name: 'A1', ownerId: owner.id } });
     const row = await prisma.agency.findUniqueOrThrow({ where: { id: agency.id } });
-    expect(row.hostLimit).toBeNull();
+    expect(row.hostLimit).toBe(0); // 0 = unlimited (non-null default in schema)
     expect(row.withdrawalLimitMonthly).toBeNull();
     expect(row.riskLevel).toBe('low');
     expect(row.payoutFrozen).toBe(false);

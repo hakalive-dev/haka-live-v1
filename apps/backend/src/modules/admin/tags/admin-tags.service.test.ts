@@ -31,7 +31,7 @@ const mockPrisma = prisma as any;
 describe('bulkAssignTags', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('assigns a tag to multiple users, logs each assignment, and forces re-login', async () => {
+  it('assigns a tag to multiple users, logs each assignment, and does NOT force re-login (live profile refresh instead)', async () => {
     mockPrisma.adminTag.findUnique.mockResolvedValueOnce({ id: 'tag-1', name: 'moderator' });
     mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'user-1' }, { id: 'user-2' }]);
     mockPrisma.userTag.createMany.mockResolvedValueOnce({ count: 2 });
@@ -49,7 +49,9 @@ describe('bulkAssignTags', () => {
       ],
       skipDuplicates: true,
     });
-    expect(forceLogout).toHaveBeenCalledTimes(2);
+    // Tag changes notify via `user:profile_updated` (notifyProfileUpdated)
+    // instead of revoking sessions — see admin-tags.service.ts.
+    expect(forceLogout).not.toHaveBeenCalled();
     expect(logAdminAction).toHaveBeenCalledTimes(2);
     expect(result.assignedCount).toBe(2);
   });

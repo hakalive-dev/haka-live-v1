@@ -44,12 +44,12 @@ it('blocks withdrawal when daily count limit is reached', async () => {
     update: { value: 2 },
   });
 
-  // First two succeed
-  await requestWithdrawal(user.id, 10000, '', 'IN', method.id, '1.2.3.4');
-  await requestWithdrawal(user.id, 10000, '', 'IN', method.id, '1.2.3.4');
+  // First two succeed (amounts must clear the global WITHDRAWAL_MIN_BEANS floor)
+  await requestWithdrawal(user.id, 100_000, '', 'IN', method.id, '1.2.3.4');
+  await requestWithdrawal(user.id, 100_000, '', 'IN', method.id, '1.2.3.4');
   // Third is blocked
   await expect(
-    requestWithdrawal(user.id, 10000, '', 'IN', method.id, '1.2.3.4'),
+    requestWithdrawal(user.id, 100_000, '', 'IN', method.id, '1.2.3.4'),
   ).rejects.toThrow(/Daily withdrawal count limit reached/i);
 });
 
@@ -63,14 +63,14 @@ it('sets ipRiskFlagged when IP threshold is exceeded', async () => {
 
   // Create 2 prior requests from same IP by different users
   for (let i = 0; i < 2; i++) {
-    const u = await createTestUser({ beanBalance: 100_000 });
+    const u = await createTestUser({ beanBalance: 200_000 });
     const m = await seedPaymentMethod(u.id);
-    await requestWithdrawal(u.id, 10000, '', 'IN', m.id, ip);
+    await requestWithdrawal(u.id, 100_000, '', 'IN', m.id, ip);
   }
 
   // Third user from same IP — should be flagged
-  const user3 = await createTestUser({ beanBalance: 100_000 });
+  const user3 = await createTestUser({ beanBalance: 200_000 });
   const m3 = await seedPaymentMethod(user3.id);
-  const req = await requestWithdrawal(user3.id, 10000, '', 'IN', m3.id, ip);
+  const req = await requestWithdrawal(user3.id, 100_000, '', 'IN', m3.id, ip);
   expect(req.ipRiskFlagged).toBe(true);
 });

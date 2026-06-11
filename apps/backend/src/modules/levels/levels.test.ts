@@ -35,8 +35,10 @@ describe('Level System — calcLevel', () => {
     expect(XP_THRESHOLDS).toHaveLength(100);
   });
 
-  it('first threshold is 0', () => {
-    expect(XP_THRESHOLDS[0]).toBe(0);
+  it('first threshold matches the level-1 anchor (5,000 XP)', () => {
+    // The revamped curve starts level 1 at 5,000 cumulative XP (LEVEL_ANCHORS);
+    // calcLevel still returns 1 for any XP below it via its fallback.
+    expect(XP_THRESHOLDS[0]).toBe(5_000);
   });
 
   it('thresholds are monotonically increasing', () => {

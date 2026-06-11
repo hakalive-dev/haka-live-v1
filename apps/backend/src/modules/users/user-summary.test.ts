@@ -75,6 +75,7 @@ describe('user-summary', () => {
       activeSpecialId: null as string | null,
       activeSpecialIdLevel: null as string | null,
       activeSpecialIdExpiresAt: null as Date | null,
+      level: null as { richLevel: number; charmLevel: number } | null,
     };
 
     it('returns null cosmetics when the user has none equipped', () => {

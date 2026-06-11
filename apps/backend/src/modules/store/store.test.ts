@@ -103,6 +103,7 @@ const fakeItem = {
   durationDays: 30,
   sortOrder: 1,
   isActive: true,
+  isForSale: true,
 };
 
 const fakeUserItem = {

@@ -105,6 +105,7 @@ jest.mock('../../config/prisma', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       create: jest.fn(),
     },
+    userSettings: { findUnique: jest.fn().mockResolvedValue(null) }, // hasSuperAdminPower check
     theme: {
       findUnique: jest.fn(),
     },
@@ -487,9 +488,13 @@ describe('GET /api/v1/rooms/:id', () => {
         : s,
     );
 
+    // getRoomById: host pre-check → ensureHostSeatedAtPositionOne's own room
+    // check → full detail query (three findUnique calls in order).
     mockRoom.findUnique
       .mockResolvedValueOnce({ hostId: HOST_ID, status: 'live' })
+      .mockResolvedValueOnce({ hostId: HOST_ID, status: 'live' })
       .mockResolvedValueOnce({ ...baseRoom, status: 'live', seats: seatedSeats });
+    mockRoomSeat.findMany.mockResolvedValue([]); // dedupe step sees no duplicate seats
     mockRoomSeat.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ position: 1 });
@@ -718,6 +723,9 @@ describe('ensureHostSeatedAtPositionOne', () => {
 
   it('returns null when no empty unlocked seat exists', async () => {
     mockRoom.findUnique.mockResolvedValue({ hostId: HOST_ID, status: 'live' });
+    // The dedupe step reads findMany first; reset it — a persistent value from
+    // the previous test would otherwise make dedupe clear "duplicate" seats.
+    mockRoomSeat.findMany.mockResolvedValue([]);
     mockRoomSeat.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);

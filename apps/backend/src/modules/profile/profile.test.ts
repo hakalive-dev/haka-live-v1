@@ -75,6 +75,13 @@ describe('PATCH /api/v1/profile/me', () => {
   });
 
   it('updates profile and returns updated user', async () => {
+    // updateProfile first loads the user to check the onboarding/hakaId lock
+    mockUser.findUnique.mockResolvedValue({
+      onboardingComplete: false,
+      hakaId: null,
+      country: '',
+      gender: '',
+    });
     mockUser.update.mockResolvedValue({
       id: USER_ID,
       displayName: 'Alice Updated',

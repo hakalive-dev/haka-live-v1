@@ -40,6 +40,8 @@ jest.mock('../../sockets', () => ({
 
 jest.mock('./haka-team-guard', () => ({
   assertCannotReplyToHakaTeam: jest.fn(),
+  assertCannotReplyToWithdrawalMessage: jest.fn(),
+  assertCannotReplyToSystemDm: jest.fn(),
 }));
 
 jest.mock('./chat.push', () => ({

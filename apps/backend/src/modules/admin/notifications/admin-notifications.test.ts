@@ -13,7 +13,7 @@ describe('admin notifications', () => {
   });
 
   it('creates a row when a user requests a withdrawal and exposes unread count', async () => {
-    const user = await createTestUser({ beanBalance: 50_000 });
+    const user = await createTestUser({ beanBalance: 500_000 });
     const userToken = mintJwt(user.id);
 
     await prisma.currencyRate.upsert({
@@ -31,10 +31,22 @@ describe('admin notifications', () => {
       },
     });
 
+    // Withdraw now requires a saved payment method (paymentMethodId is a required uuid)
+    const method = await prisma.userPaymentMethod.create({
+      data: {
+        userId: user.id,
+        methodType: 'bank',
+        countryCode: 'US',
+        provider: 'bank',
+        accountLabel: 'Test',
+        maskedAccount: '****1234',
+      },
+    });
+
     const res = await request(app)
       .post('/api/v1/wallet/withdraw')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ beans: 15_000, notes: 'Pay me', countryCode: 'US' });
+      .send({ beans: 150_000, notes: 'Pay me', countryCode: 'US', paymentMethodId: method.id });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

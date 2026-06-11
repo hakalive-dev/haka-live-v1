@@ -414,7 +414,7 @@ describe('POST /api/v1/moments/:id/gift', () => {
       .set('Authorization', `Bearer ${makeToken()}`)
       .send({ gift_id: 'nonexistent' });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(404);
   });
 
   it('returns error when insufficient coins', async () => {
@@ -426,7 +426,7 @@ describe('POST /api/v1/moments/:id/gift', () => {
       .set('Authorization', `Bearer ${makeToken()}`)
       .send({ gift_id: 'gift-1' });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
   });
 
   it('sends a gift successfully', async () => {
