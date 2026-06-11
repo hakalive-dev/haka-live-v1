@@ -593,7 +593,7 @@ export function useRoomConnection({
     const events = [
       'user.joined', 'user.left', 'seat.updated',
       'message.sent',
-      'room.ended', 'listener.count', 'room.roster', 'gift:received',
+      'room.ended', 'listener.count', 'room.roster', 'gift:received', 'lucky.reward',
       'emoji.received',
       'seat.application.added', 'seat.application.removed', 'seat.application.resolved',
       'room:kicked', 'room.configUpdated', 'room:theme_changed',

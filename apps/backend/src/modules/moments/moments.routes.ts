@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.middleware';
+import { momentMediaUpload } from '../../utils/upload';
 import { momentController } from './moments.controller';
 
 const router = Router();
@@ -7,7 +8,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/',               momentController.list);
-router.post('/',              momentController.create);
+router.post('/',              momentMediaUpload.single('media_file'), momentController.create);
 router.get('/user/:userId',   momentController.listByUser);
 router.get('/:id',            momentController.get);
 router.delete('/:id',         momentController.remove);

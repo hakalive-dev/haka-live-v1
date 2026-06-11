@@ -6,13 +6,12 @@ import {
   Image,
   type ImageSourcePropType,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
 import { Asset } from "expo-asset";
 import * as FileSystem from "expo-file-system/legacy";
 import { SvgaPlayer, type SvgaPlayerRef } from "@jayming/svga-player-rn";
-import { Colors, Spacing } from "@/theme";
+import { Spacing } from "@/theme";
 
 const { width: SW, height: SH } = Dimensions.get("screen");
 
@@ -79,13 +78,6 @@ export async function preloadRemoteSvgaAssets(
     }
   }
 }
-
-const GLOW: Record<string, string> = {
-  "gifts/86.svga": "#FF69B4",
-  "gifts/93.svga": "#FFD700",
-  "gifts/116.svga": "#C8A2E8",
-  "gifts/121.svga": "#9B59B6",
-};
 
 /** Scheme-relative CDN URLs (`//cdn/...`) → https for SvgaPlayer. */
 function normalizeHttpSource(src: string): string {
@@ -217,15 +209,10 @@ function SVGAGiftEffectInner({
   visible,
   svgaAsset,
   giftImage,
-  senderName,
-  giftName,
-  giftIcon,
-  qty = 1,
   onComplete,
 }: Props) {
   // SVGA loading state
   const [sourceUri, setSourceUri] = useState<string | null>(null);
-  const [svgaVisible, setSvgaVisible] = useState(false);
   const svgaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const svgaRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -235,21 +222,11 @@ function SVGAGiftEffectInner({
   const pngAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // ── PNG layer animated values ─────────────────────────────────────────────
-  const pngDarkOpacity = useRef(new Animated.Value(0)).current;
   const pngImgOpacity = useRef(new Animated.Value(0)).current;
   const pngImgTransY = useRef(new Animated.Value(-SH * 0.7)).current;
-  const pngTextOpacity = useRef(new Animated.Value(0)).current;
-  const pngTextTransY = useRef(new Animated.Value(20)).current;
-  const pngQtyScale = useRef(new Animated.Value(0)).current;
-  const pngQtyOpacity = useRef(new Animated.Value(0)).current;
 
   // ── SVGA layer animated values ────────────────────────────────────────────
   const svgaLayerOpacity = useRef(new Animated.Value(0)).current;
-  const svgaTextOpacity = useRef(new Animated.Value(0)).current;
-  const svgaTextTransY = useRef(new Animated.Value(24)).current;
-  const svgaTextScale = useRef(new Animated.Value(0.85)).current;
-  const svgaQtyScale = useRef(new Animated.Value(0)).current;
-  const svgaQtyOpacity = useRef(new Animated.Value(0)).current;
 
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -273,7 +250,6 @@ function SVGAGiftEffectInner({
 
     if (svgaRevealTimerRef.current) clearTimeout(svgaRevealTimerRef.current);
     svgaRevealTimerRef.current = setTimeout(() => {
-      setSvgaVisible(true);
       svgaRevealTimerRef.current = null;
     }, 700);
 
@@ -306,21 +282,11 @@ function SVGAGiftEffectInner({
       return;
     }
 
-    pngDarkOpacity.setValue(0);
     pngImgOpacity.setValue(0);
     pngImgTransY.setValue(-SH * 0.7);
-    pngTextOpacity.setValue(0);
-    pngTextTransY.setValue(20);
-    pngQtyScale.setValue(0);
-    pngQtyOpacity.setValue(0);
 
     const anim = Animated.sequence([
       Animated.parallel([
-        Animated.timing(pngDarkOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
         Animated.timing(pngImgOpacity, {
           toValue: 1,
           duration: 250,
@@ -332,64 +298,13 @@ function SVGAGiftEffectInner({
           easing: Easing.out(Easing.back(1.2)),
           useNativeDriver: true,
         }),
-        Animated.sequence([
-          Animated.delay(700),
-          Animated.parallel([
-            Animated.timing(pngTextOpacity, {
-              toValue: 1,
-              duration: 350,
-              useNativeDriver: true,
-            }),
-            Animated.timing(pngTextTransY, {
-              toValue: 0,
-              duration: 350,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ]),
-        ]),
-        qty > 1
-          ? Animated.sequence([
-              Animated.delay(750),
-              Animated.parallel([
-                Animated.spring(pngQtyScale, {
-                  toValue: 1,
-                  friction: 3,
-                  tension: 220,
-                  useNativeDriver: true,
-                }),
-                Animated.timing(pngQtyOpacity, {
-                  toValue: 1,
-                  duration: 250,
-                  useNativeDriver: true,
-                }),
-              ]),
-            ])
-          : Animated.delay(0),
       ]),
-      Animated.delay(1200),
-      Animated.parallel([
-        Animated.timing(pngDarkOpacity, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pngImgOpacity, {
-          toValue: 0,
-          duration: 450,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pngTextOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pngQtyOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]),
+      Animated.delay(800),
+      Animated.timing(pngImgOpacity, {
+        toValue: 0,
+        duration: 450,
+        useNativeDriver: true,
+      }),
     ]);
 
     pngAnimRef.current = anim;
@@ -418,7 +333,6 @@ function SVGAGiftEffectInner({
     }
 
     completedRef.current = false;
-    setSvgaVisible(false);
     svgaLayerOpacity.setValue(0);
     if (svgaTimeoutRef.current) {
       clearTimeout(svgaTimeoutRef.current);
@@ -516,7 +430,6 @@ function SVGAGiftEffectInner({
 
   // ── SVGA callbacks ────────────────────────────────────────────────────────
   const handleSvgaLoaded = useCallback(() => {
-    setSvgaVisible(true);
     if (svgaRevealTimerRef.current) {
       clearTimeout(svgaRevealTimerRef.current);
       svgaRevealTimerRef.current = null;
@@ -525,61 +438,12 @@ function SVGAGiftEffectInner({
       clearTimeout(svgaTimeoutRef.current);
       svgaTimeoutRef.current = null;
     }
-    // If the layer is still hidden, fade it in; otherwise keep it visible.
     Animated.timing(svgaLayerOpacity, {
       toValue: 1,
       duration: 200,
       useNativeDriver: true,
     }).start();
-
-    svgaTextOpacity.setValue(0);
-    svgaTextTransY.setValue(24);
-    svgaTextScale.setValue(0.85);
-    Animated.parallel([
-      Animated.timing(svgaTextOpacity, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(svgaTextTransY, {
-        toValue: 0,
-        duration: 400,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.spring(svgaTextScale, {
-        toValue: 1,
-        friction: 4,
-        tension: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    if (qty > 1) {
-      svgaQtyScale.setValue(0);
-      svgaQtyOpacity.setValue(0);
-      Animated.parallel([
-        Animated.spring(svgaQtyScale, {
-          toValue: 1,
-          friction: 3,
-          tension: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(svgaQtyOpacity, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [
-    svgaLayerOpacity,
-    svgaTextOpacity,
-    svgaTextTransY,
-    svgaTextScale,
-    svgaQtyScale,
-    svgaQtyOpacity,
-    qty,
-  ]);
+  }, [svgaLayerOpacity]);
 
   const handleSvgaFinished = useCallback(() => {
     // Stop the PNG animation so it doesn't call onComplete again.
@@ -596,14 +460,8 @@ function SVGAGiftEffectInner({
       svgaTimeoutRef.current = null;
     }
 
-    // Fade out everything together then complete.
     Animated.parallel([
       Animated.timing(svgaLayerOpacity, {
-        toValue: 0,
-        duration: 350,
-        useNativeDriver: true,
-      }),
-      Animated.timing(pngDarkOpacity, {
         toValue: 0,
         duration: 350,
         useNativeDriver: true,
@@ -613,25 +471,13 @@ function SVGAGiftEffectInner({
         duration: 300,
         useNativeDriver: true,
       }),
-      Animated.timing(pngTextOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
     ]).start(() => callComplete());
-  }, [
-    svgaLayerOpacity,
-    pngDarkOpacity,
-    pngImgOpacity,
-    pngTextOpacity,
-    callComplete,
-  ]);
+  }, [svgaLayerOpacity, pngImgOpacity, callComplete]);
 
   // SVGA native error — hide SVGA layer, let PNG continue.
   const handleSvgaError = useCallback(
     (e: { error: string }) => {
       console.warn("[SVGA] native error:", e?.error);
-      setSvgaVisible(false);
       if (svgaRevealTimerRef.current) {
         clearTimeout(svgaRevealTimerRef.current);
         svgaRevealTimerRef.current = null;
@@ -653,7 +499,6 @@ function SVGAGiftEffectInner({
 
   if (!visible) return null;
 
-  const glowColor = GLOW[svgaAsset] ?? Colors.primary;
   const bundledPng = giftImage ? GIFT_IMAGES[giftImage] : null;
   const remotePngUri =
     !bundledPng &&
@@ -673,64 +518,21 @@ function SVGAGiftEffectInner({
     <View style={styles.container} pointerEvents="none">
       {/* ── Layer 1: PNG base (always immediate) ── */}
       {!svgaOnly && pngSource ? (
-        <>
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              styles.darkBg,
-              { opacity: pngDarkOpacity },
-            ]}
+        <Animated.View
+          style={[
+            styles.pngWrap,
+            {
+              opacity: pngImgOpacity,
+              transform: [{ translateY: pngImgTransY }],
+            },
+          ]}
+        >
+          <Image
+            source={pngSource}
+            style={styles.pngImg}
+            resizeMode="contain"
           />
-          <Animated.View
-            style={[
-              styles.pngWrap,
-              {
-                opacity: pngImgOpacity,
-                transform: [{ translateY: pngImgTransY }],
-              },
-            ]}
-          >
-            <Image
-              source={pngSource}
-              style={styles.pngImg}
-              resizeMode="contain"
-            />
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.textContainer,
-              {
-                opacity: pngTextOpacity,
-                transform: [{ translateY: pngTextTransY }],
-              },
-            ]}
-          >
-            <View style={[styles.textBg, { borderColor: `${glowColor}66` }]}>
-              <Text style={styles.senderName} numberOfLines={1}>
-                {senderName}
-              </Text>
-              <Text style={[styles.giftLabel, { color: glowColor }]}>
-                sent {giftName}
-              </Text>
-            </View>
-          </Animated.View>
-          {qty > 1 && (
-            <Animated.View
-              style={[
-                styles.qtyBadge,
-                {
-                  opacity: pngQtyOpacity,
-                  transform: [{ scale: pngQtyScale }],
-                  shadowColor: glowColor,
-                },
-              ]}
-            >
-              <Text style={[styles.qtyBadgeText, { color: glowColor }]}>
-                ×{qty}
-              </Text>
-            </Animated.View>
-          )}
-        </>
+        </Animated.View>
       ) : null}
 
       {/* ── Layer 2: SVGA overlay (loads in parallel, fades in on top) ── */}
@@ -750,53 +552,8 @@ function SVGAGiftEffectInner({
             onFinished={handleSvgaFinished}
             onError={handleSvgaError}
           />
-          {svgaVisible ? (
-            <>
-              <Animated.View
-                style={[
-                  styles.textContainer,
-                  {
-                    opacity: svgaTextOpacity,
-                    transform: [
-                      { translateY: svgaTextTransY },
-                      { scale: svgaTextScale },
-                    ],
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.textBg, { borderColor: `${glowColor}66` }]}
-                >
-                  <Text style={styles.senderName} numberOfLines={1}>
-                    {senderName}
-                  </Text>
-                  <Text style={[styles.giftLabel, { color: glowColor }]}>
-                    sent {giftName}
-                  </Text>
-                </View>
-              </Animated.View>
-              {qty > 1 && (
-                <Animated.View
-                  style={[
-                    styles.qtyBadge,
-                    {
-                      opacity: svgaQtyOpacity,
-                      transform: [{ scale: svgaQtyScale }],
-                      shadowColor: glowColor,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.qtyBadgeText, { color: glowColor }]}>
-                    ×{qty}
-                  </Text>
-                </Animated.View>
-              )}
-            </>
-          ) : null}
         </Animated.View>
       ) : null}
-
-      {/* SVGA-only UX: no backdrop or loading overlay */}
     </View>
   );
 }
@@ -806,9 +563,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 9999,
     elevation: 9999,
-  },
-  darkBg: {
-    backgroundColor: "rgba(0,0,0,0.52)",
   },
   pngWrap: {
     position: "absolute",
@@ -823,60 +577,5 @@ const styles = StyleSheet.create({
     width: SW * 0.68,
     height: SW * 0.68,
     marginBottom: Spacing.xl,
-  },
-  textContainer: {
-    position: "absolute",
-    top: SH * 0.62,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  textBg: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1,
-    borderRadius: 50,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    gap: 2,
-  },
-  senderName: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: Colors.textPrimary,
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-    letterSpacing: 0.5,
-  },
-  giftLabel: {
-    fontSize: 15,
-    fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  qtyBadge: {
-    position: "absolute",
-    bottom: SH * 0.22,
-    left: Spacing.lg,
-    backgroundColor: "rgba(0,0,0,0.72)",
-    borderRadius: 999,
-    paddingHorizontal: 22,
-    paddingVertical: 8,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.25)",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  qtyBadgeText: {
-    fontSize: 44,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
   },
 });

@@ -66,8 +66,8 @@ import { UsernameRoleBadges } from "@components/RoomRoleBadges";
 import { canKickRoomMember, formatRoomKickBanMessage } from "@/utils/roomKick";
 import { bootstrapRoomMusicFromLibrary } from "@/utils/roomMusicBootstrap";
 import { normalizeSeatInvitationPayload } from "@/utils/seatInvitePayload";
+import { resolveDmGiftBubbleSource } from "@/utils/resolveGiftIconSource";
 import {
-  isBagGiftCategory,
   isLuckyGiftCategory,
   mergeGiftEffectQueueSorted,
   normalizeGiftCoinCost,
@@ -103,6 +103,7 @@ import Svg, { Circle } from "react-native-svg";
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { RoomPKOverlay, CalculatorOverlay } from "./RoomGameOverlays";
 import { usePKBattle } from "@hooks/usePKBattle";
+import { useGiftSound } from "@hooks/useGiftSound";
 import { pkApi } from "@api/pk";
 import { PKBattleOverlay } from "./components/PKBattleOverlay";
 import { PKInviteModal } from "./components/PKInviteModal";
@@ -121,6 +122,7 @@ import { InboxOverlay } from "./InboxOverlay";
 import { CalculatorResultModal } from "./components/CalculatorResultModal";
 import { CalculatorContributorsModal } from "./components/CalculatorContributorsModal";
 import { GiftNoticeRow } from "./GiftNoticeRow";
+import { LuckyWinNoticeRow } from "./LuckyWinNoticeRow";
 import { GiftToastStack, type GiftToastItem } from "./GiftToast";
 import { SpecialGiftEffect } from "./SpecialGiftEffect";
 import { SVGAGiftEffect, preloadSvgaAssets } from "./SVGAGiftEffect";
@@ -180,6 +182,9 @@ type PendingGiftFlush = {
 };
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const COMBO_BTN_HALF = 41;
+const COMBO_BOTTOM_OFFSET = 70;
+const COMBO_TIMEOUT = 5000;
 
 // Responsive toolbar button size — shrinks on narrow phones so all icons fit
 const TOOLBAR_BTN_SIZE = SCREEN_WIDTH < 390 ? 30 : 34;
@@ -326,6 +331,7 @@ export function RoomScreen({ route, navigation }: Props) {
   } | null>(null);
   const [coinBalance, setCoinBalance] = useState(0);
   const coinBalanceRef = useRef(0);
+  const shownLuckyDrawIdsRef = useRef<Set<string>>(new Set());
   const giftSvgaPreloadStartedRef = useRef(false);
   const recentGiftEventIdsRef = useRef<Map<string, number> | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -334,10 +340,71 @@ export function RoomScreen({ route, navigation }: Props) {
     Record<number, { key: string; animKey: number }>
   >({});
   const seatRefs = useRef<Record<number, View | null>>({});
-  const [rtcUidByUserId, setRtcUidByUserId] = useState<Record<string, number>>({});
+  const comboButtonOriginRef = useRef<View | null>(null);
+  /** Invisible fallback at the combo-button slot before the real combo button mounts. */
+  const giftFlyOriginFallbackRef = useRef<View | null>(null);
   const [flyingGifts, setFlyingGifts] = useState<
-    { id: string; icon: string; image: string | null; targetPosition: number }[]
+    {
+      id: string;
+      icon: string;
+      image: string | null;
+      targetPosition: number;
+      originX: number;
+      originY: number;
+    }[]
   >([]);
+  const comboOriginFallback = useMemo(
+    () => ({
+      x: SCREEN_WIDTH / 2,
+      y: SCREEN_HEIGHT - (insets.bottom + COMBO_BOTTOM_OFFSET + COMBO_BTN_HALF),
+    }),
+    [insets.bottom],
+  );
+  const enqueueFlyingGift = useCallback(
+    (gift: Gift, seatPosition: number) => {
+      const flyId = `fly-${Date.now()}-${Math.random()}`;
+      const push = (originX: number, originY: number) => {
+        console.log("[giftfly] enqueue", {
+          category: gift.category,
+          originX: Math.round(originX),
+          originY: Math.round(originY),
+          screenCenterX: Math.round(SCREEN_WIDTH / 2),
+          screenCenterY: Math.round(SCREEN_HEIGHT / 2),
+          screenH: Math.round(SCREEN_HEIGHT),
+        });
+        setFlyingGifts((prev) => [
+          ...prev,
+          {
+            id: flyId,
+            icon: gift.icon,
+            image: gift.image,
+            targetPosition: seatPosition,
+            originX,
+            originY,
+          },
+        ]);
+      };
+      const node = comboButtonOriginRef.current ?? giftFlyOriginFallbackRef.current;
+      console.log("[giftfly] node source", {
+        hasComboBtn: !!comboButtonOriginRef.current,
+        hasFallback: !!giftFlyOriginFallbackRef.current,
+      });
+      if (!node) {
+        push(comboOriginFallback.x, comboOriginFallback.y);
+        return;
+      }
+      node.measureInWindow((x, y, w, h) => {
+        console.log("[giftfly] measured", { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
+        if (w > 0 && h > 0) {
+          push(x + w / 2, y + h / 2);
+        } else {
+          push(comboOriginFallback.x, comboOriginFallback.y);
+        }
+      });
+    },
+    [comboOriginFallback],
+  );
+  const [rtcUidByUserId, setRtcUidByUserId] = useState<Record<string, number>>({});
   const [comboState, setComboState] = useState<{
     gift: Gift;
     recipient: { id: string; displayName: string };
@@ -563,6 +630,9 @@ export function RoomScreen({ route, navigation }: Props) {
   // the current value without a stale closure or re-subscribing the socket.
   const giftEffectsEnabledRef = useRef(giftEffectsEnabled);
   giftEffectsEnabledRef.current = giftEffectsEnabled;
+  const { playLuckyWin } = useGiftSound();
+  const playLuckyWinRef = useRef(playLuckyWin);
+  playLuckyWinRef.current = playLuckyWin;
   const [callEnabled, setCallEnabled] = useState(true);
 
   const isHost =
@@ -749,10 +819,11 @@ export function RoomScreen({ route, navigation }: Props) {
       coinCost: number = 0,
       targetSeatPosition: number | null = null,
     ) => {
-      // Basic gifts only show the toast — unless the gift has an SVGA asset.
+      // Non-SVGA gifts only show the toast + combo-button fly animation; the
+      // full-screen center effect is reserved for gifts with an SVGA asset.
       const hasSvga =
         typeof svgaAsset === "string" && svgaAsset.trim().length > 0;
-      if (isBagGiftCategory(category) && !hasSvga) return;
+      if (!hasSvga) return;
       if (!giftEffectsEnabled) return;
       const playCount = Math.max(1, Math.min(50, Math.floor(qty)));
       const baseId = Date.now();
@@ -805,6 +876,84 @@ export function RoomScreen({ route, navigation }: Props) {
       }
     },
     [],
+  );
+
+  const handleLuckyWin = useCallback(
+    (payload: {
+      drawId: string;
+      rewardCoins: number;
+      giftName: string;
+      giftIcon: string;
+      giftImageFallback?: string | null;
+      senderId?: string;
+      senderName?: string;
+      senderAvatar?: string | null;
+      senderCoinBalance?: number;
+    }) => {
+      if (!payload.drawId || shownLuckyDrawIdsRef.current.has(payload.drawId)) {
+        return;
+      }
+      shownLuckyDrawIdsRef.current.add(payload.drawId);
+      if (shownLuckyDrawIdsRef.current.size > 50) {
+        const oldest = shownLuckyDrawIdsRef.current.values().next().value;
+        if (oldest) shownLuckyDrawIdsRef.current.delete(oldest);
+      }
+
+      if (giftEffectsEnabledRef.current) {
+        playLuckyWinRef.current();
+      }
+
+      const isSelf =
+        !!payload.senderId &&
+        typeof currentUser?.id === "string" &&
+        payload.senderId === currentUser.id;
+
+      if (
+        isSelf &&
+        typeof payload.senderCoinBalance === "number" &&
+        Number.isFinite(payload.senderCoinBalance)
+      ) {
+        setCoinBalance(payload.senderCoinBalance);
+        coinBalanceRef.current = payload.senderCoinBalance;
+      }
+
+      const sender: import("@/types").RoomUser = isSelf
+        ? {
+            id: currentUser!.id,
+            username: currentUser!.username ?? null,
+            displayName: currentUser!.displayName ?? payload.senderName ?? "You",
+            avatar: currentUser!.avatar ?? "",
+            richLevel: currentUser!.richLevel ?? 0,
+            charmLevel: currentUser!.charmLevel ?? 0,
+            equippedFrame: currentUser!.equippedFrame ?? null,
+          }
+        : {
+            id: payload.senderId ?? "",
+            username: null,
+            displayName: payload.senderName ?? "Someone",
+            avatar: payload.senderAvatar ?? "",
+            richLevel: 0,
+            charmLevel: 0,
+          };
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `lucky-win-${payload.drawId}`,
+          sender,
+          content: null,
+          createdAt: new Date().toISOString(),
+          type: "lucky_win_notice",
+          luckyWin: {
+            giftName: payload.giftName,
+            giftIcon: payload.giftIcon,
+            rewardCoins: payload.rewardCoins,
+            giftImageFallback: payload.giftImageFallback ?? null,
+          },
+        },
+      ]);
+    },
+    [currentUser],
   );
 
   // ── Handle real-time WebSocket events ─────────────────────────────────────
@@ -1247,7 +1396,6 @@ export function RoomScreen({ route, navigation }: Props) {
         const hasSvga =
           typeof (data.gift?.svgaAsset ?? data.svgaKey) === "string" &&
           String(data.gift?.svgaAsset ?? data.svgaKey).trim().length > 0;
-        const isBagGift = isBagGiftCategory(data.gift?.category);
         const recipientSeat = room?.seats?.find(
           (s) => s.user?.id === data.recipientId,
         );
@@ -1263,19 +1411,19 @@ export function RoomScreen({ route, navigation }: Props) {
           currentUser &&
           (data.senderId === currentUser.id ||
             data.sender?.id === currentUser.id);
-        if (isBagGift && !hasSvga && targetPosition != null) {
+        if (!hasSvga && targetPosition != null && !isSelfSend) {
           const flyId = `fly-${Date.now()}-${Math.random()}`;
-          if (!isSelfSend) {
-            setFlyingGifts((prev) => [
-              ...prev,
-              {
-                id: flyId,
-                icon,
-                image: data.gift?.image ?? null,
-                targetPosition,
-              },
-            ]);
-          }
+          setFlyingGifts((prev) => [
+            ...prev,
+            {
+              id: flyId,
+              icon,
+              image: data.gift?.image ?? null,
+              targetPosition,
+              originX: comboOriginFallback.x,
+              originY: comboOriginFallback.y,
+            },
+          ]);
         }
 
         // Skip full-screen effect for self-sent gifts — already fired optimistically
@@ -1355,6 +1503,17 @@ export function RoomScreen({ route, navigation }: Props) {
         setSeatScores({});
         setCalcResultScores(data.scores);
         setCalcResultVisible(true);
+      } else if (event === "lucky.reward" && data.isWin) {
+        handleLuckyWin({
+          drawId: typeof data.drawId === "string" ? data.drawId : "",
+          rewardCoins: Number(data.rewardCoins) || 0,
+          giftName:
+            typeof data.giftName === "string" ? data.giftName : "Lucky Gift",
+          giftIcon: typeof data.giftIcon === "string" ? data.giftIcon : "🍀",
+          senderId: typeof data.senderId === "string" ? data.senderId : undefined,
+          senderName:
+            typeof data.senderName === "string" ? data.senderName : undefined,
+        });
       }
     }),
     [
@@ -1362,6 +1521,7 @@ export function RoomScreen({ route, navigation }: Props) {
       triggerGiftAnimation,
       pushGiftToast,
       currentUser,
+      handleLuckyWin,
       toast,
       room,
       getViewerCountFromPayload,
@@ -2000,8 +2160,6 @@ export function RoomScreen({ route, navigation }: Props) {
   }, [room?.id, calculatorSession, isScreenFocused]);
 
   // ── Combo logic ─────────────────────────────────────────────────────────────
-  const COMBO_TIMEOUT = 5000;
-
   const clearComboTimer = useCallback(() => {
     if (comboTimerRef.current) {
       clearTimeout(comboTimerRef.current);
@@ -2014,12 +2172,25 @@ export function RoomScreen({ route, navigation }: Props) {
   const runGiftSend = useCallback((pending: PendingGiftFlush) => {
     const next = giftSendTailRef.current.catch(() => {}).then(async () => {
       try {
-        await giftsApi.send({
+        const tx = await giftsApi.send({
           giftId: pending.gift.id,
           recipientId: pending.recipient.id,
           roomId: pending.roomId,
           qty: pending.qty,
         });
+        if (tx.luckyDraw?.isWin) {
+          handleLuckyWin({
+            drawId: tx.luckyDraw.drawId,
+            rewardCoins: tx.luckyDraw.rewardCoins,
+            giftName: tx.gift?.name ?? "Lucky Gift",
+            giftIcon: tx.gift?.icon ?? "🍀",
+            giftImageFallback: tx.gift?.image ?? null,
+            senderId: currentUser?.id,
+            senderName: currentUser?.displayName ?? tx.sender?.displayName,
+            senderAvatar: currentUser?.avatar ?? tx.sender?.avatar,
+            senderCoinBalance: tx.luckyDraw.senderCoinBalance,
+          });
+        }
         invalidateUserLevels(currentUser?.id, pending.recipient.id);
         try {
           const bal = await walletApi.getBalance();
@@ -2043,7 +2214,7 @@ export function RoomScreen({ route, navigation }: Props) {
     });
     giftSendTailRef.current = next.then(() => undefined).catch(() => undefined);
     return next;
-  }, [currentUser?.id]);
+  }, [currentUser, handleLuckyWin]);
 
   // Sends any accumulated combo taps as a single batched API call (serialized via runGiftSend).
   const flushPendingCombo = useCallback(() => {
@@ -2136,17 +2307,14 @@ export function RoomScreen({ route, navigation }: Props) {
     setCoinBalance((prev) => Math.max(0, prev - gift.coinCost * step));
     const hasSvga =
       typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-    if (isBagGiftCategory(gift.category) && !hasSvga && seatPosition) {
-      const flyId = `fly-${Date.now()}-${Math.random()}`;
-      setFlyingGifts((prev) => [
-        ...prev,
-        {
-          id: flyId,
-          icon: gift.icon,
-          image: gift.image,
-          targetPosition: seatPosition,
-        },
-      ]);
+    console.log("[giftfly] combo-tap branch", {
+      category: gift.category,
+      hasSvga,
+      seatPosition,
+      usesFlyingGift: !hasSvga && !!seatPosition,
+    });
+    if (!hasSvga && seatPosition) {
+      enqueueFlyingGift(gift, seatPosition);
     } else {
       triggerGiftAnimation(
         gift.icon,
@@ -2205,6 +2373,7 @@ export function RoomScreen({ route, navigation }: Props) {
     triggerGiftAnimation,
     currentUser,
     flushPendingCombo,
+    enqueueFlyingGift,
   ]);
 
   // Cleanup combo timers on unmount
@@ -2244,21 +2413,23 @@ export function RoomScreen({ route, navigation }: Props) {
 
       // Optimistic deduction so the balance updates instantly
       setCoinBalance((prev) => Math.max(0, prev - totalCost));
+      startCombo(gift, recipient, seated.position, qty);
 
       // Trigger animation immediately — no waiting for the server
       const hasSvga =
         typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-      if (isBagGiftCategory(gift.category) && !hasSvga && seated.position) {
-        const flyId = `fly-${Date.now()}-${Math.random()}`;
-        setFlyingGifts((prev) => [
-          ...prev,
-          {
-            id: flyId,
-            icon: gift.icon,
-            image: gift.image,
-            targetPosition: seated.position,
-          },
-        ]);
+      console.log("[giftfly] send branch", {
+        category: gift.category,
+        hasSvga,
+        seatPosition: seated.position,
+        usesFlyingGift: !hasSvga && !!seated.position,
+      });
+      if (!hasSvga && seated.position) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            enqueueFlyingGift(gift, seated.position);
+          });
+        });
       } else {
         // Premium/special gifts: fire the full-screen effect optimistically so
         // there's zero wait for the server round-trip.
@@ -2275,7 +2446,6 @@ export function RoomScreen({ route, navigation }: Props) {
           seated.position ?? null,
         );
       }
-      startCombo(gift, recipient, seated.position, qty);
 
       const pending: PendingGiftFlush = {
         qty,
@@ -2290,7 +2460,7 @@ export function RoomScreen({ route, navigation }: Props) {
       }
       return runGiftSend(pending);
     },
-    [room, startCombo, triggerGiftAnimation, currentUser, runGiftSend],
+    [room, startCombo, triggerGiftAnimation, currentUser, runGiftSend, enqueueFlyingGift],
   );
 
   const handleCalcBadgePress = useCallback((recipientUserId: string) => {
@@ -3268,6 +3438,23 @@ export function RoomScreen({ route, navigation }: Props) {
                 />
               );
             }
+            if (item.type === "lucky_win_notice") {
+              const lw = item.luckyWin;
+              return (
+                <LuckyWinNoticeRow
+                  sender={item.sender}
+                  giftName={lw?.giftName ?? "Lucky Gift"}
+                  giftIcon={lw?.giftIcon ?? "🍀"}
+                  giftImageFallback={lw?.giftImageFallback}
+                  rewardCoins={lw?.rewardCoins ?? 0}
+                  onPressSender={
+                    item.sender?.id
+                      ? () => setProfileUserId(item.sender.id)
+                      : undefined
+                  }
+                />
+              );
+            }
             if (item.type === "system" || item.kind === "system") {
               return (
                 <View style={styles.systemRow}>
@@ -3502,10 +3689,26 @@ export function RoomScreen({ route, navigation }: Props) {
       {giftToasts.length > 0 && (
         <View pointerEvents="box-none" style={styles.giftToastOverlay}>
           <View pointerEvents="none" style={styles.giftToastAnchor}>
-            <GiftToastStack items={giftToasts} onDismiss={dismissGiftToast} />
+            <GiftToastStack
+              items={giftToasts}
+              holdDurationMs={COMBO_TIMEOUT}
+              onDismiss={dismissGiftToast}
+            />
           </View>
         </View>
       )}
+
+      {/* Always-present origin marker (combo button slot) — used when enqueueing gifts */}
+      <View
+        pointerEvents="none"
+        style={[styles.comboWrap, styles.giftFlyOriginWrap, { bottom: insets.bottom + COMBO_BOTTOM_OFFSET }]}
+      >
+        <View
+          ref={giftFlyOriginFallbackRef}
+          collapsable={false}
+          style={styles.giftFlyOrigin}
+        />
+      </View>
 
       {/* ── Flying gift animations (basic gifts) ── */}
       {flyingGifts.map((fg) => (
@@ -3513,6 +3716,8 @@ export function RoomScreen({ route, navigation }: Props) {
           key={fg.id}
           icon={fg.icon}
           image={fg.image}
+          originX={fg.originX}
+          originY={fg.originY}
           targetRef={seatRefs.current[fg.targetPosition] ?? null}
           onComplete={() =>
             setFlyingGifts((prev) => prev.filter((g) => g.id !== fg.id))
@@ -4603,57 +4808,62 @@ export function RoomScreen({ route, navigation }: Props) {
 
       {/* ── Combo button ── */}
       {comboState && (
-        <View style={[styles.comboWrap, { bottom: insets.bottom + 70 }]}>
+        <View style={[styles.comboWrap, { bottom: insets.bottom + COMBO_BOTTOM_OFFSET }]}>
           {/* Only the circle button scales on each tap; the count badge is outside so it updates instantly */}
           <Animated.View style={{ transform: [{ scale: comboScale }] }}>
-            <TouchableOpacity
-              style={styles.comboBtn}
-              activeOpacity={0.7}
-              onPress={handleComboTap}
-            >
-              {/* Progress ring */}
-              <Svg width={82} height={82} style={StyleSheet.absoluteFill}>
-                <Circle
-                  cx={41}
-                  cy={41}
-                  r={38}
-                  stroke="rgba(255,255,255,0.15)"
-                  strokeWidth={3}
-                  fill="none"
-                />
-                <AnimatedCircle
-                  cx={41}
-                  cy={41}
-                  r={38}
-                  stroke={Colors.gold}
-                  strokeWidth={3}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 38}`}
-                  strokeDashoffset={comboProgress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [2 * Math.PI * 38, 0],
-                  })}
-                  transform="rotate(-90 41 41)"
-                />
-              </Svg>
-              {/* Gift icon */}
-              {comboState.gift.image ? (
-                <Image
-                  source={{ uri: comboState.gift.image }}
-                  style={styles.comboGiftIcon}
-                  contentFit="contain"
-                  cachePolicy="memory-disk"
-                />
-              ) : (
-                <Ionicons name="gift" size={36} color={Colors.gold} />
-              )}
-            </TouchableOpacity>
+            <View ref={comboButtonOriginRef} collapsable={false}>
+              <TouchableOpacity
+                style={styles.comboBtn}
+                activeOpacity={1}
+                onPress={handleComboTap}
+              >
+                <View style={styles.comboBtnShine} pointerEvents="none" />
+                {/* Progress ring */}
+                <Svg width={82} height={82} style={StyleSheet.absoluteFill}>
+                  <Circle
+                    cx={41}
+                    cy={41}
+                    r={38}
+                    stroke="rgba(255,255,255,0.6)"
+                    strokeWidth={3}
+                    fill="none"
+                  />
+                  <AnimatedCircle
+                    cx={41}
+                    cy={41}
+                    r={38}
+                    stroke={Colors.textInverse}
+                    strokeWidth={3}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 38}`}
+                    strokeDashoffset={comboProgress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [2 * Math.PI * 38, 0],
+                    })}
+                    transform="rotate(-90 41 41)"
+                  />
+                </Svg>
+                <View style={styles.comboBtnContent}>
+                  {/* Gift icon */}
+                  {comboState.gift.image ? (
+                    <Image
+                      source={{ uri: comboState.gift.image }}
+                      style={styles.comboGiftIcon}
+                      contentFit="contain"
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <Ionicons name="gift" size={30} color={Colors.textInverse} />
+                  )}
+                  <Text style={styles.comboBtnLabel}>Combo</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </Animated.View>
-          {/* Combo label + count — outside the scale animation so the number updates immediately */}
+          {/* Count badge stays outside the scale animation so it updates instantly. */}
           <TouchableOpacity activeOpacity={0.7} onPress={handleComboTap}>
             <View style={styles.comboLabelRow}>
-              <Text style={styles.comboText}>Combo</Text>
               <View style={styles.comboBadge}>
                 <Text style={styles.comboBadgeText}>×{comboState.count}</Text>
               </View>
@@ -4832,124 +5042,234 @@ function AgoraVideoView({ uid, style }: { uid: number; style?: any }) {
 
 // ── Flying Gift Animation ──────────────────────────────────────────────────
 
+const FLYING_GIFT_SIZE = Math.min(SCREEN_WIDTH * 0.42, 140);
+const FLYING_GIFT_HALF = FLYING_GIFT_SIZE / 2;
+// Start at the gift-icon size shown inside the combo button (~40px) so the gift
+// visibly lifts off the button and grows as it rises into the center.
+const FLYING_GIFT_LAUNCH_SCALE = 40 / FLYING_GIFT_SIZE;
+const FLYING_GIFT_CENTER_SCALE = 1.42;
+const FLYING_GIFT_SEAT_SCALE = 0.16;
+const SCREEN_CENTER_X = SCREEN_WIDTH / 2;
+const SCREEN_CENTER_Y = SCREEN_HEIGHT / 2;
+
+const flyingGiftStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 40,
+  },
+  giftWrap: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+  },
+  giftImage: {
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+  },
+  emoji: {
+    fontSize: Math.round(FLYING_GIFT_SIZE * 0.72),
+    lineHeight: FLYING_GIFT_SIZE,
+    textAlign: "center",
+  },
+  fallback: {
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
+
 const FlyingGift = React.memo(FlyingGiftInner);
 function FlyingGiftInner({
   icon,
   image,
+  originX,
+  originY,
   targetRef,
   onComplete,
 }: {
   icon: string;
   image: string | null;
+  originX: number;
+  originY: number;
   targetRef: View | null;
   onComplete: () => void;
 }) {
-  const phase = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [target, setTarget] = useState<{ x: number; y: number } | null>(null);
+  const posX = useRef(new Animated.Value(originX)).current;
+  const posY = useRef(new Animated.Value(originY)).current;
+  const zoomScale = useRef(new Animated.Value(FLYING_GIFT_LAUNCH_SCALE)).current;
+  const imgOpacity = useRef(new Animated.Value(0.95)).current;
+  const animRunId = useRef(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
-  useEffect(() => {
+  const translateX = useMemo(
+    () => Animated.subtract(posX, FLYING_GIFT_HALF),
+    [posX],
+  );
+  const translateY = useMemo(
+    () => Animated.subtract(posY, FLYING_GIFT_HALF),
+    [posY],
+  );
+
+  const imageSource = useMemo(
+    () => resolveDmGiftBubbleSource(icon, image),
+    [icon, image],
+  );
+
+  useLayoutEffect(() => {
     if (!targetRef) {
       onCompleteRef.current();
       return;
     }
-    (targetRef as any).measureInWindow?.(
-      (x: number, y: number, w: number, h: number) => {
-        setTarget({ x: x + w / 2, y: y + h / 2 });
-      },
-    );
-  }, [targetRef]);
 
-  useEffect(() => {
-    if (!target) return;
-    // Phase 0→0.5: bottom → center (zoom in, ease out)
-    // Phase 0.5→0.5: brief hold at center
-    // Phase 0.5→1: center → seat (zoom out, ease in)
+    const runId = ++animRunId.current;
+    posX.setValue(originX);
+    posY.setValue(originY);
+    zoomScale.setValue(FLYING_GIFT_LAUNCH_SCALE);
+    imgOpacity.setValue(0.95);
+
+    const finish = ({ finished }: { finished: boolean }) => {
+      if (finished && animRunId.current === runId) onCompleteRef.current();
+    };
+
+    // Balanced ease-in-out so the bottom→center rise uses the full duration and
+    // is clearly visible. A front-loaded curve here finishes the travel in the
+    // first ~100ms, making the gift look like it pops in at the center.
+    const launchEasing = Easing.inOut(Easing.cubic);
+    const flyOutEasing = Easing.bezier(0.33, 0, 0.2, 1);
+
     Animated.sequence([
-      // Fade in
-      Animated.timing(opacity, {
+      Animated.timing(imgOpacity, {
         toValue: 1,
-        duration: 100,
+        duration: 80,
+        easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      // Phase 1: rise to center + scale up
-      Animated.timing(phase, {
-        toValue: 0.5,
-        duration: 450,
-        easing: Easing.out(Easing.cubic),
+      Animated.delay(40),
+      Animated.parallel([
+        Animated.timing(posX, {
+          toValue: SCREEN_CENTER_X,
+          duration: 700,
+          easing: launchEasing,
+          useNativeDriver: true,
+        }),
+        Animated.timing(posY, {
+          toValue: SCREEN_CENTER_Y,
+          duration: 700,
+          easing: launchEasing,
+          useNativeDriver: true,
+        }),
+        Animated.timing(zoomScale, {
+          toValue: FLYING_GIFT_CENTER_SCALE,
+          duration: 700,
+          easing: launchEasing,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.spring(zoomScale, {
+        toValue: 1.2,
+        friction: 6,
+        tension: 180,
         useNativeDriver: true,
       }),
-      // Brief hold at center
-      Animated.delay(120),
-      // Phase 2: fly to seat + scale down
-      Animated.timing(phase, {
-        toValue: 1,
-        duration: 400,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      // Fade out
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => onCompleteRef.current());
-  }, [target, phase, opacity]);
+      Animated.delay(90),
+    ]).start(({ finished }) => {
+      if (!finished || animRunId.current !== runId) return;
 
-  if (!target) return null;
+      (targetRef as View).measureInWindow?.(
+        (tx: number, ty: number, tw: number, th: number) => {
+          if (animRunId.current !== runId) return;
 
-  const SIZE = 40;
-  const halfSize = SIZE / 2;
-  const startX = SCREEN_WIDTH / 2 - halfSize;
-  const startY = SCREEN_HEIGHT - 100;
-  const centerX = SCREEN_WIDTH / 2 - halfSize;
-  const centerY = SCREEN_HEIGHT / 2 - halfSize;
-  const endX = target.x - halfSize;
-  const endY = target.y - halfSize;
+          Animated.parallel([
+            Animated.timing(posX, {
+              toValue: tx + tw / 2,
+              duration: 540,
+              easing: flyOutEasing,
+              useNativeDriver: true,
+            }),
+            Animated.timing(posY, {
+              toValue: ty + th / 2,
+              duration: 540,
+              easing: flyOutEasing,
+              useNativeDriver: true,
+            }),
+            Animated.timing(zoomScale, {
+              toValue: FLYING_GIFT_SEAT_SCALE,
+              duration: 540,
+              easing: Easing.inOut(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.sequence([
+              Animated.delay(360),
+              Animated.timing(imgOpacity, {
+                toValue: 0,
+                duration: 220,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]).start(finish);
+        },
+      );
+    });
 
-  const translateX = phase.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [startX, centerX, endX],
-  });
-  const translateY = phase.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [startY, centerY, endY],
-  });
-  const scale = phase.interpolate({
-    inputRange: [0, 0.25, 0.5, 0.75, 1],
-    outputRange: [0.4, 1.0, 1.5, 1.0, 0.5],
-  });
+    return () => {
+      animRunId.current++;
+    };
+  }, [originX, originY, targetRef, posX, posY, zoomScale, imgOpacity]);
 
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: SIZE,
-        height: SIZE,
-        zIndex: 10000,
-        elevation: 40,
-        opacity,
-        transform: [{ translateX }, { translateY }, { scale }],
-      }}
-    >
-      {image ? (
+  const giftVisual = (() => {
+    const imgStyle = flyingGiftStyles.giftImage;
+    if (imageSource.kind === "bundled") {
+      return (
         <Image
-          source={{ uri: image }}
-          style={{ width: SIZE, height: SIZE }}
+          source={imageSource.value}
+          style={imgStyle}
           contentFit="contain"
         />
-      ) : (
-        <View style={{ width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name="gift" size={28} color="#FFD84D" />
-        </View>
-      )}
-    </Animated.View>
+      );
+    }
+    if (imageSource.kind === "remote") {
+      return (
+        <Image
+          source={{ uri: imageSource.value }}
+          style={imgStyle}
+          contentFit="contain"
+          cachePolicy="disk"
+        />
+      );
+    }
+    if (imageSource.kind === "emoji") {
+      return <Text style={flyingGiftStyles.emoji}>{imageSource.value}</Text>;
+    }
+    return (
+      <View style={flyingGiftStyles.fallback}>
+        <Ionicons name="gift" size={56} color={Colors.gold} />
+      </View>
+    );
+  })();
+
+  return (
+    <View style={flyingGiftStyles.container} pointerEvents="none">
+      <Animated.View
+        style={[
+          flyingGiftStyles.giftWrap,
+          {
+            opacity: imgOpacity,
+            transform: [
+              { translateX },
+              { translateY },
+              { scale: zoomScale },
+            ],
+          },
+        ]}
+      >
+        {giftVisual}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -6883,6 +7203,15 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 30,
   },
+  giftFlyOriginWrap: {
+    zIndex: 9996,
+    elevation: 26,
+  },
+  giftFlyOrigin: {
+    width: 82,
+    height: 82,
+    opacity: 0,
+  },
   comboWrap: {
     position: "absolute",
     left: 0,
@@ -6895,15 +7224,47 @@ const styles = StyleSheet.create({
     width: 82,
     height: 82,
     borderRadius: 41,
-    backgroundColor: "rgba(15,15,30,0.85)",
+    backgroundColor: Colors.gold,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: Colors.gold,
+    borderColor: Colors.goldLight,
+    borderBottomWidth: 8,
+    borderBottomColor: Colors.textInverse,
+    overflow: "hidden",
+    shadowColor: Colors.gold,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    elevation: 16,
+  },
+  comboBtnShine: {
+    position: "absolute",
+    top: 8,
+    left: 16,
+    right: 16,
+    height: 18,
+    borderRadius: Radius.full,
+    backgroundColor: "rgba(255,255,255,0.38)",
+  },
+  comboBtnContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    paddingTop: Spacing.sm,
   },
   comboGiftIcon: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
+  },
+  comboBtnLabel: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: Colors.textInverse,
+    letterSpacing: 0.2,
+    textShadowColor: "rgba(255,255,255,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   },
   comboLabelRow: {
     flexDirection: "row",
@@ -6922,13 +7283,15 @@ const styles = StyleSheet.create({
   comboBadge: {
     backgroundColor: Colors.gold,
     borderRadius: Radius.full,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: Colors.goldLight,
   },
   comboBadgeText: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#000000",
+    color: Colors.textInverse,
   },
   chatList: {
     paddingHorizontal: Spacing.md,

@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { momentsService } from './moments.service';
 import { ok, fail } from '../../utils/response';
 import { assertNoRiskBlock } from '../../utils/risk-control';
+import { uploadToStorage } from '../../utils/storage';
+import { storageFilename } from '../../utils/upload';
 
 export const momentController = {
   async list(req: Request, res: Response, next: NextFunction) {
@@ -20,10 +22,31 @@ export const momentController = {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const callerId = (req as any).user.id;
-      const { post_type, media_url, caption, hashtag } = req.body;
+      const postType = String(req.body.post_type ?? 'moment');
+      const caption = typeof req.body.caption === 'string' ? req.body.caption : '';
+      const hashtag = typeof req.body.hashtag === 'string' ? req.body.hashtag : '';
+      let mediaUrl = typeof req.body.media_url === 'string' ? req.body.media_url : undefined;
+
+      const file = req.file;
+      if (file) {
+        const isVideo = /^video\//i.test(file.mimetype) || postType === 'video';
+        const folder = isVideo ? 'moments/videos' : 'moments/images';
+        const requestBaseUrl = `${req.protocol}://${req.get('host')}`;
+        mediaUrl = await uploadToStorage(
+          file.buffer,
+          `${folder}/${storageFilename(file.originalname)}`,
+          file.mimetype,
+          undefined,
+          requestBaseUrl,
+          isVideo
+            ? { cacheControl: '31536000', immutable: true }
+            : { resize: { maxDim: 1920, format: 'jpeg', quality: 85 } },
+        );
+      }
+
       const moment = await momentsService.create(callerId, {
-        postType: post_type,
-        mediaUrl: media_url,
+        postType,
+        mediaUrl,
         caption,
         hashtag,
       });

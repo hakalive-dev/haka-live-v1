@@ -68,6 +68,28 @@ export const audioUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
 });
 
+const momentMediaFilter = (
+  _req: Express.Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback,
+) => {
+  const imageExt = /^(jpe?g|png|webp)$/i;
+  const videoExt = /^(mp4|mov|webm|m4v)$/i;
+  const ext = path.extname(file.originalname).toLowerCase().slice(1);
+  if (imageExt.test(ext) || videoExt.test(ext)) {
+    cb(null, true);
+    return;
+  }
+  cb(new AppError('Only image (jpeg, png, webp) or video (mp4, mov, webm) files are allowed', 400));
+};
+
+/** Moment / short-video uploads — images up to 10 MB, videos up to 50 MB. */
+export const momentMediaUpload = multer({
+  storage: memStorage,
+  fileFilter: momentMediaFilter,
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
 /** Generate a unique storage filename preserving the original extension */
 export function storageFilename(originalName: string): string {
   const ext = path.extname(originalName).toLowerCase();

@@ -346,6 +346,14 @@ export interface Gift {
   order: number;
 }
 
+export interface LuckyDrawOutcome {
+  drawId: string;
+  isWin: boolean;
+  rewardCoins: number;
+  coinCost: number;
+  senderCoinBalance?: number;
+}
+
 export interface GiftTransaction {
   id: string;
   gift: Gift;
@@ -356,6 +364,7 @@ export interface GiftTransaction {
   beanValue: number;
   qty: number;
   createdAt: string;
+  luckyDraw?: LuckyDrawOutcome | null;
 }
 
 export interface SendGiftPayload {
@@ -374,7 +383,7 @@ export interface ChatMessage {
   content: string | null;
   mediaUrl?: string | null;
   createdAt: string;
-  type?: "text" | "quick" | "gift_notice" | "system" | "image";
+  type?: "text" | "quick" | "gift_notice" | "lucky_win_notice" | "system" | "image";
   kind?: "system";
   giftNotice?: {
     giftName: string;
@@ -382,6 +391,12 @@ export interface ChatMessage {
     recipientName: string;
     qty: number;
     /** Used when giftIcon is empty (legacy catalogue). */
+    giftImageFallback?: string | null;
+  };
+  luckyWin?: {
+    giftName: string;
+    giftIcon: string;
+    rewardCoins: number;
     giftImageFallback?: string | null;
   };
 }

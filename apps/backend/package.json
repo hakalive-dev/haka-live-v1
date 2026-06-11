@@ -18,6 +18,8 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "seed": "ts-node prisma/seed.ts",
     "seed:demo": "ts-node prisma/seed-demo.ts",
+    "seed:activity": "ts-node prisma/seed-activity.ts",
+    "seed:room-seats": "ts-node prisma/seed-room-seats.ts",
     "seed:withdrawal-message": "ts-node scripts/seed-withdrawal-message-sample.ts",
     "seed:admin": "ts-node prisma/seed-admin.ts",
     "seed:female-host": "ts-node prisma/seed-female-host.ts",

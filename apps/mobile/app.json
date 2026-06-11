@@ -107,7 +107,8 @@
           }
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "expo-video"
     ],
     "scheme": "hakalive",
     "owner": "hakalive",

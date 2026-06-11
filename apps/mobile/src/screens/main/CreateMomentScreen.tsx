@@ -14,7 +14,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useQueryClient } from '@tanstack/react-query';
+
 import { momentsApi } from '@api/moments';
+import { queryKeys } from '@api/queryKeys';
 import { Colors, Spacing, Radius } from '@/theme';
 import { KeyboardAwareScroll } from '@components/keyboard';
 import type { RootStackParamList } from '@navigation/types';
@@ -26,6 +29,7 @@ export function CreateMomentScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [postType, setPostType] = useState<'moment' | 'video'>(
     route.params?.postType ?? 'moment',
@@ -80,6 +84,8 @@ export function CreateMomentScreen() {
       } as any);
 
       await momentsApi.create(formData);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.discover.moments() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.discover.videos() });
       Alert.alert('Posted!', 'Your moment has been shared.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);

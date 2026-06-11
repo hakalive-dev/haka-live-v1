@@ -64,9 +64,9 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const QTY_PRESETS = [1, 10, 20, 50] as const;
 
-/** Selected SVGA gift thumb — one half-cycle each way (reverse repeat = no loop seam). */
-const SVGA_PULSE_SCALE_MAX = 1.16;
-const SVGA_PULSE_HALF_MS = 440;
+/** Selected gift thumb — one half-cycle each way (reverse repeat = no loop seam). */
+const SELECTED_GIFT_PULSE_SCALE_MAX = 1.16;
+const SELECTED_GIFT_PULSE_HALF_MS = 440;
 
 interface Props {
   visible: boolean;
@@ -285,8 +285,6 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
                 const totalCost = item.coinCost * qty;
                 const affordable = coinBalance >= totalCost;
                 const isSelected = selectedGiftId === item.id;
-                const hasSvga =
-                  typeof item.svgaAsset === 'string' && item.svgaAsset.trim().length > 0;
                 const bundledImage = item.image ? GIFT_IMAGES[item.image] : null;
                 const remoteImage =
                   !bundledImage && typeof item.image === 'string' && isHttpUrl(item.image)
@@ -315,7 +313,6 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
                   <GiftGridCell
                     giftId={item.id}
                     isSelected={isSelected}
-                    hasSvga={hasSvga}
                     affordable={affordable}
                     sending={!!sending}
                     onPress={() => setSelectedGiftId(item.id)}
@@ -382,7 +379,6 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
 function GiftGridCell({
   giftId,
   isSelected,
-  hasSvga,
   affordable,
   sending,
   onPress,
@@ -391,7 +387,6 @@ function GiftGridCell({
 }: {
   giftId: string;
   isSelected: boolean;
-  hasSvga: boolean;
   affordable: boolean;
   sending: boolean;
   onPress: () => void;
@@ -399,14 +394,14 @@ function GiftGridCell({
   footer: React.ReactNode;
 }) {
   const scale = useSharedValue(1);
-  const pulseSelectedSvga = hasSvga && isSelected;
+  const pulseSelectedGift = isSelected;
 
   const thumbAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
   useEffect(() => {
-    if (!pulseSelectedSvga) {
+    if (!pulseSelectedGift) {
       cancelAnimation(scale);
       scale.value = withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) });
       return;
@@ -414,8 +409,8 @@ function GiftGridCell({
 
     scale.value = 1;
     scale.value = withRepeat(
-      withTiming(SVGA_PULSE_SCALE_MAX, {
-        duration: SVGA_PULSE_HALF_MS,
+      withTiming(SELECTED_GIFT_PULSE_SCALE_MAX, {
+        duration: SELECTED_GIFT_PULSE_HALF_MS,
         easing: Easing.inOut(Easing.sin),
       }),
       -1,
@@ -425,7 +420,7 @@ function GiftGridCell({
     return () => {
       cancelAnimation(scale);
     };
-  }, [giftId, pulseSelectedSvga, scale]);
+  }, [giftId, pulseSelectedGift, scale]);
 
   return (
     <TouchableOpacity
@@ -438,8 +433,8 @@ function GiftGridCell({
       disabled={!affordable || sending}
       activeOpacity={0.75}
     >
-      {pulseSelectedSvga ? (
-        <Reanimated.View style={[styles.svgaThumbWrap, thumbAnimatedStyle]}>
+      {pulseSelectedGift ? (
+        <Reanimated.View style={[styles.selectedGiftThumbWrap, thumbAnimatedStyle]}>
           {thumb}
         </Reanimated.View>
       ) : (
@@ -570,7 +565,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   giftImage: { width: 40, height: 40 },
-  svgaThumbWrap: {
+  selectedGiftThumbWrap: {
     width: 40,
     height: 40,
     alignItems: 'center',

@@ -23,23 +23,45 @@ export interface GiftToastItem {
 interface Props {
   items: GiftToastItem[];
   onDismiss: (id: string) => void;
+  holdDurationMs?: number;
 }
 
 const TOAST_HEIGHT = 56;
 const GAP = 8;
+const DEFAULT_HOLD_DURATION_MS = 2400;
 
 export const GiftToastStack = React.memo(GiftToastStackInner);
-function GiftToastStackInner({ items, onDismiss }: Props) {
+function GiftToastStackInner({
+  items,
+  onDismiss,
+  holdDurationMs = DEFAULT_HOLD_DURATION_MS,
+}: Props) {
   return (
     <View pointerEvents="none" style={styles.stack}>
       {items.map((it, i) => (
-        <GiftToast key={it.id} item={it} index={i} onDismiss={onDismiss} />
+        <GiftToast
+          key={it.id}
+          item={it}
+          index={i}
+          holdDurationMs={holdDurationMs}
+          onDismiss={onDismiss}
+        />
       ))}
     </View>
   );
 }
 
-function GiftToast({ item, index, onDismiss }: { item: GiftToastItem; index: number; onDismiss: (id: string) => void }) {
+function GiftToast({
+  item,
+  index,
+  holdDurationMs,
+  onDismiss,
+}: {
+  item: GiftToastItem;
+  index: number;
+  holdDurationMs: number;
+  onDismiss: (id: string) => void;
+}) {
   const tx = useRef(new Animated.Value(320)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const comboScale = useRef(new Animated.Value(1)).current;
@@ -61,9 +83,9 @@ function GiftToast({ item, index, onDismiss }: { item: GiftToastItem; index: num
       ]).start(({ finished }) => {
         if (finished) onDismiss(item.id);
       });
-    }, 2400);
+    }, holdDurationMs);
     return () => clearTimeout(timer);
-  }, [item.id, item.bump, tx, opacity, onDismiss]);
+  }, [item.id, item.bump, holdDurationMs, tx, opacity, onDismiss]);
 
   // Bounce the combo badge on each bump.
   useEffect(() => {

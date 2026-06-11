@@ -1,16 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Linking,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
+  type ViewToken,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -29,9 +33,18 @@ import { useSelector } from 'react-redux';
 import { momentsApi } from '@api/moments';
 import { queryKeys } from '@api/queryKeys';
 import { giftsApi } from '@api/gifts';
+import { chatApi } from '@api/chat';
+import { usersApi } from '@api/users';
 import { invalidateUserLevels } from '@hooks/queries/useLevelQueries';
+import { MomentVideoCard, type MomentVideoPost } from '@screens/main/MomentVideoCard';
+import { useToast } from '@components/Toast';
 import type { RootState } from '../../store';
-import type { MomentPost as ApiMomentPost, MomentComment as ApiComment, Gift } from '@/types';
+import type {
+  MomentPost as ApiMomentPost,
+  MomentComment as ApiComment,
+  Gift,
+  PublicUser,
+} from '@/types';
 
 const GIFT_CATALOG_IMAGES: Record<string, ReturnType<typeof require>> = {
   'gifts/86.png': require('../../../assets/gifts/86.png'),
@@ -115,24 +128,6 @@ type MomentPost = {
   timestamp: string;
 };
 
-type VideoPost = {
-  id: string;
-  user: {
-    displayName: string;
-    avatar: string | null;
-    country_flag: string;
-    gender: string;
-    level: number;
-  };
-  video_image: string;
-  description: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  gifts: number;
-  default_liked: boolean;
-};
-
 // ── Static data ───────────────────────────────────────────────────────────────
 
 const GAMES: Game[] = [
@@ -149,13 +144,6 @@ const GAMES: Game[] = [
 
 const SEARCH_HISTORY  = ['#NovaVibes', '#StarLife', '#DJRhythm', '#HakaLive', '#LuckyWheel'];
 const RECOMMENDED     = ['#Trending', '#NewHosts', '#LuckyWheel', '#GiftRain', '#BattleRoyale', '#LiveMusic', '#Gaming', '#Moments'];
-const SHARE_USERS     = [
-  { id: 'u1', displayName: 'Kai Rivera'     },
-  { id: 'u2', displayName: 'Preeti Sharma'  },
-  { id: 'u3', displayName: 'Yuki Tanaka'    },
-  { id: 'u4', displayName: 'Omar Hassan'    },
-  { id: 'u5', displayName: 'Rosa Martinez'  },
-];
 const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }[] = [
   { id: 'copy',      label: 'Copy',      icon: 'copy-outline',           color: '#666666'  },
   { id: 'whatsapp',  label: 'WhatsApp',  icon: 'logo-whatsapp',          color: '#25D366'  },
@@ -198,17 +186,19 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
   };
 }
 
-function apiToVideo(p: ApiMomentPost): VideoPost {
+function apiToVideo(p: ApiMomentPost): MomentVideoPost {
   return {
     id: p.id,
     user: {
+      id: p.user.id,
       displayName: p.user.displayName,
       avatar: p.user.avatar,
       country_flag: p.user.country ?? '',
       gender: p.user.gender ?? '',
       level: p.user.rich_level,
     },
-    video_image: p.media_url ?? '',
+    video_url: p.media_url ?? '',
+    poster_url: null,
     description: p.caption,
     likes: p.likes_count,
     comments: p.comments_count,
@@ -216,6 +206,10 @@ function apiToVideo(p: ApiMomentPost): VideoPost {
     gifts: p.gifts_count,
     default_liked: p.is_liked,
   };
+}
+
+function getMomentShareLink(postId: string) {
+  return `https://haka.live/moment/${postId}`;
 }
 
 // ── Game card ─────────────────────────────────────────────────────────────────
@@ -428,102 +422,6 @@ const PostCard = React.memo(function PostCard({
   );
 });
 
-// ── Video card (full-screen TikTok-style) ────────────────────────────────────
-
-const VideoCard = React.memo(function VideoCard({
-  post,
-  height,
-  onComment,
-  onShare,
-}: {
-  post: VideoPost;
-  height: number;
-  onComment: () => void;
-  onShare: () => void;
-}) {
-  const [liked, setLiked] = useState(post.default_liked);
-  const [likeCount, setLikeCount] = useState(post.likes);
-
-  const handleLike = () => {
-    setLiked((v) => !v);
-    setLikeCount((c) => (liked ? c - 1 : c + 1));
-  };
-
-  const genderColor = post.user.gender === 'female' ? '#F9467D' : '#4DA6FF';
-
-  return (
-    <View style={[styles.videoCard, { height }]}>
-      {/* Full-screen background image */}
-      <Image
-        source={{ uri: post.video_image }}
-        style={StyleSheet.absoluteFillObject}
-        contentFit="cover"
-      />
-
-      {/* Right-side action bar */}
-      <View style={styles.videoActions}>
-        {/* Avatar + follow */}
-        <View style={styles.videoAvatarWrap}>
-          <View style={styles.videoAvatar}>
-            <Text style={styles.videoAvatarInitial}>{post.user.displayName[0]}</Text>
-          </View>
-          <View style={styles.videoFollowBtn}>
-            <Ionicons name="add" size={10} color="#FFFFFF" />
-          </View>
-        </View>
-
-        {/* Gift */}
-        <TouchableOpacity style={styles.videoActionItem}>
-          <Ionicons name="gift" size={24} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.gifts)}</Text>
-        </TouchableOpacity>
-        {/* Like */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={handleLike}>
-          <Ionicons
-            name={liked ? 'heart' : 'heart-outline'}
-            size={22}
-            color={liked ? '#FF383C' : '#FFFFFF'}
-          />
-          <Text style={styles.videoActionCount}>{fmtCount(likeCount)}</Text>
-        </TouchableOpacity>
-        {/* Comment */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={onComment}>
-          <Ionicons name="chatbubble-outline" size={22} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.comments)}</Text>
-        </TouchableOpacity>
-        {/* Share */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={onShare}>
-          <Ionicons name="arrow-redo-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.shares)}</Text>
-        </TouchableOpacity>
-        {/* More */}
-        <TouchableOpacity style={styles.videoActionItem}>
-          <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom-left user info + description */}
-      <View style={styles.videoBottomInfo}>
-        {/* Name row: display_name + flag + gender/level badge */}
-        <View style={styles.videoNameRow}>
-          <Text style={styles.videoDisplayName}>{post.user.displayName}</Text>
-          <Text style={styles.videoFlag}>{post.user.country_flag}</Text>
-          <View style={[styles.videoGenderBadge, { backgroundColor: genderColor }]}>
-            <Ionicons
-              name={post.user.gender === 'female' ? 'female' : 'male'}
-              size={8}
-              color="#FFFFFF"
-            />
-            <Text style={styles.videoGenderText}>.{post.user.level}</Text>
-          </View>
-        </View>
-        {/* Description */}
-        <Text style={styles.videoDescription} numberOfLines={3}>{post.description}</Text>
-      </View>
-    </View>
-  );
-});
-
 // ── Search modal ──────────────────────────────────────────────────────────────
 
 function SearchModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
@@ -708,14 +606,105 @@ function ShareModal({
   postId: string | null;
 }) {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [shareLabel, setShareLabel] = useState('');
+  const [sharedUserIds, setSharedUserIds] = useState<Set<string>>(new Set());
+  const [loadingFriends, setLoadingFriends] = useState(false);
 
-  const handleShare = useCallback(async (platform: string) => {
+  useEffect(() => {
+    if (!visible || !postId) return;
+    setSharedUserIds(new Set());
+    setLoadingFriends(true);
+    momentsApi.get(postId)
+      .then((post) => {
+        const link = getMomentShareLink(postId);
+        const snippet = post.caption?.trim()
+          ? `"${post.caption.trim()}" by ${post.user.displayName}`
+          : `a post by ${post.user.displayName}`;
+        setShareLabel(`${snippet} on Haka Live — ${link}`);
+      })
+      .catch(() => {
+        setShareLabel(`Check this out on Haka Live: ${getMomentShareLink(postId)}`);
+      });
+
+    if (currentUser?.id) {
+      usersApi.following(currentUser.id)
+        .then((res) => setFriends(res.items))
+        .catch(() => setFriends([]))
+        .finally(() => setLoadingFriends(false));
+    } else {
+      setLoadingFriends(false);
+    }
+  }, [visible, postId, currentUser?.id]);
+
+  const recordShare = useCallback(async (platform: string) => {
     if (!postId) return;
     try {
       await momentsApi.share(postId, platform);
     } catch { /* silent */ }
+  }, [postId]);
+
+  const handleShareToUser = useCallback(async (user: PublicUser) => {
+    if (!postId || !shareLabel) return;
+    try {
+      await chatApi.sendDM(user.id, shareLabel);
+      await recordShare('dm');
+      setSharedUserIds((prev) => new Set(prev).add(user.id));
+      toast.show(`Shared with ${user.displayName}`, 'success');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to share');
+    }
+  }, [postId, shareLabel, recordShare, toast]);
+
+  const handleSocial = useCallback(async (platformId: string) => {
+    if (!postId) return;
+    const link = getMomentShareLink(postId);
+    const message = shareLabel || `Check this out on Haka Live: ${link}`;
+
+    if (platformId === 'copy') {
+      await Clipboard.setStringAsync(link);
+      await recordShare('copy');
+      toast.show('Link copied!', 'success');
+      onClose();
+      return;
+    }
+    if (platformId === 'whatsapp') {
+      Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`).catch(() =>
+        toast.show('WhatsApp is not installed', 'error'),
+      );
+      await recordShare('whatsapp');
+      onClose();
+      return;
+    }
+    if (platformId === 'facebook') {
+      Linking.openURL(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`);
+      await recordShare('facebook');
+      onClose();
+      return;
+    }
+    if (platformId === 'twitter') {
+      Linking.openURL(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`);
+      await recordShare('twitter');
+      onClose();
+      return;
+    }
+    if (platformId === 'instagram' || platformId === 'messenger') {
+      try {
+        await Share.share({ message });
+        await recordShare(platformId);
+      } catch { /* user cancelled */ }
+      onClose();
+      return;
+    }
+
+    try {
+      await Share.share({ message });
+      await recordShare(platformId);
+    } catch { /* user cancelled */ }
     onClose();
-  }, [postId, onClose]);
+  }, [postId, shareLabel, recordShare, toast, onClose]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -730,30 +719,41 @@ function ShareModal({
             </TouchableOpacity>
           </View>
 
-          {/* User list */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.shareUserList}
             contentContainerStyle={styles.shareUserListContent}
           >
-            {SHARE_USERS.map((u) => (
-              <View key={u.id} style={styles.shareUserItem}>
-                <View style={styles.shareUserAvatar}>
-                  <Text style={styles.shareUserInitial}>{u.displayName[0]}</Text>
+            {loadingFriends ? (
+              <Text style={styles.shareLoadingText}>Loading friends…</Text>
+            ) : friends.length === 0 ? (
+              <Text style={styles.shareLoadingText}>Follow people to share via DM</Text>
+            ) : (
+              friends.map((u) => (
+                <View key={u.id} style={styles.shareUserItem}>
+                  <UserAvatar
+                    user={{ displayName: u.displayName, avatar: u.avatar, equippedFrame: null }}
+                    size={48}
+                  />
+                  <Text style={styles.shareUserName} numberOfLines={1}>{u.displayName}</Text>
+                  <TouchableOpacity
+                    style={[styles.shareBtn, sharedUserIds.has(u.id) && styles.shareBtnDone]}
+                    onPress={() => handleShareToUser(u)}
+                    disabled={sharedUserIds.has(u.id)}
+                  >
+                    <Text style={styles.shareBtnText}>
+                      {sharedUserIds.has(u.id) ? 'Sent' : 'Share'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.shareUserName} numberOfLines={1}>{u.displayName}</Text>
-                <TouchableOpacity style={styles.shareBtn} onPress={() => handleShare('user')}>
-                  <Text style={styles.shareBtnText}>Share</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
 
-          {/* Social platforms */}
           <View style={styles.socialGrid}>
             {SOCIAL_PLATFORMS.map((p) => (
-              <TouchableOpacity key={p.id} style={styles.socialItem} onPress={() => handleShare(p.id)}>
+              <TouchableOpacity key={p.id} style={styles.socialItem} onPress={() => handleSocial(p.id)}>
                 <View style={[styles.socialIcon, { backgroundColor: p.color + '22' }]}>
                   {p.id === 'copy' ? (
                     <CopyIcon size={24} color={p.color} />
@@ -895,9 +895,22 @@ export function DiscoverScreen() {
     staleTime: 60_000,
   });
   const moments: MomentPost[] = momentsQuery.data ?? [];
-  const videos: VideoPost[] = videosQuery.data ?? [];
+  const videos: MomentVideoPost[] = videosQuery.data ?? [];
   const momentLoading = moments.length === 0 && momentsQuery.isLoading;
   const videoLoading = videos.length === 0 && videosQuery.isLoading;
+  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+
+  useEffect(() => {
+    if (activeTab === 'video') setActiveVideoIndex(0);
+  }, [activeTab, videos.length]);
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 75 }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const first = viewableItems.find((v) => v.isViewable && v.index != null);
+      if (first?.index != null) setActiveVideoIndex(first.index);
+    },
+  ).current;
 
   const openComment = useCallback((postId: string) => {
     setActivePostId(postId);
@@ -910,11 +923,12 @@ export function DiscoverScreen() {
   }, []);
 
   const openGift = useCallback((postId: string) => {
-    const post = moments.find((m) => m.id === postId);
+    const momentPost = moments.find((m) => m.id === postId);
+    const videoPost = videos.find((v) => v.id === postId);
     setActivePostId(postId);
-    setGiftAuthorId(post?.user.id ?? null);
+    setGiftAuthorId(momentPost?.user.id ?? videoPost?.user.id ?? null);
     setShowGift(true);
-  }, [moments]);
+  }, [moments, videos]);
 
   // Height available for each full-screen video card (below the header)
   const headerH = insets.top + 48; // safe area + header height
@@ -1024,15 +1038,19 @@ export function DiscoverScreen() {
           showsVerticalScrollIndicator={false}
           snapToInterval={videoCardH}
           decelerationRate="fast"
-          maxToRenderPerBatch={8}
-          windowSize={7}
+          maxToRenderPerBatch={3}
+          windowSize={5}
           removeClippedSubviews
-          renderItem={({ item }) => (
-            <VideoCard
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          renderItem={({ item, index }) => (
+            <MomentVideoCard
               post={item}
               height={videoCardH}
+              isActive={activeTab === 'video' && index === activeVideoIndex}
               onComment={() => openComment(item.id)}
               onShare={() => openShare(item.id)}
+              onGift={() => openGift(item.id)}
             />
           )}
         />
@@ -1613,6 +1631,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
+  },
+  shareBtnDone: {
+    backgroundColor: Colors.textTertiary,
+  },
+  shareLoadingText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   socialGrid: {
     flexDirection: 'row',

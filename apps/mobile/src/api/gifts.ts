@@ -1,4 +1,7 @@
-import { normalizeCatalogueGifts } from '@components/gifts/GiftEffectOverlay';
+import {
+  isLuckyGiftCategory,
+  normalizeCatalogueGifts,
+} from '@components/gifts/GiftEffectOverlay';
 
 import { apiClient } from './client';
 import { useMock } from './config';
@@ -16,17 +19,32 @@ export const giftsApi = {
     if (useMock) {
       const gift = mockGifts.catalogue.find((g) => g.id === payload.giftId) ?? mockGifts.catalogue[0];
       const qty = payload.qty ?? 1;
+      const coinCost = gift.coinCost * qty;
       const recipientId = payload.recipientId ?? `agency:${payload.recipientAgencyId ?? 'unknown'}`;
+      const luckyDraw = isLuckyGiftCategory(gift.category)
+        ? (() => {
+            const isWin = Math.random() < 0.2;
+            const rewardCoins = isWin ? Math.round(coinCost * 3) : 0;
+            return {
+              drawId: `mock-draw-${Date.now()}`,
+              isWin,
+              rewardCoins,
+              coinCost,
+              senderCoinBalance: 50_000 - coinCost + rewardCoins,
+            };
+          })()
+        : null;
       return {
         id: `tx-${Date.now()}`,
         gift,
         sender: { id: 'user-uuid-001', username: 'test_user', displayName: 'Test User', avatar: '' },
         recipient: { id: recipientId, username: 'recipient', displayName: 'Recipient', avatar: '' },
         roomId: payload.roomId ?? null,
-        coinCost: gift.coinCost * qty,
+        coinCost,
         beanValue: gift.beanValue * qty,
         qty,
         createdAt: new Date().toISOString(),
+        luckyDraw,
       };
     }
     const res = await apiClient.post('/gifts/send', payload, { timeout: 30_000 });

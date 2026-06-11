@@ -120,7 +120,13 @@ export function patchOwnRoomChatBubble<T extends { sender: RoomUser; type?: stri
   let changed = false;
   const next = messages.map((message) => {
     if (message.sender?.id !== userId) return message;
-    if (message.type === 'gift_notice' || message.type === 'system') return message;
+    if (
+      message.type === 'gift_notice' ||
+      message.type === 'lucky_win_notice' ||
+      message.type === 'system'
+    ) {
+      return message;
+    }
     if (message.sender.equippedChatBubble?.id === bubble?.id) return message;
     changed = true;
     return {
