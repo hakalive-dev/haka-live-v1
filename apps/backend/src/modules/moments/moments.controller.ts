@@ -103,8 +103,19 @@ export const momentController = {
 
   async getComments(req: Request, res: Response, next: NextFunction) {
     try {
-      const comments = await momentsService.getComments(req.params.id);
+      const callerId = (req as any).user.id;
+      const comments = await momentsService.getComments(callerId, req.params.id);
       return ok(res, comments);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async toggleCommentLike(req: Request, res: Response, next: NextFunction) {
+    try {
+      const callerId = (req as any).user.id;
+      const result = await momentsService.toggleCommentLike(callerId, req.params.commentId);
+      return ok(res, result);
     } catch (err) {
       next(err);
     }

@@ -1252,6 +1252,8 @@ export interface MomentAuthor {
   avatar: string | null;
   country: string;
   gender?: string;
+  date_of_birth?: string | null;
+  age?: number | null;
   rich_level: number;
   charm_level: number;
   equippedFrame?: EquippedCosmetic | null;
@@ -1286,6 +1288,7 @@ export interface MomentComment {
   user: MomentAuthor;
   text: string;
   likes_count: number;
+  is_liked: boolean;
   created_at: string;
 }
 

@@ -26,8 +26,11 @@ import { Colors, Radius, Spacing } from '@/theme';
 import { MomentGridSkeleton, Skeleton } from '@components/Skeleton';
 import { UserAvatar } from '@components/UserAvatar';
 import { CopyIcon } from '@components/CopyIcon';
+import { computeAgeFromBirthday } from '@/utils/age';
+import { formatMomentPostTime } from '@/utils/formatMomentTime';
+import { getGenderPillBackground, getGenderSymbol } from '@/utils/genderDisplay';
 import type { RootStackParamList } from '@navigation/types';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useSelector } from 'react-redux';
 
 import { momentsApi } from '@api/moments';
@@ -111,9 +114,9 @@ type MomentPost = {
     username: string;
     displayName: string;
     avatar: string | null;
-    country_flag: string;
-    rich_level: number;
-    charm_level: number;
+    country: string;
+    gender: string;
+    age: number | null;
   };
   coverImage: string | null;
   cover_color: string;
@@ -125,7 +128,7 @@ type MomentPost = {
   gifts: number;
   live_viewers: number;   // shown in the pink badge on avatar
   default_liked: boolean; // initial liked state
-  timestamp: string;
+  createdAt: string;
 };
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -151,6 +154,7 @@ const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<
   { id: 'twitter',   label: 'X',         icon: 'logo-twitter',           color: '#000000'  },
   { id: 'instagram', label: 'Instagram', icon: 'logo-instagram',         color: '#E1306C'  },
   { id: 'messenger', label: 'Messenger', icon: 'chatbubble-ellipses',    color: '#0099FF'  },
+  { id: 'more',      label: 'More apps', icon: 'share-outline',          color: '#7B4FFF'  },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -158,6 +162,13 @@ const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<
 function fmtCount(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
+}
+
+function resolveAuthorAge(user: ApiMomentPost['user']): number | null {
+  const fromBirthday = computeAgeFromBirthday(user.date_of_birth);
+  if (fromBirthday != null) return fromBirthday;
+  if (typeof user.age === 'number' && user.age > 0) return user.age;
+  return null;
 }
 
 function apiToMoment(p: ApiMomentPost): MomentPost {
@@ -168,9 +179,9 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
       username: p.user.username,
       displayName: p.user.displayName,
       avatar: p.user.avatar,
-      country_flag: p.user.country ?? '',
-      rich_level: p.user.rich_level,
-      charm_level: p.user.charm_level,
+      country: p.user.country ?? '',
+      gender: p.user.gender ?? '',
+      age: resolveAuthorAge(p.user),
     },
     coverImage: p.media_url,
     cover_color: '#E0E0E0',
@@ -182,7 +193,7 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
     gifts: p.gifts_count,
     live_viewers: 0,
     default_liked: p.is_liked,
-    timestamp: new Date(p.created_at).toLocaleDateString(),
+    createdAt: p.created_at,
   };
 }
 
@@ -210,6 +221,21 @@ function apiToVideo(p: ApiMomentPost): MomentVideoPost {
 
 function getMomentShareLink(postId: string) {
   return `https://haka.live/moment/${postId}`;
+}
+
+type DiscoverCountField = 'comments' | 'shares' | 'gifts';
+
+function bumpDiscoverPostCount(
+  queryClient: QueryClient,
+  postId: string,
+  field: DiscoverCountField,
+) {
+  queryClient.setQueryData<MomentPost[]>(queryKeys.discover.moments(), (prev) =>
+    prev?.map((p) => (p.id === postId ? { ...p, [field]: p[field] + 1 } : p)),
+  );
+  queryClient.setQueryData<MomentVideoPost[]>(queryKeys.discover.videos(), (prev) =>
+    prev?.map((p) => (p.id === postId ? { ...p, [field]: p[field] + 1 } : p)),
+  );
 }
 
 // ── Game card ─────────────────────────────────────────────────────────────────
@@ -321,6 +347,9 @@ const PostCard = React.memo(function PostCard({
     }
   }, [liked, post.id]);
 
+  const genderSymbol = getGenderSymbol(post.user.gender);
+  const countryCode = post.user.country?.trim().slice(0, 2).toLowerCase() ?? '';
+
   return (
     <View style={styles.postCard}>
 
@@ -328,38 +357,51 @@ const PostCard = React.memo(function PostCard({
       <View style={styles.postHeader}>
         {/* Avatar with follow button */}
         <View style={styles.postAvatarWrap}>
-          <View style={styles.postAvatar80}>
-            <Text style={styles.postAvatarInitial}>{post.user.displayName[0]}</Text>
-          </View>
+          <UserAvatar
+            user={{
+              displayName: post.user.displayName,
+              avatar: post.user.avatar,
+              equippedFrame: null,
+            }}
+            size={80}
+            hideFrame
+          />
           {/* Follow / + button — bottom-right of avatar */}
           <TouchableOpacity style={styles.postFollowBtn}>
             <Ionicons name="add" size={13} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        {/* Name + level badges + live badge */}
         <View style={styles.postUserCol}>
-          {/* Name row: display_name + flag + level badges */}
           <View style={styles.postNameRow}>
             <Text style={styles.postDisplayName} numberOfLines={1}>{post.user.displayName}</Text>
-            <Text style={styles.postFlag}>{post.user.country_flag}</Text>
-            {/* Rich level badge */}
-            <View style={styles.postLevelBadgeRich}>
-              <Ionicons name="diamond" size={8} color="#E8A020" />
-              <Text style={styles.postLevelBadgeRichText}>Lv.{post.user.rich_level}</Text>
-            </View>
-            {/* Charm level badge */}
-            <View style={styles.postLevelBadgeCharm}>
-              <Ionicons name="heart" size={8} color="#FF69B4" />
-              <Text style={styles.postLevelBadgeCharmText}>Lv.{post.user.charm_level}</Text>
-            </View>
+            {countryCode.length === 2 ? (
+              <View style={styles.postFlagWrap}>
+                <Image
+                  source={{ uri: `https://flagcdn.com/w80/${countryCode}.png` }}
+                  style={styles.postFlagIcon}
+                  contentFit="cover"
+                />
+              </View>
+            ) : null}
           </View>
-          {/* Pink live-viewers badge */}
-          <View style={styles.postLiveBadge}>
-            <Ionicons name="heart" size={8} color="#FFFFFF" />
-            <View style={styles.postLiveDot} />
-            <Text style={styles.postLiveCount}>{fmtCount(post.live_viewers)}</Text>
-          </View>
+          {(genderSymbol || (post.user.age != null && post.user.age > 0)) ? (
+            <View
+              style={[
+                styles.postGenderPill,
+                { backgroundColor: getGenderPillBackground(post.user.gender) },
+              ]}
+            >
+              {genderSymbol ? (
+                <Text style={styles.postGenderText}>{genderSymbol}</Text>
+              ) : null}
+              {post.user.age != null && post.user.age > 0 ? (
+                <Text style={styles.postGenderText}>
+                  {genderSymbol ? ` ${post.user.age}` : String(post.user.age)}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -415,7 +457,11 @@ const PostCard = React.memo(function PostCard({
           <Text style={styles.postActionCount}>{fmtCount(post.gifts)}</Text>
         </TouchableOpacity>
         {/* Timestamp — pushed to right */}
-        <Text style={styles.postTimestamp}>{post.timestamp}</Text>
+        <View style={styles.postTimestampWrap}>
+          <Text style={styles.postTimestamp} numberOfLines={1}>
+            {formatMomentPostTime(post.createdAt)}
+          </Text>
+        </View>
       </View>
 
     </View>
@@ -479,10 +525,12 @@ function CommentsModal({
   visible,
   onClose,
   postId,
+  onCommentAdded,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
+  onCommentAdded?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [comments, setComments] = useState<ApiComment[]>([]);
@@ -501,12 +549,40 @@ function CommentsModal({
       const newComment = await momentsApi.postComment(postId, comment.trim());
       setComments((prev) => [newComment, ...prev]);
       setComment('');
+      onCommentAdded?.();
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to post comment');
     } finally {
       setSending(false);
     }
-  }, [comment, postId]);
+  }, [comment, postId, onCommentAdded]);
+
+  const handleToggleCommentLike = useCallback(async (commentId: string) => {
+    if (!postId) return;
+    setComments((prev) =>
+      prev.map((c) => {
+        if (c.id !== commentId) return c;
+        const nextLiked = !(c.is_liked ?? false);
+        return {
+          ...c,
+          is_liked: nextLiked,
+          likes_count: Math.max(0, c.likes_count + (nextLiked ? 1 : -1)),
+        };
+      }),
+    );
+    try {
+      const result = await momentsApi.toggleCommentLike(postId, commentId);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? { ...c, is_liked: result.liked, likes_count: result.likes_count }
+            : c,
+        ),
+      );
+    } catch {
+      momentsApi.getComments(postId).then(setComments).catch(() => {});
+    }
+  }, [postId]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -553,19 +629,20 @@ function CommentsModal({
                   <Text style={styles.commentDate}>{formatDate(item.created_at)}</Text>
                   <Text style={styles.commentText}>{item.text}</Text>
                 </View>
-                <View style={styles.commentActions}>
-                  <TouchableOpacity style={styles.commentActionItem}>
-                    <Ionicons
-                      name={item.likes_count > 0 ? 'heart' : 'heart-outline'}
-                      size={16}
-                      color={item.likes_count > 0 ? '#FF2D55' : '#999999'}
-                    />
+                <TouchableOpacity
+                  style={styles.commentActionItem}
+                  onPress={() => handleToggleCommentLike(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={item.is_liked ?? false ? 'heart' : 'heart-outline'}
+                    size={16}
+                    color={item.is_liked ?? false ? '#FF2D55' : '#999999'}
+                  />
+                  {item.likes_count > 0 ? (
                     <Text style={styles.commentActionCount}>{item.likes_count}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.commentActionItem}>
-                    <Ionicons name="happy-outline" size={16} color="#999999" />
-                  </TouchableOpacity>
-                </View>
+                  ) : null}
+                </TouchableOpacity>
               </View>
             )}
           />
@@ -600,10 +677,12 @@ function ShareModal({
   visible,
   onClose,
   postId,
+  onShared,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
+  onShared?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -643,8 +722,9 @@ function ShareModal({
     if (!postId) return;
     try {
       await momentsApi.share(postId, platform);
+      onShared?.();
     } catch { /* silent */ }
-  }, [postId]);
+  }, [postId, onShared]);
 
   const handleShareToUser = useCallback(async (user: PublicUser) => {
     if (!postId || !shareLabel) return;
@@ -778,11 +858,13 @@ function GiftModal({
   onClose,
   postId,
   authorUserId,
+  onGiftSent,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
   authorUserId?: string | null;
+  onGiftSent?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -794,12 +876,21 @@ function GiftModal({
     giftsApi.catalogue().then(setGifts).catch(() => {});
   }, [visible]);
 
+  const isOwnPost = Boolean(
+    currentUser?.id && authorUserId && currentUser.id === authorUserId,
+  );
+
   const handleGift = useCallback(async (gift: Gift) => {
     if (!postId) return;
+    if (isOwnPost) {
+      Alert.alert('Not allowed', 'You cannot send a gift to your own post.');
+      return;
+    }
     setSending(true);
     try {
       const res = await momentsApi.sendGift(postId, gift.id);
       invalidateUserLevels(currentUser?.id, authorUserId);
+      onGiftSent?.();
       Alert.alert('Gift sent!', `You sent "${res.gift_name}"`);
       onClose();
     } catch (e: unknown) {
@@ -807,7 +898,7 @@ function GiftModal({
     } finally {
       setSending(false);
     }
-  }, [postId, onClose, currentUser?.id, authorUserId]);
+  }, [postId, onClose, onGiftSent, currentUser?.id, authorUserId, isOwnPost]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -821,6 +912,11 @@ function GiftModal({
               <Ionicons name="close" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
+          {isOwnPost ? (
+            <Text style={styles.giftOwnPostHint}>
+              You cannot send a gift to your own post.
+            </Text>
+          ) : null}
           <FlatList
             data={gifts}
             keyExtractor={(g) => g.id}
@@ -869,6 +965,7 @@ function GiftModal({
 export function DiscoverScreen() {
   const insets  = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const queryClient = useQueryClient();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const dims    = useCardDims(screenW);
 
@@ -929,6 +1026,14 @@ export function DiscoverScreen() {
     setGiftAuthorId(momentPost?.user.id ?? videoPost?.user.id ?? null);
     setShowGift(true);
   }, [moments, videos]);
+
+  const bumpActivePostCount = useCallback(
+    (field: DiscoverCountField) => {
+      if (!activePostId) return;
+      bumpDiscoverPostCount(queryClient, activePostId, field);
+    },
+    [activePostId, queryClient],
+  );
 
   // Height available for each full-screen video card (below the header)
   const headerH = insets.top + 48; // safe area + header height
@@ -1069,8 +1174,18 @@ export function DiscoverScreen() {
 
       {/* ── Overlays ── */}
       <SearchModal   visible={showSearch}   onClose={() => setShowSearch(false)}   />
-      <CommentsModal visible={showComments} onClose={() => setShowComments(false)} postId={activePostId} />
-      <ShareModal    visible={showShare}    onClose={() => setShowShare(false)}    postId={activePostId} />
+      <CommentsModal
+        visible={showComments}
+        onClose={() => setShowComments(false)}
+        postId={activePostId}
+        onCommentAdded={() => bumpActivePostCount('comments')}
+      />
+      <ShareModal
+        visible={showShare}
+        onClose={() => setShowShare(false)}
+        postId={activePostId}
+        onShared={() => bumpActivePostCount('shares')}
+      />
       <GiftModal
         visible={showGift}
         onClose={() => {
@@ -1079,6 +1194,7 @@ export function DiscoverScreen() {
         }}
         postId={activePostId}
         authorUserId={giftAuthorId}
+        onGiftSent={() => bumpActivePostCount('gifts')}
       />
     </View>
   );
@@ -1212,20 +1328,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
   },
-  postAvatar80: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  postAvatarInitial: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-  },
   // Follow button: 20×20, purple #5F22D9, white border, bottom-right of avatar
   postFollowBtn: {
     position: 'absolute',
@@ -1259,63 +1361,31 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     flexShrink: 1,
   },
-  postFlag: {
-    fontSize: 16,
+  postFlagWrap: {
+    width: 22,
+    height: 15,
+    borderRadius: 2,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  // Rich level badge: gold pill
-  postLevelBadgeRich: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8A02018',
-    borderRadius: Radius.full,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    gap: 2,
+  postFlagIcon: {
+    width: '100%',
+    height: '100%',
   },
-  postLevelBadgeRichText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#E8A020',
-  },
-  // Charm level badge: pink pill
-  postLevelBadgeCharm: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF69B418',
-    borderRadius: Radius.full,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    gap: 2,
-  },
-  postLevelBadgeCharmText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#FF69B4',
-  },
-  // Live badge: pink #F9467D pill, height:13, borderRadius:10
-  postLiveBadge: {
+  postGenderPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#F9467D',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    gap: 3,
-    height: 13,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minHeight: 18,
   },
-  // White dot inside live badge
-  postLiveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  postLiveCount: {
+  postGenderText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '600',
-    lineHeight: 11,
   },
   // Cover: full card width, height:300
   postCover: {
@@ -1376,9 +1446,13 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: 21,
   },
+  postTimestampWrap: {
+    marginLeft: 'auto',
+    flexShrink: 0,
+    maxWidth: '42%',
+  },
   // Timestamp: right-aligned, 14px/600/black
   postTimestamp: {
-    flex: 1,
     textAlign: 'right',
     fontSize: 14,
     fontWeight: '600',
@@ -1542,15 +1616,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 2,
   },
-  commentActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingTop: 4,
-  },
   commentActionItem: {
     alignItems: 'center',
     gap: 2,
+    paddingTop: 4,
   },
   commentActionCount: {
     color: '#999999',
@@ -1811,6 +1880,13 @@ const styles = StyleSheet.create({
   },
 
   // ── Empty states ───────────────────────────────────────────────────────────
+  giftOwnPostHint: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
   emptyComments: {
     textAlign: 'center',
     color: Colors.textTertiary,

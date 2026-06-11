@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middleware/error.middleware';
+import { computeAge } from '../accounts/accounts.service';
 
 const userSelect = {
   id: true,
@@ -8,6 +9,7 @@ const userSelect = {
   avatar: true,
   country: true,
   gender: true,
+  dateOfBirth: true,
   level: { select: { richLevel: true, charmLevel: true } },
 };
 
@@ -18,6 +20,7 @@ function formatAuthor(u: {
   avatar: string;
   country: string;
   gender: string;
+  dateOfBirth: Date | null;
   level: { richLevel: number; charmLevel: number } | null;
 }) {
   return {
@@ -27,6 +30,8 @@ function formatAuthor(u: {
     avatar: u.avatar || null,
     country: u.country,
     gender: u.gender,
+    date_of_birth: u.dateOfBirth?.toISOString() ?? null,
+    age: computeAge(u.dateOfBirth),
     rich_level: u.level?.richLevel ?? 1,
     charm_level: u.level?.charmLevel ?? 1,
   };
@@ -192,17 +197,25 @@ export const momentsService = {
     }
   },
 
-  async getComments(momentId: string) {
+  async getComments(callerId: string, momentId: string) {
     const comments = await prisma.momentComment.findMany({
       where: { momentId },
       include: { user: { select: userSelect } },
       orderBy: { createdAt: 'asc' },
     });
+    const likedIds = await prisma.momentCommentLike
+      .findMany({
+        where: { userId: callerId, commentId: { in: comments.map((c) => c.id) } },
+        select: { commentId: true },
+      })
+      .then((rows) => new Set(rows.map((r) => r.commentId)));
+
     return comments.map((c) => ({
       id: c.id,
       user: formatAuthor(c.user),
       text: c.text,
       likes_count: c.likesCount,
+      is_liked: likedIds.has(c.id),
       created_at: c.createdAt.toISOString(),
     }));
   },
@@ -221,8 +234,35 @@ export const momentsService = {
       user: formatAuthor(comment.user),
       text: comment.text,
       likes_count: comment.likesCount,
+      is_liked: false,
       created_at: comment.createdAt.toISOString(),
     };
+  },
+
+  async toggleCommentLike(callerId: string, commentId: string) {
+    const comment = await prisma.momentComment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new AppError('Comment not found', 404);
+
+    const existing = await prisma.momentCommentLike.findUnique({
+      where: { commentId_userId: { commentId, userId: callerId } },
+    });
+    if (existing) {
+      await prisma.momentCommentLike.delete({
+        where: { commentId_userId: { commentId, userId: callerId } },
+      });
+      const updated = await prisma.momentComment.update({
+        where: { id: commentId },
+        data: { likesCount: { decrement: 1 } },
+      });
+      return { liked: false, likes_count: Math.max(0, updated.likesCount) };
+    }
+
+    await prisma.momentCommentLike.create({ data: { commentId, userId: callerId } });
+    const updated = await prisma.momentComment.update({
+      where: { id: commentId },
+      data: { likesCount: { increment: 1 } },
+    });
+    return { liked: true, likes_count: updated.likesCount };
   },
 
   async share(momentId: string) {
@@ -234,6 +274,12 @@ export const momentsService = {
   },
 
   async sendGift(callerId: string, momentId: string, giftId: string) {
+    const moment = await prisma.moment.findUnique({ where: { id: momentId } });
+    if (!moment) throw new AppError('Moment not found', 404);
+    if (moment.userId === callerId) {
+      throw new AppError('Cannot send a gift to your own post', 400);
+    }
+
     const gift = await prisma.gift.findUnique({ where: { id: giftId } });
     if (!gift) throw new AppError('Gift not found', 404);
     const wallet = await prisma.wallet.findUnique({ where: { userId: callerId } });
