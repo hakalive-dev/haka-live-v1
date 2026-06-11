@@ -32,6 +32,10 @@ export function initSocketServer(httpServer: http.Server): Server {
   if (env.NODE_ENV !== 'test') {
     const pubClient = redis.duplicate();
     const subClient = redis.duplicate();
+    // Duplicated clients don't inherit the parent's listeners, so attach their
+    // own 'error' handlers to avoid ioredis "missing 'error' handler" warnings.
+    pubClient.on('error', (err) => console.error('Redis pub client error:', err.message));
+    subClient.on('error', (err) => console.error('Redis sub client error:', err.message));
     io.adapter(createAdapter(pubClient, subClient));
     console.log('🔌 Socket.io attached with Redis adapter');
   } else {
