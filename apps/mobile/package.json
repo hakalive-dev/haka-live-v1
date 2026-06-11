@@ -8,8 +8,9 @@
     "ios": "expo run:ios",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
-    "postinstall": "node scripts/postinstall-fixes.mjs",
-    "eas-build-pre-install": "bash ../../scripts/check-asset-size.sh scan ./assets && bash ../../scripts/check-asset-size.sh scan ./src/assets"
+    "postinstall": "patch-package && node scripts/postinstall-fixes.mjs",
+    "eas-build-pre-install": "bash ../../scripts/check-asset-size.sh scan ./assets && bash ../../scripts/check-asset-size.sh scan ./src/assets",
+    "eas-build-post-install": "patch-package && node scripts/postinstall-fixes.mjs"
   },
   "dependencies": {
     "@jayming/svga-player-rn": "^0.4.0",
@@ -97,6 +98,7 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
+    "patch-package": "^8.0.1",
     "react-native-svg-transformer": "^1.5.3",
     "typescript": "~5.9.2"
   },

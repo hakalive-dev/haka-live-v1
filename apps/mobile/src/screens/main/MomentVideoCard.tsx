@@ -5,15 +5,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { WebView } from 'react-native-webview';
 
 import { momentsApi } from '@api/moments';
 
-// expo-video is not available in Expo Go — only load the native player in dev builds.
-const IS_EXPO_GO = Constants.appOwnership === 'expo';
+// expo-video crashes in Expo Go (Media3 mismatch) — use WebView there; native player in APK/dev builds.
+const IS_EXPO_GO =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 const NativeMomentVideoPlayer = IS_EXPO_GO
   ? null
   : require('./NativeMomentVideoPlayer').NativeMomentVideoPlayer as React.ComponentType<{

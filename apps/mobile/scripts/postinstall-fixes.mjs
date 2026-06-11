@@ -58,6 +58,8 @@ function patchExpoMedia3Version(buildGradlePath) {
  * vision-camera pulls camera-video → media3 1.9.0, but expo-video 3.0.x ships a
  * forked DefaultLoadControl from media3 1.8 (no-arg getAllocator). Rebuild against
  * 1.9 and use the PlayerId overload to avoid AbstractMethodError at playback.
+ * Primary fix: patches/expo-video+3.0.16.patch (applied via patch-package in postinstall).
+ * This function is a fallback if patch-package did not run.
  */
 function patchExpoVideoLoadControl() {
   const buildGradle = path.join(

@@ -1,0 +1,26 @@
+diff --git a/node_modules/expo-video/android/build.gradle b/node_modules/expo-video/android/build.gradle
+index f17d2d4..d2f24a1 100644
+--- a/node_modules/expo-video/android/build.gradle
++++ b/node_modules/expo-video/android/build.gradle
+@@ -18,7 +18,7 @@ dependencies {
+   implementation 'com.facebook.react:react-android'
+ 
+   // Remember to keep this in sync with the version in `expo-audio`
+-  def androidxMedia3Version = "1.8.0"
++  def androidxMedia3Version = "1.9.0"
+   implementation "androidx.media3:media3-session:${androidxMedia3Version}"
+   implementation "androidx.media3:media3-exoplayer:${androidxMedia3Version}"
+   implementation "androidx.media3:media3-exoplayer-dash:${androidxMedia3Version}"
+diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java b/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
+index 9ac55d6..7995860 100644
+--- a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
++++ b/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
+@@ -389,7 +389,7 @@ public class DefaultLoadControl implements LoadControl {
+   }
+ 
+   @Override
+-  public Allocator getAllocator() {
++  public Allocator getAllocator(PlayerId playerId) {
+     return allocator;
+   }
+ 
