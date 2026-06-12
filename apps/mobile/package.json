@@ -78,6 +78,12 @@
     "install": {
       "exclude": []
     },
+    "autolinking": {
+      "buildFromSource": [
+        "expo-video",
+        "expo-audio"
+      ]
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [
