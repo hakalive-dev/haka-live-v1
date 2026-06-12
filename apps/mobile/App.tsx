@@ -1,10 +1,18 @@
 import 'react-native-url-polyfill/auto';
 import { initReleaseDiagnostics } from './src/diagnostics/releaseDiagnostics';
+import { registerCallPushHandlers } from './src/background/callPushHandler';
 
 try {
   initReleaseDiagnostics();
 } catch {
   /* diagnostics are best-effort at module load */
+}
+
+try {
+  // Must run at module scope so killed-state FCM/Notifee events reach JS (Android).
+  registerCallPushHandlers();
+} catch {
+  /* best-effort */
 }
 
 import React from 'react';

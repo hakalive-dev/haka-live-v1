@@ -37,6 +37,7 @@ export const CALL_EVENTS = {
   DECLINED:  'call:declined',
   ENDED:     'call:ended',
   CANCELLED: 'call:cancelled',
+  MISSED:    'call:missed',
 } as const;
 
 export type CallEvent = typeof CALL_EVENTS[keyof typeof CALL_EVENTS];

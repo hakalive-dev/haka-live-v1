@@ -1,8 +1,8 @@
-import { Alert } from 'react-native';
-import { chatApi } from '../api/chat';
 import { navigationRef } from '../navigation/navigationRef';
+import type { RootStackParamList } from '../navigation/types';
 
 export type CallIncomingSocketPayload = {
+  callId?: string;
   callerId: string;
   callerDisplayName: string;
   channelId: string;
@@ -11,70 +11,51 @@ export type CallIncomingSocketPayload = {
   uid: number;
 };
 
-function openVideoCallScreen(params: {
-  userId: string;
-  displayName: string;
-  channelId: string;
-  agoraToken: string;
-  appId: string;
-  uid: number;
-}) {
+function isOnCallScreen(): boolean {
+  const route = navigationRef.getCurrentRoute();
+  return route?.name === 'VideoCall' || route?.name === 'IncomingCall';
+}
+
+/** Open the full-screen ringing UI (no-op if a call screen is already up). */
+export function presentIncomingCall(params: RootStackParamList['IncomingCall']): void {
   if (!navigationRef.isReady()) return;
-  navigationRef.navigate('VideoCall', params);
+  if (isOnCallScreen()) return; // server-side busy handles the real race; don't stack call UIs
+  navigationRef.navigate('IncomingCall', params);
 }
 
-export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPayload) {
-  Alert.alert('Incoming video call', `${payload.callerDisplayName} is calling`, [
-    {
-      text: 'Decline',
-      style: 'cancel',
-      onPress: () => {
-        void chatApi.postCallDecline(payload.callerId).catch(() => {});
-      },
-    },
-    {
-      text: 'Answer',
-      onPress: () =>
-        openVideoCallScreen({
-          userId: payload.callerId,
-          displayName: payload.callerDisplayName,
-          channelId: payload.channelId,
-          agoraToken: payload.agoraToken,
-          appId: payload.appId,
-          uid: payload.uid,
-        }),
-    },
-  ]);
+/** Socket path — payload already carries this callee's Agora token. */
+export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPayload): void {
+  presentIncomingCall({
+    callId: payload.callId,
+    callerId: payload.callerId,
+    callerDisplayName: payload.callerDisplayName,
+    channelId: payload.channelId,
+    agoraToken: payload.agoraToken,
+    appId: payload.appId,
+    uid: payload.uid,
+  });
 }
 
-export function promptIncomingVideoCallFromPush(callerId: string, callerDisplayName: string) {
-  Alert.alert('Incoming video call', `${callerDisplayName} is calling`, [
-    {
-      text: 'Decline',
-      style: 'cancel',
-      onPress: () => {
-        void chatApi.postCallDecline(callerId).catch(() => {});
-      },
-    },
-    {
-      text: 'Answer',
-      onPress: () => {
-        void (async () => {
-          try {
-            const t = await chatApi.getCallToken(callerId);
-            openVideoCallScreen({
-              userId: callerId,
-              displayName: callerDisplayName,
-              channelId: t.channel,
-              agoraToken: t.token,
-              appId: t.appId,
-              uid: t.uid,
-            });
-          } catch {
-            /* ignore */
-          }
-        })();
-      },
-    },
-  ]);
+/** Push path — no token in the payload; IncomingCallScreen fetches one on answer. */
+export function promptIncomingVideoCallFromPush(
+  callerId: string,
+  callerDisplayName: string,
+  opts?: { callId?: string; autoAnswer?: boolean },
+): void {
+  presentIncomingCall({
+    callerId,
+    callerDisplayName,
+    callId: opts?.callId,
+    autoAnswer: opts?.autoAnswer,
+  });
+}
+
+/** Close the ringing UI when the caller cancels / the call times out. */
+export function dismissIncomingCallIfActive(peerId?: string): void {
+  if (!navigationRef.isReady()) return;
+  const route = navigationRef.getCurrentRoute();
+  if (route?.name !== 'IncomingCall') return;
+  const params = route.params as RootStackParamList['IncomingCall'] | undefined;
+  if (peerId && params?.callerId !== peerId) return;
+  if (navigationRef.canGoBack()) navigationRef.goBack();
 }

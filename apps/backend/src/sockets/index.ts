@@ -11,6 +11,7 @@ import { startPkMatchmaker } from '../jobs/pk-matchmaker.job';
 import { PK_EVENTS, BATTLE_EVENTS } from '../shared-types';
 import { setBattleEndCallback, recoverActiveBattles } from '../modules/normal-battle/normal-battle.service';
 import { recoverActiveSessions } from '../modules/rooms/calculator.service';
+import { recoverActiveCalls } from '../modules/chat/call.service';
 
 let io: Server;
 
@@ -63,6 +64,7 @@ export function initSocketServer(httpServer: http.Server): Server {
     pkService.recoverActiveMatches().catch(console.error);
     recoverActiveBattles().catch(console.error);
     recoverActiveSessions().catch(console.error);
+    recoverActiveCalls().catch(console.error);
     startPkMatchmaker(io);
   }
 

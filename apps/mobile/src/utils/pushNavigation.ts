@@ -40,7 +40,17 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
   }
 
   if (type === 'video_call' && data.callerId) {
-    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone');
+    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone', {
+      callId: data.callId,
+    });
+    return true;
+  }
+
+  if (type === 'video_call_missed' && data.senderId) {
+    navigationRef.navigate('DMConversation', {
+      userId: data.senderId,
+      displayName: data.senderName ?? 'Video call',
+    });
     return true;
   }
 

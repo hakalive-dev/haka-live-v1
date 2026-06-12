@@ -417,7 +417,8 @@ export interface DirectMessage {
     | "coin_transfer"
     | "seller_recharge_approved"
     | "support_reply"
-    | "system_notice";
+    | "system_notice"
+    | "call_log";
   mediaUrl?: string | null;
   giftId?: string | null;
   giftName?: string;

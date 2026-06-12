@@ -116,15 +116,80 @@ export async function sendPushOnly(
 }
 
 /**
- * High-priority push for incoming video call (wake / sound).
+ * High-priority push for an incoming video call.
+ *
+ * Android: DATA-ONLY (no `notification` block) so the app's background FCM
+ * handler can render the full-screen Notifee call UI instead of the SDK's
+ * plain tray notification. Old builds without the handler show nothing —
+ * the socket path still covers them in the foreground.
+ *
+ * iOS: regular APNs alert; `apns-collapse-id` = callId lets a later
+ * "Missed video call" alert replace the ringing alert instead of stacking.
  */
 export async function sendIncomingCallPush(
   userId: string,
   title: string,
   body: string,
-  data: Record<string, unknown>,
+  data: Record<string, unknown> & { callId?: string },
 ) {
-  return sendPushOnly(userId, title, body, data, { highPriority: true });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } });
+    if (!user?.fcmToken) return;
+    const collapseId = typeof data.callId === 'string' && data.callId ? data.callId : undefined;
+    const msg: Message = {
+      token: user.fcmToken,
+      data: fcmDataPayload({ ...data, title, body }),
+      android: { priority: 'high' },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          ...(collapseId ? { 'apns-collapse-id': collapseId } : {}),
+        },
+        payload: { aps: { alert: { title, body }, sound: 'default' } },
+      },
+    };
+    await firebaseAdmin.messaging().send(msg);
+  } catch {
+    // ignore FCM errors
+  }
+}
+
+/**
+ * Data push mirroring a call lifecycle signal (declined/ended/cancelled/missed)
+ * so the peer's device settles even when its socket is dead. Android consumes it
+ * in the background handler (dismisses the ringing notification); iOS shows the
+ * optional alert, replacing the original ring alert via `apns-collapse-id`.
+ */
+export async function sendCallSignalPush(
+  userId: string,
+  data: Record<string, unknown> & { callId?: string },
+  iosAlert?: { title: string; body: string },
+) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } });
+    if (!user?.fcmToken) return;
+    const collapseId = typeof data.callId === 'string' && data.callId ? data.callId : undefined;
+    const msg: Message = {
+      token: user.fcmToken,
+      data: fcmDataPayload(data),
+      android: { priority: 'high' },
+      apns: {
+        headers: {
+          // Silent pushes must use priority 5 per APNs rules.
+          'apns-priority': iosAlert ? '10' : '5',
+          ...(collapseId ? { 'apns-collapse-id': collapseId } : {}),
+        },
+        payload: {
+          aps: iosAlert
+            ? { alert: iosAlert, sound: 'default' }
+            : { contentAvailable: true },
+        },
+      },
+    };
+    await firebaseAdmin.messaging().send(msg);
+  } catch {
+    // ignore FCM errors
+  }
 }
 
 /**

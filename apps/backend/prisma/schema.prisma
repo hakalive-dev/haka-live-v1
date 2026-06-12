@@ -93,6 +93,10 @@ model User {
   receivedDMs        DirectMessage[]         @relation("DMRecipient")
   hiddenDirectMessages DirectMessageHidden[] @relation("DMHiddenByUser")
 
+  // 1:1 video calls
+  callsMade     Call[] @relation("CallsMade")
+  callsReceived Call[] @relation("CallsReceived")
+
   // Wallet
   wallet             Wallet?             @relation("UserWallet")
   withdrawalRequests WithdrawalRequest[] @relation("UserWithdrawals")
@@ -409,7 +413,7 @@ model DirectMessage {
   recipient    User     @relation("DMRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   content      String
   isRead       Boolean  @default(false)
-  messageType  String   @default("text") // text | gift | image | agent_application | sub_agent_invite | coin_transfer | system_notice
+  messageType  String   @default("text") // text | gift | image | agent_application | sub_agent_invite | coin_transfer | system_notice | call_log
   mediaUrl     String?
   giftId       String?
   giftName     String   @default("")
@@ -440,6 +444,26 @@ model DirectMessageHidden {
   @@unique([messageId, userId])
   @@index([userId])
   @@map("direct_message_hidden")
+}
+
+// ── Call (1:1 video call lifecycle — ring timeout, missed/busy, call_log DMs) ──
+model Call {
+  id         String    @id @default(uuid())
+  callerId   String
+  caller     User      @relation("CallsMade", fields: [callerId], references: [id], onDelete: Cascade)
+  calleeId   String
+  callee     User      @relation("CallsReceived", fields: [calleeId], references: [id], onDelete: Cascade)
+  channelId  String
+  status     String    @default("ringing") // ringing | answered | declined | cancelled | missed | busy | ended
+  startedAt  DateTime  @default(now())
+  answeredAt DateTime?
+  endedAt    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([calleeId, status])
+  @@index([callerId, status])
+  @@map("calls")
 }
 
 // ── TeamAnnouncement (admin broadcast — one logical “current” row; history optional) ──

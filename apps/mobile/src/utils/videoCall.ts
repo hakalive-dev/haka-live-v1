@@ -5,10 +5,14 @@ import type { RootStackParamList } from '../navigation/types';
 
 export async function startVideoCall(userId: string, displayName: string): Promise<void> {
   try {
-    const [t] = await Promise.all([
+    const [t, invite] = await Promise.all([
       chatApi.getCallToken(userId),
       chatApi.postCallInvite(userId),
     ]);
+    if (invite.status === 'busy') {
+      Alert.alert('Video call', `${displayName} is on another call right now.`);
+      return;
+    }
     if (!navigationRef.isReady()) return;
     navigationRef.navigate('VideoCall', {
       userId,

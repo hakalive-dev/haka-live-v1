@@ -51,8 +51,12 @@ import {
 } from "../components/SeatInvitePrompt";
 import { normalizeSeatInvitationPayload } from "../utils/seatInvitePayload";
 import { getActiveRoomIdFromNavigation } from "../navigation/roomNavigation";
-import { promptIncomingVideoCallFromSocket } from "../utils/incomingVideoCall";
+import {
+  promptIncomingVideoCallFromSocket,
+  dismissIncomingCallIfActive,
+} from "../utils/incomingVideoCall";
 import { leaveVideoCallIfActive } from "../utils/videoCall";
+import { cancelIncomingCallNotification } from "../services/callNotifications";
 import { CALL_EVENTS } from "@haka-live/shared-types/events";
 import { queryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
@@ -353,6 +357,7 @@ export function useUserSocket(enabled: boolean) {
       client.on(
         CALL_EVENTS.INCOMING,
         (payload: {
+          callId?: string;
           callerId: string;
           callerDisplayName: string;
           channelId: string;
@@ -363,6 +368,7 @@ export function useUserSocket(enabled: boolean) {
           if (!payload?.callerId || !payload?.channelId || !payload?.agoraToken)
             return;
           promptIncomingVideoCallFromSocket({
+            callId: payload.callId,
             callerId: payload.callerId,
             callerDisplayName: payload.callerDisplayName ?? "Someone",
             channelId: payload.channelId,
@@ -373,12 +379,17 @@ export function useUserSocket(enabled: boolean) {
         },
       );
 
-      const onCallPeerSignal = (payload: { peerId?: string }) => {
+      // The peer settled the call (declined/ended/cancelled/missed) — close whichever
+      // call UI is up and drop any ringing notification.
+      const onCallPeerSignal = (payload: { peerId?: string; callId?: string }) => {
         leaveVideoCallIfActive(payload?.peerId);
+        dismissIncomingCallIfActive(payload?.peerId);
+        void cancelIncomingCallNotification(payload?.callId);
       };
     client.on(CALL_EVENTS.DECLINED, onCallPeerSignal);
     client.on(CALL_EVENTS.ENDED, onCallPeerSignal);
     client.on(CALL_EVENTS.CANCELLED, onCallPeerSignal);
+    client.on(CALL_EVENTS.MISSED, onCallPeerSignal);
 
     return () => {
       socket.current?.disconnect();
