@@ -1,0 +1,17 @@
+# Render Blueprint — admin static site (admin.hakalive.com)
+# Dashboard must use Root Directory = apps/admin OR sync this service from Blueprint.
+services:
+  - type: web
+    name: haka-live-admin
+    runtime: static
+    rootDir: apps/admin
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_API_URL
+        value: https://api.hakalive.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

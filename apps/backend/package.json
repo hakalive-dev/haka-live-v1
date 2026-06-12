@@ -6,7 +6,7 @@
     "dev": "node --watch -r ts-node/register src/server.ts",
     "dev:worker": "ts-node src/worker.ts",
     "worker": "node dist/worker.js",
-    "build": "tsc && if [ -d ../admin ]; then cd ../admin && npm install && npm run build && cp -r dist ../backend/admin-dist; fi",
+    "build": "tsc && if [ -d ../admin ]; then cd ../admin && npm install && npm run build:embedded && cp -r dist ../backend/admin-dist; fi",
     "start": "node dist/server.js",
     "loadtest:ws": "ts-node scripts/ws-ccu-smoke.ts",
     "otp:smoke": "ts-node scripts/email-otp-smoke.ts",

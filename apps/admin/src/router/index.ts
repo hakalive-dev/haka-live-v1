@@ -75,6 +75,7 @@ const router = createRouter({
         { path: 'hosts', name: 'Hosts', component: () => import('@/views/hosts/HostListView.vue') },
         { path: 'hosts/abuse', name: 'HostAbuse', component: () => import('@/views/hosts/HostAbuseView.vue') },
         { path: 'regions', name: 'Regions', component: () => import('@/views/settings/RegionsView.vue') },
+        { path: ':pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFoundView.vue') },
       ],
     },
   ],
