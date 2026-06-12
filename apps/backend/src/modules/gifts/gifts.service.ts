@@ -587,12 +587,13 @@ export async function sendGift(input: GiftSendInput) {
           rewardCoins: draw.rewardCoins,
           receiverBeans: distributedHostBeans,
           winProbability: luckySetting.winProbability,
-          winMultiplier: luckySetting.winMultiplier,
+          winMultiplier: draw.winMultiplier,
         },
       });
       luckyOutcome = {
         drawId: drawRow.id,
         isWin: draw.isWin,
+        winMultiplier: draw.winMultiplier,
         rewardCoins: draw.rewardCoins,
         coinCost: totalCoinCost,
         senderCoinBalance: senderBalanceAfterDraw,

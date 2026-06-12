@@ -14,7 +14,7 @@ type Props = {
   giftIcon: string;
   giftImageFallback?: string | null;
   rewardCoins: number;
-  winCount?: number;
+  sendMultiplier?: number;
   onPressSender?: () => void;
 };
 
@@ -22,17 +22,14 @@ export const LuckyWinNoticeRow = React.memo(LuckyWinNoticeRowInner);
 
 function LuckyWinNoticeRowInner({
   sender,
-  giftName,
   giftIcon,
   giftImageFallback,
   rewardCoins,
-  winCount = 1,
+  sendMultiplier = 1,
   onPressSender,
 }: Props) {
   const name = sender.displayName ?? 'User';
   const richLevel = sender.richLevel ?? 0;
-  const winLabel =
-    winCount > 1 ? `${winCount} lucky wins` : 'Lucky win';
 
   return (
     <View style={styles.row}>
@@ -68,12 +65,13 @@ function LuckyWinNoticeRowInner({
           ) : null}
         </TouchableOpacity>
         <View style={styles.actionRow}>
-          <Text style={styles.winLabel}>{winLabel}</Text>
-          <GiftInlineIcon giftIcon={giftIcon} giftImage={giftImageFallback} size={24} />
-          <Text style={styles.actionText} numberOfLines={2}>
-            {giftName}
+          <Text style={styles.winText} numberOfLines={2}>
+            Win{' '}
+            <Text style={styles.rewardText}>{rewardCoins.toLocaleString()}</Text>
+            {' '}coins by sending
           </Text>
-          <Text style={styles.rewardText}>+{rewardCoins.toLocaleString()}</Text>
+          <GiftInlineIcon giftIcon={giftIcon} giftImage={giftImageFallback} size={24} />
+          <Text style={styles.multiplier}>x {sendMultiplier}</Text>
         </View>
       </View>
     </View>
@@ -116,22 +114,19 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 4,
   },
-  winLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  actionText: {
+  winText: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textInverse,
     flexShrink: 1,
   },
   rewardText: {
-    fontSize: 13,
     fontWeight: '700',
     color: Colors.coin,
+  },
+  multiplier: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.textInverse,
   },
 });

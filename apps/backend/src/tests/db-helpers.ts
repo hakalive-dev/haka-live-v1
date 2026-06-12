@@ -32,7 +32,21 @@ export async function resetDb(): Promise<void> {
   });
   await prisma.luckyGiftSetting.upsert({
     where: { id: 'singleton' },
-    update: { enabled: true, winProbability: 0.98, winMultiplier: 3.0, receiverBenefitPercent: 1.5, updatedBy: '' },
+    update: {
+      enabled: true,
+      winProbability: 0.98,
+      winMultiplier: 3.0,
+      winMultiplierTiers: [
+        { multiplier: 2, weight: 50 },
+        { multiplier: 3, weight: 25 },
+        { multiplier: 5, weight: 15 },
+        { multiplier: 10, weight: 7 },
+        { multiplier: 50, weight: 2 },
+        { multiplier: 100, weight: 1 },
+      ],
+      receiverBenefitPercent: 1.5,
+      updatedBy: '',
+    },
     create: { id: 'singleton', enabled: true },
   });
   clearLuckySettingCache();

@@ -36,15 +36,29 @@ async function setLuckySetting(input: {
   enabled: boolean;
   winProbability?: number;
   winMultiplier?: number;
+  winMultiplierTiers?: Array<{ multiplier: number; weight: number }>;
   receiverBenefitPercent?: number;
 }) {
+  const tiers =
+    input.winMultiplierTiers ??
+    (input.winMultiplier != null
+      ? [{ multiplier: input.winMultiplier, weight: 1 }]
+      : undefined);
   await prisma.luckyGiftSetting.upsert({
     where: { id: "singleton" },
-    create: { id: "singleton", ...input },
+    create: {
+      id: "singleton",
+      enabled: input.enabled,
+      winProbability: input.winProbability ?? 0.2,
+      winMultiplier: input.winMultiplier ?? 3.0,
+      ...(tiers ? { winMultiplierTiers: tiers } : {}),
+      receiverBenefitPercent: input.receiverBenefitPercent ?? 1.5,
+    },
     update: {
       enabled: input.enabled,
       winProbability: input.winProbability ?? 0.2,
       winMultiplier: input.winMultiplier ?? 3.0,
+      ...(tiers ? { winMultiplierTiers: tiers } : {}),
       receiverBenefitPercent: input.receiverBenefitPercent ?? 1.5,
     },
   });
@@ -94,7 +108,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplier: 3,
+      winMultiplierTiers: [{ multiplier: 3, weight: 1 }],
       receiverBenefitPercent: 1.5,
     });
     const gift = await createGift("lucky");

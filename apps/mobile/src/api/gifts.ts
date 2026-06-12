@@ -142,10 +142,29 @@ export const giftsApi = {
       const luckyDraw = isLuckyGiftCategory(gift.category)
         ? (() => {
             const isWin = Math.random() < 0.98;
-            const rewardCoins = isWin ? Math.round(coinCost * 3) : 0;
+            const mockTiers = [
+              { multiplier: 2, weight: 50 },
+              { multiplier: 3, weight: 25 },
+              { multiplier: 5, weight: 15 },
+              { multiplier: 10, weight: 7 },
+              { multiplier: 50, weight: 2 },
+              { multiplier: 100, weight: 1 },
+            ];
+            const totalWeight = mockTiers.reduce((sum, tier) => sum + tier.weight, 0);
+            let roll = Math.random() * totalWeight;
+            let winMultiplier = mockTiers[0]!.multiplier;
+            for (const tier of mockTiers) {
+              roll -= tier.weight;
+              if (roll < 0) {
+                winMultiplier = tier.multiplier;
+                break;
+              }
+            }
+            const rewardCoins = isWin ? Math.round(coinCost * winMultiplier) : 0;
             return {
               drawId: `mock-draw-${Date.now()}`,
               isWin,
+              winMultiplier: isWin ? winMultiplier : 0,
               rewardCoins,
               coinCost,
               senderCoinBalance: 50_000 - coinCost + rewardCoins,

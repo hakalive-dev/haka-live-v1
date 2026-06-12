@@ -3,33 +3,49 @@ import {
   luckyReceiverBeans,
   expectedReturn,
   totalPayoutRatio,
+  pickWinMultiplier,
+  averageWinMultiplier,
+  normalizeWinMultiplierTiers,
 } from './lucky-draw';
 
 const CONFIG = {
   winProbability: 0.2,
-  winMultiplier: 3.0,
+  winMultiplierTiers: [
+    { multiplier: 3, weight: 1 },
+  ],
   receiverBenefitPercent: 1.5,
 };
 
 describe('runLuckyDraw', () => {
-  it('wins when rng < winProbability', () => {
-    const result = runLuckyDraw(CONFIG, 100, () => 0.19);
+  it('wins when rng < winProbability and draws a random multiplier', () => {
+    let call = 0;
+    const rng = () => {
+      call += 1;
+      return call === 1 ? 0.19 : 0;
+    };
+    const result = runLuckyDraw(CONFIG, 100, rng);
     expect(result.isWin).toBe(true);
+    expect(result.winMultiplier).toBe(3);
     expect(result.rewardCoins).toBe(300);
   });
 
   it('loses when rng >= winProbability (boundary)', () => {
     const result = runLuckyDraw(CONFIG, 100, () => 0.2);
     expect(result.isWin).toBe(false);
+    expect(result.winMultiplier).toBe(0);
     expect(result.rewardCoins).toBe(0);
   });
 
   it('rounds the reward to whole coins', () => {
     const result = runLuckyDraw(
-      { ...CONFIG, winMultiplier: 1.5 },
+      {
+        ...CONFIG,
+        winMultiplierTiers: [{ multiplier: 1.5, weight: 1 }],
+      },
       25, // 25 × 1.5 = 37.5 → 38
       () => 0,
     );
+    expect(result.winMultiplier).toBe(1.5);
     expect(result.rewardCoins).toBe(38);
   });
 
@@ -63,6 +79,24 @@ describe('runLuckyDraw', () => {
     expect(observed).toBeGreaterThan(CONFIG.winProbability - 0.01);
     expect(observed).toBeLessThan(CONFIG.winProbability + 0.01);
   });
+
+  it('draws different multipliers from weighted tiers', () => {
+    const tiers = [
+      { multiplier: 2, weight: 1 },
+      { multiplier: 10, weight: 1 },
+    ];
+    const seen = new Set<number>();
+    let seed = 7;
+    const lcg = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    for (let i = 0; i < 200; i++) {
+      seen.add(pickWinMultiplier(tiers, lcg));
+    }
+    expect(seen.has(2)).toBe(true);
+    expect(seen.has(10)).toBe(true);
+  });
 });
 
 describe('luckyReceiverBeans', () => {
@@ -74,8 +108,23 @@ describe('luckyReceiverBeans', () => {
   });
 });
 
+describe('normalizeWinMultiplierTiers / averageWinMultiplier', () => {
+  it('falls back to scalar multiplier when tiers are empty', () => {
+    expect(normalizeWinMultiplierTiers([], 3)).toEqual([{ multiplier: 3, weight: 1 }]);
+    expect(averageWinMultiplier([])).toBe(3);
+  });
+
+  it('computes weighted average multiplier', () => {
+    const tiers = [
+      { multiplier: 2, weight: 1 },
+      { multiplier: 4, weight: 1 },
+    ];
+    expect(averageWinMultiplier(tiers)).toBe(3);
+  });
+});
+
 describe('expectedReturn / totalPayoutRatio', () => {
-  it('TRP = probability × multiplier', () => {
+  it('TRP = probability × average multiplier', () => {
     expect(expectedReturn(CONFIG)).toBeCloseTo(0.6);
   });
 

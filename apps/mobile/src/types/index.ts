@@ -349,6 +349,8 @@ export interface Gift {
 export interface LuckyDrawOutcome {
   drawId: string;
   isWin: boolean;
+  /** Multiplier drawn for this send (0 on lose). */
+  winMultiplier?: number;
   rewardCoins: number;
   coinCost: number;
   senderCoinBalance?: number;
@@ -400,6 +402,8 @@ export interface ChatMessage {
     giftImageFallback?: string | null;
     /** Wins rolled into one chat line after a combo session (default 1). */
     winCount?: number;
+    /** Total gifts sent in the combo session that produced the win(s). */
+    sendMultiplier?: number;
   };
 }
 

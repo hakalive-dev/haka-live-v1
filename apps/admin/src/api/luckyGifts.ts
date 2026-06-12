@@ -1,14 +1,21 @@
 import client from './client'
 
+export interface LuckyMultiplierTier {
+  multiplier: number
+  weight: number
+}
+
 export interface LuckySettingDTO {
   enabled: boolean
   winProbability: number
+  /** Weighted average payout multiplier across tiers. */
   winMultiplier: number
+  winMultiplierTiers: LuckyMultiplierTier[]
   receiverBenefitPercent: number
   dailyUserWinCapCoins: string
   updatedBy: string
   updatedAt: string
-  /** Expected sender return: winProbability × winMultiplier */
+  /** Expected sender return: winProbability × average multiplier */
   expectedReturn: number
   /** Sender TRP + host receiver % (keep below 1.0 for house edge). */
   totalPayoutRatio: number
@@ -59,6 +66,7 @@ export type LuckySettingUpdate = Partial<{
   enabled: boolean
   winProbability: number
   winMultiplier: number
+  winMultiplierTiers: LuckyMultiplierTier[]
   receiverBenefitPercent: number
   dailyUserWinCapCoins: string
 }>

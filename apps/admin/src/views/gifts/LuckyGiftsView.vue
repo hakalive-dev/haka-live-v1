@@ -14,12 +14,32 @@ const stats = ref<api.LuckyStatsDTO | null>(null)
 
 const enabled = ref(true)
 const winProbabilityPct = ref('20')
-const winMultiplier = ref('3')
+const winMultiplierTiers = ref<Array<{ multiplier: string; weight: string }>>([
+  { multiplier: '2', weight: '50' },
+  { multiplier: '3', weight: '25' },
+  { multiplier: '5', weight: '15' },
+  { multiplier: '10', weight: '7' },
+  { multiplier: '50', weight: '2' },
+  { multiplier: '100', weight: '1' },
+])
 const receiverBenefitPercent = ref('1.5')
 const dailyUserWinCapCoins = ref('0')
 
 const previewWinProb = computed(() => parseFloat(winProbabilityPct.value) / 100)
-const previewMultiplier = computed(() => parseFloat(winMultiplier.value))
+const previewTiers = computed(() =>
+  winMultiplierTiers.value
+    .map((tier) => ({
+      multiplier: parseFloat(tier.multiplier),
+      weight: parseFloat(tier.weight),
+    }))
+    .filter((tier) => Number.isFinite(tier.multiplier) && tier.multiplier > 0 && Number.isFinite(tier.weight) && tier.weight > 0),
+)
+const previewMultiplier = computed(() => {
+  const tiers = previewTiers.value
+  if (tiers.length === 0) return NaN
+  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0)
+  return tiers.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight
+})
 const previewReceiverPct = computed(() => parseFloat(receiverBenefitPercent.value))
 
 const previewTrp = computed(() => {
@@ -75,9 +95,23 @@ function fmtCoins(n: number | null | undefined) {
 function applySettingToForm(s: api.LuckySettingDTO) {
   enabled.value = s.enabled
   winProbabilityPct.value = (s.winProbability * 100).toFixed(2).replace(/\.?0+$/, '')
-  winMultiplier.value = String(s.winMultiplier)
+  winMultiplierTiers.value = (s.winMultiplierTiers.length > 0 ? s.winMultiplierTiers : [{ multiplier: s.winMultiplier, weight: 1 }]).map(
+    (tier) => ({
+      multiplier: String(tier.multiplier),
+      weight: String(tier.weight),
+    }),
+  )
   receiverBenefitPercent.value = String(s.receiverBenefitPercent)
   dailyUserWinCapCoins.value = s.dailyUserWinCapCoins
+}
+
+function addMultiplierTier() {
+  winMultiplierTiers.value.push({ multiplier: '2', weight: '1' })
+}
+
+function removeMultiplierTier(index: number) {
+  if (winMultiplierTiers.value.length <= 1) return
+  winMultiplierTiers.value.splice(index, 1)
 }
 
 async function fetchSetting() {
@@ -124,15 +158,16 @@ async function saveSetting() {
   saved.value = false
 
   const winProbability = parseFloat(winProbabilityPct.value) / 100
-  const multiplier = parseFloat(winMultiplier.value)
+  const tiers = previewTiers.value
   const receiverPct = parseFloat(receiverBenefitPercent.value)
+  const averageMultiplier = previewMultiplier.value
 
   if (!Number.isFinite(winProbability) || winProbability < 0 || winProbability > 1) {
     saveError.value = 'Win probability must be between 0% and 100%.'
     return
   }
-  if (!Number.isFinite(multiplier) || multiplier < 0) {
-    saveError.value = 'Win multiplier must be zero or greater.'
+  if (tiers.length === 0 || !Number.isFinite(averageMultiplier) || averageMultiplier <= 0) {
+    saveError.value = 'Add at least one payout tier with multiplier and weight > 0.'
     return
   }
   if (!Number.isFinite(receiverPct) || receiverPct < 0 || receiverPct > 1.5) {
@@ -143,8 +178,8 @@ async function saveSetting() {
     saveError.value = 'Daily win cap must be a whole number (0 = no cap).'
     return
   }
-  if (winProbability * multiplier >= 1) {
-    saveError.value = 'TRP (win % × multiplier) must stay below 100% for a house edge.'
+  if (winProbability * averageMultiplier >= 1) {
+    saveError.value = 'TRP (win % × average multiplier) must stay below 100% for a house edge.'
     return
   }
 
@@ -153,7 +188,7 @@ async function saveSetting() {
     setting.value = await api.updateLuckySetting({
       enabled: enabled.value,
       winProbability,
-      winMultiplier: multiplier,
+      winMultiplierTiers: tiers,
       receiverBenefitPercent: receiverPct,
       dailyUserWinCapCoins: dailyUserWinCapCoins.value.trim(),
     })
@@ -234,17 +269,54 @@ onMounted(() => void refreshAll())
               />
               <span class="field-hint">Chance per send that the sender wins coins back.</span>
             </div>
-            <div class="form-field">
-              <label class="form-label">Win multiplier (× stake)</label>
-              <input
-                v-model="winMultiplier"
-                class="form-input"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="e.g. 3"
-              />
-              <span class="field-hint">Payout = round(stake × multiplier) on win.</span>
+            <div class="form-field form-field-wide">
+              <label class="form-label">Win multiplier tiers (random per win)</label>
+              <div class="tier-table">
+                <div class="tier-head">
+                  <span>Multiplier (× stake)</span>
+                  <span>Weight</span>
+                  <span />
+                </div>
+                <div
+                  v-for="(tier, index) in winMultiplierTiers"
+                  :key="index"
+                  class="tier-row"
+                >
+                  <input
+                    v-model="tier.multiplier"
+                    class="form-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="e.g. 5"
+                  />
+                  <input
+                    v-model="tier.weight"
+                    class="form-input"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="e.g. 10"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    :disabled="winMultiplierTiers.length <= 1"
+                    @click="removeMultiplierTier(index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div class="tier-actions">
+                <button type="button" class="btn btn-ghost btn-sm" @click="addMultiplierTier">
+                  Add tier
+                </button>
+                <span class="field-hint">
+                  On win, one tier is picked by weight. Avg multiplier:
+                  {{ Number.isFinite(previewMultiplier) ? previewMultiplier.toFixed(2) : '—' }}×
+                </span>
+              </div>
             </div>
             <div class="form-field">
               <label class="form-label">Host bean benefit (% of stake)</label>
@@ -275,7 +347,7 @@ onMounted(() => void refreshAll())
             <div class="metric">
               <span class="metric-label">TRP (sender expected return)</span>
               <span class="metric-value">{{ fmtPct(previewTrp) }}</span>
-              <span class="metric-formula">win % × multiplier</span>
+              <span class="metric-formula">win % × avg multiplier</span>
             </div>
             <div class="metric">
               <span class="metric-label">Total payout ratio</span>
@@ -361,6 +433,7 @@ onMounted(() => void refreshAll())
               <th>Gift</th>
               <th class="num">Stake</th>
               <th>Outcome</th>
+              <th class="num">Multiplier</th>
               <th class="num">Reward</th>
               <th class="num">Host beans</th>
               <th class="mono">User</th>
@@ -376,6 +449,7 @@ onMounted(() => void refreshAll())
                   {{ d.isWin ? 'Win' : 'Lose' }}
                 </span>
               </td>
+              <td class="num">{{ d.isWin ? `${d.winMultiplier}×` : '—' }}</td>
               <td class="num coins">{{ d.isWin ? `🪙 ${fmtCoins(d.rewardCoins)}` : '—' }}</td>
               <td class="num">🫘 {{ fmtCoins(d.receiverBeans) }}</td>
               <td class="mono dim">{{ d.userId.slice(0, 8) }}…</td>
@@ -487,6 +561,31 @@ onMounted(() => void refreshAll())
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
+}
+.form-field-wide {
+  grid-column: 1 / -1;
+}
+.tier-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tier-head,
+.tier-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.tier-head {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tier-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .form-field {
   display: flex;

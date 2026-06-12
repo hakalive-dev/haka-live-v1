@@ -695,7 +695,8 @@ model LuckyGiftSetting {
   id                     String   @id @default("singleton")
   enabled                Boolean  @default(true)
   winProbability         Decimal  @default(0.98) // 0 ≤ p ≤ 1, chance of a win per send
-  winMultiplier          Decimal  @default(3.0) // win payout = round(coinCost × multiplier)
+  winMultiplier          Decimal  @default(3.0) // legacy scalar fallback when tiers empty
+  winMultiplierTiers     Json     @default("[{\"multiplier\":2,\"weight\":50},{\"multiplier\":3,\"weight\":25},{\"multiplier\":5,\"weight\":15},{\"multiplier\":10,\"weight\":7},{\"multiplier\":50,\"weight\":2},{\"multiplier\":100,\"weight\":1}]")
   receiverBenefitPercent Decimal  @default(1.5) // 0 ≤ x ≤ 1.5 (% of gift value → host bean pool)
   dailyUserWinCapCoins   BigInt   @default(0) // 0 = no cap (enforcement deferred)
   updatedBy              String   @default("")
@@ -721,7 +722,7 @@ model LuckyGiftDraw {
   rewardCoins       Int             @default(0) // coins credited to sender; 0 on lose
   receiverBeans     Int             @default(0) // reduced host cut actually credited
   winProbability    Decimal // config snapshot at draw time
-  winMultiplier     Decimal // config snapshot at draw time
+  winMultiplier     Decimal // payout multiplier drawn for this send (0 on lose)
   createdAt         DateTime        @default(now())
 
   @@index([userId, createdAt])

@@ -9,6 +9,8 @@ import { serializeUserSummary, userSummarySelect } from '../users/user-summary';
 export interface LuckyDrawOutcome {
   drawId: string;
   isWin: boolean;
+  /** Multiplier drawn for this send (0 on lose). */
+  winMultiplier: number;
   rewardCoins: number;
   coinCost: number;
   /** Sender coin balance after debit + (possible) reward credit. */
@@ -35,6 +37,7 @@ export function broadcastLuckyDraw(params: {
   const payload = {
     drawId: outcome.drawId,
     isWin: outcome.isWin,
+    winMultiplier: outcome.winMultiplier,
     rewardCoins: outcome.rewardCoins,
     coinCost: outcome.coinCost,
     giftId,

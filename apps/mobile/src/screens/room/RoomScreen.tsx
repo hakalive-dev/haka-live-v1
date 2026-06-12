@@ -356,10 +356,28 @@ export function RoomScreen({ route, navigation }: Props) {
       string,
       {
         wins: PendingLuckyChatWin[];
+        sendMultiplier?: number;
         timer?: ReturnType<typeof setTimeout>;
       }
     >
   >(new Map());
+  type RemoteGiftComboBuffer = {
+    comboKey: string;
+    senderName: string;
+    senderAvatar: string | null;
+    recipientName: string;
+    giftIcon: string;
+    giftImage: string | null;
+    giftName: string;
+    comboCount: number;
+    sender: import("@/types").RoomUser;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+  const remoteGiftComboBuffersRef = useRef<
+    Map<string, RemoteGiftComboBuffer>
+  >(new Map());
+  const selfGiftNoticesFlushedRef = useRef(false);
+  const selfComboSendMultiplierRef = useRef<number | null>(null);
   const giftSvgaPreloadStartedRef = useRef(false);
   const recentGiftEventIdsRef = useRef<Map<string, number> | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -507,13 +525,21 @@ export function RoomScreen({ route, navigation }: Props) {
     (t: Omit<GiftToastItem, "id" | "bump" | "combo"> & { combo?: number }) => {
       setGiftToasts((prev) => {
         const idx = prev.findIndex((x) => x.comboKey === t.comboKey);
+        const cumulativeQty = t.combo ?? t.qty;
         if (idx >= 0) {
           const existing = prev[idx];
+          const nextQty =
+            t.combo != null
+              ? Math.max(existing.qty, t.combo)
+              : existing.qty + t.qty;
           const merged: GiftToastItem = {
             ...existing,
-            qty: existing.qty + t.qty,
-            combo: Math.max(existing.combo + 1, t.combo ?? existing.combo + 1),
-            bump: existing.bump + 1,
+            qty: nextQty,
+            combo:
+              t.combo != null
+                ? Math.max(existing.combo, t.combo)
+                : Math.max(existing.combo + 1, t.combo ?? existing.combo + 1),
+            bump: nextQty > existing.qty ? existing.bump + 1 : existing.bump,
           };
           const next = prev.slice();
           next[idx] = merged;
@@ -523,7 +549,8 @@ export function RoomScreen({ route, navigation }: Props) {
           ...prev,
           {
             ...t,
-            combo: t.combo ?? 1,
+            qty: cumulativeQty,
+            combo: t.combo ?? cumulativeQty,
             bump: 0,
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           },
@@ -531,6 +558,27 @@ export function RoomScreen({ route, navigation }: Props) {
       });
     },
     [],
+  );
+  const pushSelfComboGiftToast = useCallback(
+    (
+      gift: Gift,
+      recipient: { id: string; displayName: string },
+      count: number,
+    ) => {
+      if (!currentUser || count <= 0) return;
+      const comboKey = `${currentUser.id}-${gift.id}-${recipient.id}`;
+      pushGiftToast({
+        comboKey,
+        senderName: currentUser.displayName ?? "You",
+        senderAvatar: currentUser.avatar ?? null,
+        recipientName: recipient.displayName,
+        giftIcon: gift.icon,
+        giftImage: gift.image ?? null,
+        qty: count,
+        combo: count,
+      });
+    },
+    [currentUser, pushGiftToast],
   );
   const [inviteOverlayVisible, setInviteOverlayVisible] = useState(false);
   const [inviteSeatPosition, setInviteSeatPosition] = useState<number | null>(null);
@@ -913,55 +961,191 @@ export function RoomScreen({ route, navigation }: Props) {
     [],
   );
 
-  const postLuckyWinChat = useCallback((wins: PendingLuckyChatWin[]) => {
-    if (wins.length === 0) return;
-    const first = wins[0];
-    const totalReward = wins.reduce((sum, w) => sum + w.rewardCoins, 0);
-    const idSuffix =
-      wins.length === 1
-        ? first.drawId
-        : wins.map((w) => w.drawId).join("-");
-    setChatMessages((prev) => [
-      ...prev,
-      {
-        id: `lucky-win-${idSuffix}`,
-        sender: first.sender,
-        content: null,
-        createdAt: new Date().toISOString(),
-        type: "lucky_win_notice",
-        luckyWin: {
-          giftName: first.giftName,
-          giftIcon: first.giftIcon,
-          rewardCoins: totalReward,
-          giftImageFallback: first.giftImageFallback ?? null,
-          winCount: wins.length,
+  const postGiftNoticeChat = useCallback(
+    (notice: {
+      sender: import("@/types").RoomUser;
+      giftName: string;
+      giftIcon: string;
+      giftImageFallback?: string | null;
+      recipientName: string;
+      qty: number;
+    }) => {
+      const { sender, giftName, giftIcon, giftImageFallback, recipientName, qty } =
+        notice;
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `gift-notice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          sender,
+          content: `Send ${giftName} ${recipientName} x${qty}`,
+          createdAt: new Date().toISOString(),
+          type: "gift_notice",
+          giftNotice: {
+            giftName,
+            giftIcon,
+            recipientName,
+            qty,
+            giftImageFallback: giftImageFallback ?? null,
+          },
         },
+      ]);
+    },
+    [],
+  );
+
+  const postLuckyWinChat = useCallback(
+    (wins: PendingLuckyChatWin[], sendMultiplier = 1) => {
+      if (wins.length === 0) return;
+      const first = wins[0];
+      const totalReward = wins.reduce((sum, w) => sum + w.rewardCoins, 0);
+      const idSuffix =
+        wins.length === 1
+          ? first.drawId
+          : wins.map((w) => w.drawId).join("-");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `lucky-win-${idSuffix}`,
+          sender: first.sender,
+          content: null,
+          createdAt: new Date().toISOString(),
+          type: "lucky_win_notice",
+          luckyWin: {
+            giftName: first.giftName,
+            giftIcon: first.giftIcon,
+            rewardCoins: totalReward,
+            giftImageFallback: first.giftImageFallback ?? null,
+            winCount: wins.length,
+            sendMultiplier,
+          },
+        },
+      ]);
+    },
+    [],
+  );
+
+  const flushSelfGiftNotices = useCallback((): number | null => {
+    const combo = comboStateRef.current;
+    if (!combo || combo.count <= 0 || !currentUser) return null;
+    if (selfGiftNoticesFlushedRef.current) return combo.count;
+
+    selfGiftNoticesFlushedRef.current = true;
+    const senderName = currentUser.displayName ?? "You";
+    const senderAvatar = currentUser.avatar ?? null;
+
+    postGiftNoticeChat({
+      sender: {
+        id: currentUser.id,
+        username: currentUser.username ?? null,
+        displayName: senderName,
+        avatar: senderAvatar ?? "",
+        richLevel: currentUser.richLevel ?? 0,
+        charmLevel: currentUser.charmLevel ?? 0,
+        equippedFrame: currentUser.equippedFrame ?? null,
       },
-    ]);
-  }, []);
+      giftName: combo.gift.name,
+      giftIcon: combo.gift.icon,
+      giftImageFallback: combo.gift.image ?? null,
+      recipientName: combo.recipient.displayName,
+      qty: combo.count,
+    });
+
+    return combo.count;
+  }, [currentUser, postGiftNoticeChat]);
 
   const flushSelfLuckyChat = useCallback(() => {
     const pending = pendingSelfLuckyChatRef.current;
     if (pending.length === 0) return;
     pendingSelfLuckyChatRef.current = [];
-    postLuckyWinChat(pending);
+    const sendMultiplier =
+      selfComboSendMultiplierRef.current ??
+      comboStateRef.current?.count ??
+      1;
+    postLuckyWinChat(pending, sendMultiplier);
   }, [postLuckyWinChat]);
+
+  const deferRemoteGiftNotices = useCallback(
+    (params: {
+      comboKey: string;
+      senderId: string;
+      senderName: string;
+      senderAvatar: string | null;
+      recipientName: string;
+      giftIcon: string;
+      giftImage: string | null;
+      giftName: string;
+      comboCount: number;
+      sender: import("@/types").RoomUser;
+    }) => {
+      const buffers = remoteGiftComboBuffersRef.current;
+      let buf = buffers.get(params.comboKey);
+      if (!buf) {
+        buf = { ...params };
+        buffers.set(params.comboKey, buf);
+      } else {
+        buf.senderName = params.senderName;
+        buf.senderAvatar = params.senderAvatar;
+        buf.recipientName = params.recipientName;
+        buf.giftIcon = params.giftIcon;
+        buf.giftImage = params.giftImage;
+        buf.giftName = params.giftName;
+        buf.comboCount = params.comboCount;
+        buf.sender = params.sender;
+      }
+
+      const luckyBuf = remoteLuckyChatBuffersRef.current.get(params.senderId);
+      if (luckyBuf) {
+        luckyBuf.sendMultiplier = Math.max(
+          luckyBuf.sendMultiplier ?? 0,
+          params.comboCount,
+        );
+      }
+
+      if (buf.timer) clearTimeout(buf.timer);
+      buf.timer = setTimeout(() => {
+        const current = buffers.get(params.comboKey);
+        buffers.delete(params.comboKey);
+        if (!current) return;
+
+        postGiftNoticeChat({
+          sender: current.sender,
+          giftName: current.giftName,
+          giftIcon: current.giftIcon,
+          giftImageFallback: current.giftImage,
+          recipientName: current.recipientName,
+          qty: current.comboCount,
+        });
+      }, COMBO_TIMEOUT);
+    },
+    [postGiftNoticeChat],
+  );
 
   const deferRemoteLuckyChat = useCallback(
     (senderId: string, win: PendingLuckyChatWin) => {
       const buffers = remoteLuckyChatBuffersRef.current;
       let buf = buffers.get(senderId);
       if (!buf) {
-        buf = { wins: [] };
+        let sendMultiplier = 1;
+        for (const gbuf of remoteGiftComboBuffersRef.current.values()) {
+          if (gbuf.sender.id === senderId) {
+            sendMultiplier = Math.max(sendMultiplier, gbuf.comboCount);
+          }
+        }
+        buf = { wins: [], sendMultiplier };
         buffers.set(senderId, buf);
       }
       buf.wins.push(win);
+      for (const gbuf of remoteGiftComboBuffersRef.current.values()) {
+        if (gbuf.sender.id === senderId) {
+          buf.sendMultiplier = Math.max(buf.sendMultiplier ?? 0, gbuf.comboCount);
+        }
+      }
       if (buf.timer) clearTimeout(buf.timer);
       buf.timer = setTimeout(() => {
         const current = buffers.get(senderId);
         buffers.delete(senderId);
         if (current && current.wins.length > 0) {
-          postLuckyWinChat(current.wins);
+          postLuckyWinChat(current.wins, current.sendMultiplier ?? 1);
         }
       }, COMBO_TIMEOUT);
     },
@@ -1507,18 +1691,67 @@ export function RoomScreen({ route, navigation }: Props) {
           data.recipient?.displayName ?? data.recipientName ?? "Host";
         const incomingQty =
           typeof data.qty === "number" && data.qty > 0 ? data.qty : 1;
+        const comboCount =
+          typeof data.comboCount === "number" ? data.comboCount : incomingQty;
         const comboKey = `${data.senderId ?? senderName}-${data.giftId ?? icon}-${data.recipientId ?? recipientName}`;
-        pushGiftToast({
-          comboKey,
-          senderName,
-          senderAvatar,
-          recipientName,
-          giftIcon: icon,
-          giftImage: data.gift?.image ?? null,
-          qty: incomingQty,
-          combo:
-            typeof data.comboCount === "number" ? data.comboCount : undefined,
-        });
+        const isSelfSend =
+          currentUser &&
+          (data.senderId === currentUser.id ||
+            data.sender?.id === currentUser.id);
+        const inSelfComboSession =
+          !!isSelfSend &&
+          (comboStateRef.current !== null || pendingFlushRef.current !== null);
+        const skipSelfGiftChat =
+          inSelfComboSession ||
+          (!!isSelfSend && selfGiftNoticesFlushedRef.current);
+
+        const noticeSender = data.sender ?? {
+          id: data.senderId ?? "",
+          username: null,
+          displayName: senderName,
+          avatar: senderAvatar ?? "",
+          richLevel: 0,
+          charmLevel: 0,
+        };
+
+        // GiftToast: show immediately; multiplier updates as combo grows.
+        if (!(isSelfSend && selfGiftNoticesFlushedRef.current)) {
+          pushGiftToast({
+            comboKey,
+            senderName,
+            senderAvatar,
+            recipientName,
+            giftIcon: icon,
+            giftImage: data.gift?.image ?? null,
+            qty: comboCount,
+            combo: comboCount,
+          });
+        }
+
+        // Chat gift_notice: one aggregated row after combo ends.
+        if (!skipSelfGiftChat && isSelfSend) {
+          postGiftNoticeChat({
+            sender: noticeSender,
+            giftName: data.gift?.name ?? "Gift",
+            giftIcon: icon,
+            giftImageFallback: data.gift?.image ?? null,
+            recipientName,
+            qty: comboCount,
+          });
+        } else if (!isSelfSend && data.senderId) {
+          deferRemoteGiftNotices({
+            comboKey,
+            senderId: data.senderId,
+            senderName,
+            senderAvatar,
+            recipientName,
+            giftIcon: icon,
+            giftImage: data.gift?.image ?? null,
+            giftName: data.gift?.name ?? "Gift",
+            comboCount,
+            sender: noticeSender,
+          });
+        }
 
         // Flying gift animation for basic gifts (toward recipient's seat).
         // If the gift has an SVGA asset, we prioritize the full-screen SVGA effect instead.
@@ -1536,10 +1769,6 @@ export function RoomScreen({ route, navigation }: Props) {
             : null;
         const targetPosition =
           serverSeatPosition ?? recipientSeat?.position ?? undefined;
-        const isSelfSend =
-          currentUser &&
-          (data.senderId === currentUser.id ||
-            data.sender?.id === currentUser.id);
         if (!hasSvga && targetPosition != null && !isSelfSend) {
           const flyId = `fly-${Date.now()}-${Math.random()}`;
           setFlyingGifts((prev) => [
@@ -1584,35 +1813,6 @@ export function RoomScreen({ route, navigation }: Props) {
             .then((bal) => setCoinBalance(bal.coinBalance))
             .catch(() => {});
         }
-
-        const giftNoticeName = data.gift?.name ?? "Gift";
-        const giftNoticeIcon = data.gift?.icon ?? "";
-        const noticeContent = `Send ${giftNoticeName} ${recipientName} x${incomingQty}`;
-        const noticeSender = data.sender ?? {
-          id: data.senderId ?? "",
-          username: null,
-          displayName: senderName,
-          avatar: senderAvatar ?? "",
-          richLevel: 0,
-          charmLevel: 0,
-        };
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `gift-notice-${rawGiftTxId ?? Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            sender: noticeSender,
-            content: noticeContent,
-            createdAt: new Date().toISOString(),
-            type: "gift_notice",
-            giftNotice: {
-              giftName: giftNoticeName,
-              giftIcon: giftNoticeIcon,
-              recipientName,
-              qty: incomingQty,
-              giftImageFallback: data.gift?.image ?? null,
-            },
-          },
-        ]);
       } else if (event === "calculator:started") {
         setCalculatorSession({
           sessionId: data.sessionId,
@@ -1649,6 +1849,8 @@ export function RoomScreen({ route, navigation }: Props) {
       navigation,
       triggerGiftAnimation,
       pushGiftToast,
+      postGiftNoticeChat,
+      deferRemoteGiftNotices,
       currentUser,
       handleLuckyWin,
       toast,
@@ -2361,19 +2563,19 @@ export function RoomScreen({ route, navigation }: Props) {
 
   const dismissCombo = useCallback(() => {
     flushPendingCombo();
+    const sendMultiplier = flushSelfGiftNotices();
+    selfComboSendMultiplierRef.current = sendMultiplier;
     // Wait for in-flight gift sends so their lucky wins land in the pending buffer.
     void giftSendTailRef.current.finally(() => {
       flushSelfLuckyChat();
+      selfComboSendMultiplierRef.current = null;
     });
     clearComboTimer();
-    Animated.timing(comboScale, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      setComboState(null);
-    });
-  }, [flushPendingCombo, flushSelfLuckyChat, clearComboTimer, comboScale]);
+    // Stop tap-pulse / enter springs so they cannot snap scale back to 1 after dismiss.
+    comboScale.stopAnimation();
+    comboScale.setValue(0);
+    setComboState(null);
+  }, [flushPendingCombo, flushSelfGiftNotices, flushSelfLuckyChat, clearComboTimer, comboScale]);
 
   // Keep the ref current so flushPendingCombo's error path can call dismissCombo.
   useEffect(() => {
@@ -2392,6 +2594,13 @@ export function RoomScreen({ route, navigation }: Props) {
       seatPosition: number,
       initialCount = 1,
     ) => {
+      selfGiftNoticesFlushedRef.current = false;
+      const nextCount =
+        comboStateRef.current?.gift.id === gift.id &&
+        comboStateRef.current?.recipient.id === recipient.id
+          ? comboStateRef.current.count + initialCount
+          : initialCount;
+      pushSelfComboGiftToast(gift, recipient, nextCount);
       setComboState((prev) =>
         prev?.gift.id === gift.id && prev.recipient.id === recipient.id
           ? {
@@ -2411,7 +2620,7 @@ export function RoomScreen({ route, navigation }: Props) {
       }).start();
       resetComboTimer();
     },
-    [comboScale, resetComboTimer],
+    [comboScale, resetComboTimer, pushSelfComboGiftToast],
   );
 
   const handleComboTap = useCallback(() => {
@@ -2457,6 +2666,8 @@ export function RoomScreen({ route, navigation }: Props) {
         seatPosition ?? null,
       );
     }
+    const nextCount = comboState.count + step;
+    pushSelfComboGiftToast(gift, recipient, nextCount);
     setComboState((prev) => (prev ? { ...prev, count: prev.count + step } : null));
     Animated.sequence([
       Animated.timing(comboScale, {
@@ -2502,6 +2713,7 @@ export function RoomScreen({ route, navigation }: Props) {
     currentUser,
     flushPendingCombo,
     enqueueFlyingGift,
+    pushSelfComboGiftToast,
   ]);
 
   // Cleanup combo timers on unmount
@@ -2513,8 +2725,18 @@ export function RoomScreen({ route, navigation }: Props) {
         if (buf.timer) clearTimeout(buf.timer);
       }
       remoteLuckyChatBuffersRef.current.clear();
+      for (const buf of remoteGiftComboBuffersRef.current.values()) {
+        if (buf.timer) clearTimeout(buf.timer);
+      }
+      remoteGiftComboBuffersRef.current.clear();
+      if (comboStateRef.current) {
+        const mult = flushSelfGiftNotices();
+        selfComboSendMultiplierRef.current = mult;
+        flushSelfLuckyChat();
+        selfComboSendMultiplierRef.current = null;
+      }
     };
-  }, []);
+  }, [flushSelfGiftNotices, flushSelfLuckyChat]);
 
   const handleSendGift = useCallback(
     async (
@@ -2647,6 +2869,11 @@ export function RoomScreen({ route, navigation }: Props) {
 
   const handleLeave = useCallback(async () => {
     skipBeforeRemoveCleanupRef.current = true;
+    const sendMultiplier = flushSelfGiftNotices();
+    selfComboSendMultiplierRef.current = sendMultiplier;
+    flushSelfLuckyChat();
+    selfComboSendMultiplierRef.current = null;
+    clearComboTimer();
     clearRoomChat();
     if (mySeatedPosition !== null) {
       try {
@@ -2656,7 +2883,15 @@ export function RoomScreen({ route, navigation }: Props) {
       }
     }
     safeGoBack(navigation);
-  }, [roomId, mySeatedPosition, navigation, clearRoomChat]);
+  }, [
+    roomId,
+    mySeatedPosition,
+    navigation,
+    clearRoomChat,
+    flushSelfGiftNotices,
+    flushSelfLuckyChat,
+    clearComboTimer,
+  ]);
 
   const handleRandomMatch = useCallback(
     async (durationSecs: number) => {
@@ -3588,7 +3823,7 @@ export function RoomScreen({ route, navigation }: Props) {
                   giftIcon={lw?.giftIcon ?? "🍀"}
                   giftImageFallback={lw?.giftImageFallback}
                   rewardCoins={lw?.rewardCoins ?? 0}
-                  winCount={lw?.winCount}
+                  sendMultiplier={lw?.sendMultiplier ?? 1}
                   onPressSender={
                     item.sender?.id
                       ? () => setProfileUserId(item.sender.id)
