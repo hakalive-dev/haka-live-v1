@@ -15,7 +15,8 @@ import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 
 import { queryKeys } from '@api/queryKeys';
 import type { ChatInboxData } from '@hooks/queries/useChatInboxQuery';
-import { TokenStorage } from '../storage';
+import { logDiagnostic } from '../diagnostics/releaseDiagnostics';
+import { getFreshSocketToken, getSocketBaseUrl } from '../utils/socketAuth';
 import type { RootState } from '../store';
 import type { DMConversation, DirectMessage } from '@/types';
 
@@ -131,7 +132,10 @@ export function DMConnectionProvider({
   const [teamAnnouncementRevision, setTeamAnnouncementRevision] = useState(0);
   const socket = useRef<SocketIOClient | null>(null);
   const currentUserId = useSelector((s: RootState) => s.auth.user?.id);
+  const accessToken = useSelector((s: RootState) => s.auth.accessToken);
   const queryClient = useQueryClient();
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
 
   const disconnect = useCallback(() => {
     if (socket.current) {
@@ -142,26 +146,30 @@ export function DMConnectionProvider({
 
   const connect = useCallback(async () => {
     if (!enabled) return;
-    const token = await TokenStorage.getAccess();
+    const token = await getFreshSocketToken();
     if (!token) return;
 
     disconnect();
 
-    const baseUrl = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1').replace(
-      '/api/v1',
-      '',
-    );
-
-    const client = ioClient(baseUrl, {
+    const client = ioClient(getSocketBaseUrl(), {
       transports: ['websocket'],
       auth: { token },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     socket.current = client;
+
+    let reauthAttempted = false;
+
+    client.on('connect', () => {
+      reauthAttempted = false;
+    });
 
     client.on('new_dm', (data: Record<string, unknown>) => {
       setDmEvent({ event: 'new_dm', data });
       const msg = data as unknown as DirectMessage;
-      if (msg.recipient?.id === currentUserId) {
+      if (msg.recipient?.id === currentUserIdRef.current) {
         invalidateChatUnreadQueries(queryClient);
       }
     });
@@ -175,9 +183,28 @@ export function DMConnectionProvider({
     });
 
     client.on('connect_error', (err) => {
+      logDiagnostic('socket', 'dm_connect_error', { message: err.message });
       console.warn('[DM Socket.io] connect error:', err.message);
+      const isAuthError = /token|authentication/i.test(err.message);
+      if (!isAuthError || reauthAttempted) return;
+      reauthAttempted = true;
+      void getFreshSocketToken(true).then((fresh) => {
+        if (!fresh || socket.current !== client) return;
+        client.auth = { token: fresh };
+        if (!client.connected) client.connect();
+      });
     });
-  }, [enabled, currentUserId, disconnect, queryClient]);
+  }, [enabled, disconnect, queryClient]);
+
+  // Keep handshake auth in sync when REST/session refresh rotates the JWT.
+  useEffect(() => {
+    const client = socket.current;
+    if (!client || !enabled || !accessToken) return;
+    const current = (client.auth as { token?: string } | undefined)?.token;
+    if (current === accessToken) return;
+    client.auth = { token: accessToken };
+    if (!client.connected) client.connect();
+  }, [accessToken, enabled]);
 
   useEffect(() => {
     if (!enabled) {

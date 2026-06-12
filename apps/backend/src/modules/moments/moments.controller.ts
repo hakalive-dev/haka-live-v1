@@ -143,7 +143,8 @@ export const momentController = {
 
   async share(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await momentsService.share(req.params.id);
+      const callerId = (req as any).user.id;
+      const result = await momentsService.share(callerId, req.params.id);
       return ok(res, result);
     } catch (err) {
       next(err);

@@ -13,6 +13,7 @@ import { startSpecialIdExpiryJob } from './jobs/special-id-expiry.job';
 import { startCalculatorCleanupJob } from './jobs/calculator-cleanup.job';
 import { startBanExpiryJob } from './jobs/ban-expiry.job';
 import { ROLE_PERMISSIONS } from './shared-types/roles';
+import { runWelcomeDmBackfill } from './modules/chat/backfill-welcome-dm.service';
 
 const PORT = parseInt(env.PORT, 10);
 
@@ -91,6 +92,21 @@ async function bootstrap() {
   await seedAdminTags().catch((err) => {
     console.warn('⚠️  Admin tags seed skipped:', err.message);
   });
+
+  if (env.RUN_WELCOME_DM_BACKFILL === 'true') {
+    try {
+      const result = await runWelcomeDmBackfill({ notify: false });
+      console.log(
+        `📨 Welcome DM backfill: ${result.sent} sent, ${result.failed} failed, ` +
+          `${result.alreadySentCount} already had welcome (${result.onboardedCount} onboarded)`,
+      );
+    } catch (err) {
+      console.warn(
+        '⚠️  Welcome DM backfill skipped:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 
   // Create HTTP server and attach Socket.io
   const server = http.createServer(app);

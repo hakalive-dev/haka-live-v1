@@ -1,25 +1,10 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
+import { scaleLevelPillLayout } from '@components/levelPillLayout';
 import { richLevelBadgeBg } from '@screens/level/richLevelBadgeBg';
 import { richLevelIcon } from '@screens/level/richLevelIcon';
-
-/**
- * Pill background is the container (178×69).
- * Gem + level label live inside the pill — icon left, label right of gem.
- */
-const PILL = { width: 178, height: 69 } as const;
-
-const ICON = {
-  left: 10,
-  heightRatio: 0.86,
-} as const;
-
-const LABEL = {
-  fontSizeRatio: 64 / PILL.height,
-  lineHeightRatio: 77 / PILL.height,
-} as const;
 
 interface Props {
   level: number;
@@ -28,31 +13,10 @@ interface Props {
   size?: number;
 }
 
-function scaleLayout(pillHeight: number) {
-  const s = pillHeight / PILL.height;
-  const iconHeight = pillHeight * ICON.heightRatio;
-  return {
-    pillWidth: PILL.width * s,
-    pillHeight,
-    icon: {
-      left: ICON.left * s,
-      width: iconHeight,
-      height: iconHeight,
-      top: (pillHeight - iconHeight) / 2,
-    },
-    label: {
-      left: ICON.left * s + iconHeight,
-      width: PILL.width * s - (ICON.left * s + iconHeight),
-      fontSize: pillHeight * LABEL.fontSizeRatio,
-      lineHeight: pillHeight * LABEL.lineHeightRatio,
-    },
-  };
-}
-
 /** Rich level pill — bg container with gem (left) + level (right of gem). */
 export function RichLevelBadge({ level, label, size = 26 }: Props) {
   const displayLabel = String(label ?? level);
-  const layout = useMemo(() => scaleLayout(size), [size]);
+  const layout = useMemo(() => scaleLevelPillLayout(size), [size]);
 
   return (
     <View
@@ -78,6 +42,7 @@ export function RichLevelBadge({ level, label, size = 26 }: Props) {
         pointerEvents="none"
       >
         <Text
+          allowFontScaling={false}
           style={[
             styles.label,
             {
@@ -86,8 +51,6 @@ export function RichLevelBadge({ level, label, size = 26 }: Props) {
             },
           ]}
           numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.5}
         >
           {displayLabel}
         </Text>
@@ -120,14 +83,15 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   label: {
     fontFamily: 'Inter',
-    fontWeight: '400',
+    fontWeight: '700',
     color: '#FFFFFF',
-    textAlign: 'center',
+    textAlign: 'left',
     fontVariant: ['tabular-nums'],
+    ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
   },
   icon: {
     position: 'absolute',

@@ -1,6 +1,12 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middleware/error.middleware';
 import { computeAge } from '../accounts/accounts.service';
+import {
+  notifyMomentCommented,
+  notifyMomentGifted,
+  notifyMomentLiked,
+  notifyMomentShared,
+} from './moments-notify.service';
 
 const userSelect = {
   id: true,
@@ -192,6 +198,12 @@ export const momentsService = {
   },
 
   async toggleLike(callerId: string, momentId: string) {
+    const moment = await prisma.moment.findUnique({
+      where: { id: momentId },
+      select: { userId: true, postType: true },
+    });
+    if (!moment) throw new AppError('Moment not found', 404);
+
     const existing = await prisma.momentLike.findUnique({
       where: { momentId_userId: { momentId, userId: callerId } },
     });
@@ -210,6 +222,7 @@ export const momentsService = {
         where: { id: momentId },
         data: { likesCount: { increment: 1 } },
       });
+      void notifyMomentLiked(moment.userId, callerId, momentId, moment.postType);
       return { liked: true, likes_count: updated.likesCount };
     }
   },
@@ -238,6 +251,12 @@ export const momentsService = {
   },
 
   async postComment(callerId: string, momentId: string, text: string) {
+    const moment = await prisma.moment.findUnique({
+      where: { id: momentId },
+      select: { userId: true, postType: true },
+    });
+    if (!moment) throw new AppError('Moment not found', 404);
+
     const comment = await prisma.momentComment.create({
       data: { momentId, userId: callerId, text },
       include: { user: { select: userSelect } },
@@ -246,6 +265,7 @@ export const momentsService = {
       where: { id: momentId },
       data: { commentsCount: { increment: 1 } },
     });
+    void notifyMomentCommented(moment.userId, callerId, momentId, moment.postType, text);
     return {
       id: comment.id,
       user: formatAuthor(comment.user),
@@ -282,11 +302,18 @@ export const momentsService = {
     return { liked: true, likes_count: updated.likesCount };
   },
 
-  async share(momentId: string) {
+  async share(callerId: string, momentId: string) {
+    const moment = await prisma.moment.findUnique({
+      where: { id: momentId },
+      select: { userId: true, postType: true },
+    });
+    if (!moment) throw new AppError('Moment not found', 404);
+
     const updated = await prisma.moment.update({
       where: { id: momentId },
       data: { sharesCount: { increment: 1 } },
     });
+    void notifyMomentShared(moment.userId, callerId, momentId, moment.postType);
     return { shares_count: updated.sharesCount };
   },
 
@@ -325,6 +352,8 @@ export const momentsService = {
       where: { id: momentId },
       data: { giftsCount: { increment: 1 } },
     });
+
+    void notifyMomentGifted(moment.userId, callerId, momentId, moment.postType, gift.name);
 
     return { gift_name: gift.name, coin_cost: gift.coinCost };
   },

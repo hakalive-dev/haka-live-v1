@@ -364,18 +364,22 @@ const GameCard = React.memo(function GameCard({ game, dims }: { game: Game; dims
 //   Action row:    left:10, top:461, gap:20 between items (24px icons, 14px/600/black counts)
 //   Timestamp:     right-aligned, top:466 (14px/600/black)
 
+const POST_AVATAR_SIZE = 56;
+
 const PostCard = React.memo(function PostCard({
   post,
   isVideo,
   onComment,
   onShare,
   onGift,
+  onProfilePress,
 }: {
   post: MomentPost;
   isVideo: boolean;
   onComment: () => void;
   onShare: () => void;
   onGift: () => void;
+  onProfilePress: () => void;
 }) {
   const [liked,     setLiked]     = useState(post.default_liked);
   const [likeCount, setLikeCount] = useState(post.likes);
@@ -399,26 +403,38 @@ const PostCard = React.memo(function PostCard({
   return (
     <View style={styles.postCard}>
 
-      {/* ── Header: avatar + user info (height 113px) ── */}
+      {/* ── Header: avatar + user info ── */}
       <View style={styles.postHeader}>
-        {/* Avatar with follow button */}
         <View style={styles.postAvatarWrap}>
-          <UserAvatar
-            user={{
-              displayName: post.user.displayName,
-              avatar: post.user.avatar,
-              equippedFrame: null,
-            }}
-            size={80}
-            hideFrame
-          />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onProfilePress}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${post.user.displayName}'s profile`}
+          >
+            <UserAvatar
+              user={{
+                displayName: post.user.displayName,
+                avatar: post.user.avatar,
+                equippedFrame: null,
+              }}
+              size={POST_AVATAR_SIZE}
+              hideFrame
+            />
+          </TouchableOpacity>
           {/* Follow / + button — bottom-right of avatar */}
           <TouchableOpacity style={styles.postFollowBtn}>
-            <Ionicons name="add" size={13} color="#FFFFFF" />
+            <Ionicons name="add" size={11} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.postUserCol}>
+        <TouchableOpacity
+          style={styles.postUserCol}
+          activeOpacity={0.8}
+          onPress={onProfilePress}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${post.user.displayName}'s profile`}
+        >
           <View style={styles.postNameRow}>
             <Text style={styles.postDisplayName} numberOfLines={1}>{post.user.displayName}</Text>
             {countryCode.length === 2 ? (
@@ -448,7 +464,7 @@ const PostCard = React.memo(function PostCard({
               ) : null}
             </View>
           ) : null}
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* ── Cover image / video (height 300px) ── */}
@@ -1261,6 +1277,7 @@ export function DiscoverScreen() {
               onComment={() => openComment(item.id)}
               onShare={() => openShare(item.id)}
               onGift={() => openGift(item.id)}
+              onProfilePress={() => nav.navigate('PublicProfile', { userId: item.user.id })}
             />
           )}
         />
@@ -1517,51 +1534,51 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 0,
     overflow: 'hidden',
   },
-  // Header section (height:113): avatar left:10 top:18, user info to the right
+  // Header section: avatar left:10 top:18, user info to the right
   postHeader: {
-    height: 113,
+    height: 90,
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingLeft: 10,
     paddingTop: 18,
-    gap: 19,
+    gap: 12,
   },
-  // Avatar container (80×80) — relative so follow button can be absolute inside
+  // Avatar container — relative so follow button can be absolute inside
   postAvatarWrap: {
-    width: 80,
-    height: 80,
+    width: POST_AVATAR_SIZE,
+    height: POST_AVATAR_SIZE,
   },
-  // Follow button: 20×20, purple #5F22D9, white border, bottom-right of avatar
+  // Follow button: purple #5F22D9, white border, bottom-right of avatar
   postFollowBtn: {
     position: 'absolute',
-    bottom: 2,
+    bottom: 1,
     right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#5F22D9',
     borderWidth: 1,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // User info column: paddingTop:20 so name aligns at top:38 from card (18+20=38)
+  // User info column: paddingTop aligns name beside avatar
   postUserCol: {
     flex: 1,
-    paddingTop: 20,
-    gap: 6,
+    paddingTop: 8,
+    gap: 4,
   },
   postNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  // Name: 16px/600/black (Figma: weight:600, color:#000000)
+  // Name: 14px/600/black
   postDisplayName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#000000',
-    lineHeight: 24,
+    lineHeight: 20,
     flexShrink: 1,
   },
   postFlagWrap: {

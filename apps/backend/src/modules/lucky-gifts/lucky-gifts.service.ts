@@ -167,7 +167,10 @@ export async function getRoomLuckyHistory(roomId: string, page = 1, limit = 30) 
       orderBy: { createdAt: 'desc' },
       skip,
       take: limit,
-      include: { gift: { select: { id: true, name: true, icon: true, image: true } } },
+      include: {
+        gift: { select: { id: true, name: true, icon: true, image: true } },
+        giftTransaction: { select: { qty: true } },
+      },
     }),
     prisma.luckyGiftDraw.count({ where }),
   ]);
@@ -233,6 +236,8 @@ export async function getRoomLuckyHistory(roomId: string, page = 1, limit = 30) 
       id: r.id,
       rewardCoins: r.rewardCoins,
       coinCost: r.coinCost,
+      receiverBeans: r.receiverBeans,
+      qty: r.giftTransaction.qty,
       createdAt: r.createdAt.toISOString(),
       gift: r.gift,
       user: masked,

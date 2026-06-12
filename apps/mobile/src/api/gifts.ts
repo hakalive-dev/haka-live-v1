@@ -12,6 +12,8 @@ export interface RoomLuckyHistoryItem {
   id: string;
   rewardCoins: number;
   coinCost: number;
+  receiverBeans: number;
+  qty: number;
   createdAt: string;
   gift: { id: string; name: string; icon: string; image: string | null };
   user: {
@@ -94,6 +96,8 @@ const MOCK_LUCKY_HISTORY: RoomLuckyHistoryItem[] = [
     id: 'mock-hist-1',
     rewardCoins: 300_000,
     coinCost: 100_000,
+    receiverBeans: 0,
+    qty: 1,
     createdAt: new Date().toISOString(),
     gift: { id: 'g1', name: 'Magic Lamp', icon: '🧞', image: 'gifts/121.png' },
     user: {
@@ -108,6 +112,8 @@ const MOCK_LUCKY_HISTORY: RoomLuckyHistoryItem[] = [
     id: 'mock-hist-2',
     rewardCoins: 150_000,
     coinCost: 50_000,
+    receiverBeans: 12,
+    qty: 1,
     createdAt: new Date(Date.now() - 60_000).toISOString(),
     gift: { id: 'g2', name: 'Moonlight', icon: '🌙', image: 'gifts/116.png' },
     user: {

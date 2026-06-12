@@ -16,6 +16,13 @@ jest.mock('../../config/firebase', () => ({
   },
 }));
 
+jest.mock('./moments-notify.service', () => ({
+  notifyMomentLiked: jest.fn().mockResolvedValue(undefined),
+  notifyMomentCommented: jest.fn().mockResolvedValue(undefined),
+  notifyMomentShared: jest.fn().mockResolvedValue(undefined),
+  notifyMomentGifted: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../config/prisma', () => ({
   prisma: {
     moment: {
@@ -70,6 +77,12 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import app from '../../app';
 import { prisma } from '../../config/prisma';
+import {
+  notifyMomentCommented,
+  notifyMomentGifted,
+  notifyMomentLiked,
+  notifyMomentShared,
+} from './moments-notify.service';
 
 const JWT_SECRET = 'test-jwt-access-secret-at-least-16';
 const USER_ID = 'user-moments-1';
@@ -281,6 +294,7 @@ describe('POST /api/v1/moments/:id/like', () => {
   });
 
   it('likes a moment (was not liked)', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: USER_ID, postType: 'moment' });
     mockMomentLike.findUnique.mockResolvedValue(null);
     mockMomentLike.create.mockResolvedValue({});
     mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 1 });
@@ -294,7 +308,26 @@ describe('POST /api/v1/moments/:id/like', () => {
     expect(res.body.data.likes_count).toBe(1);
   });
 
+  it('notifies the author when another user likes', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'video' });
+    mockMomentLike.findUnique.mockResolvedValue(null);
+    mockMomentLike.create.mockResolvedValue({});
+    mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 1 });
+
+    await request(app)
+      .post(`/api/v1/moments/${MOMENT_ID}/like`)
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(notifyMomentLiked).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'video',
+    );
+  });
+
   it('unlikes a moment (was liked)', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: USER_ID, postType: 'moment' });
     mockMomentLike.findUnique.mockResolvedValue({ momentId: MOMENT_ID, userId: USER_ID });
     mockMomentLike.delete.mockResolvedValue({});
     mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 0 });
@@ -352,6 +385,7 @@ describe('POST /api/v1/moments/:id/comments', () => {
   });
 
   it('posts a comment', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'moment' });
     mockMomentComment.create.mockResolvedValue({
       id: 'comment-new',
       text: 'Nice!',
@@ -368,6 +402,13 @@ describe('POST /api/v1/moments/:id/comments', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.text).toBe('Nice!');
+    expect(notifyMomentCommented).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+      'Nice!',
+    );
   });
 
   it('rejects empty comment text', async () => {
@@ -441,6 +482,7 @@ describe('POST /api/v1/moments/:id/share', () => {
   });
 
   it('increments share count', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'moment' });
     mockMoment.update.mockResolvedValue({ ...fakeMoment, sharesCount: 1 });
 
     const res = await request(app)
@@ -449,6 +491,12 @@ describe('POST /api/v1/moments/:id/share', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.shares_count).toBe(1);
+    expect(notifyMomentShared).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+    );
   });
 });
 
@@ -527,5 +575,12 @@ describe('POST /api/v1/moments/:id/gift', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.gift_name).toBe('Rose');
     expect(res.body.data.coin_cost).toBe(50);
+    expect(notifyMomentGifted).toHaveBeenCalledWith(
+      'other-user-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+      'Rose',
+    );
   });
 });

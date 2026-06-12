@@ -87,7 +87,8 @@ import { RoomShareOverlay } from "./RoomShareOverlay";
 import { RoomPlayOverlay } from "./RoomPlayOverlay";
 import { PhotoShareOverlay } from "./PhotoShareOverlay";
 import { PhotoViewerModal } from "./PhotoViewerModal";
-import { RICH, CHARM, getLevelColor } from "@screens/level/LevelScreen";
+import { CharmLevelBadge } from "@components/CharmLevelBadge";
+import { RichLevelBadge } from "@components/RichLevelBadge";
 import PkIcon from "../../../assets/room-toolbar/pk.svg";
 import AppsIcon from "../../../assets/room-toolbar/apps.svg";
 import GameIcon from "../../../assets/room-toolbar/game.svg";
@@ -191,7 +192,8 @@ const COMBO_BOTTOM_OFFSET = 70;
 const COMBO_TIMEOUT = 5000;
 /** Must match `styles.giftToastAnchor.height`. */
 const GIFT_TOAST_ANCHOR_HEIGHT = 200;
-const GIFT_TOAST_ANCHOR_BOTTOM_RATIO = 0.25;
+/** Distance from screen bottom to gift-toast row (higher % = row sits higher). */
+const GIFT_TOAST_ANCHOR_BOTTOM = "32%";
 
 // Responsive toolbar button size — shrinks on narrow phones so all icons fit
 const TOOLBAR_BTN_SIZE = SCREEN_WIDTH < 390 ? 30 : 34;
@@ -243,12 +245,6 @@ export function RoomScreen({ route, navigation }: Props) {
     hostId: hostIdParam,
   } = route.params;
   const insets = useSafeAreaInsets();
-  const luckyWinRestTop = useMemo(
-    () =>
-      SCREEN_HEIGHT * (1 - GIFT_TOAST_ANCHOR_BOTTOM_RATIO) -
-      GIFT_TOAST_ANCHOR_HEIGHT,
-    [],
-  );
   const toast = useToast();
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const chatMuted = useSelector((state: RootState) => state.auth.chatMuted);
@@ -3842,14 +3838,13 @@ export function RoomScreen({ route, navigation }: Props) {
                 onDismiss={dismissGiftToast}
               />
             )}
+            {luckyWinPopup && (
+              <LuckyWinPopup
+                item={luckyWinPopup}
+                onDismiss={() => setLuckyWinPopup(null)}
+              />
+            )}
           </View>
-          {luckyWinPopup && (
-            <LuckyWinPopup
-              item={luckyWinPopup}
-              restTop={luckyWinRestTop}
-              onDismiss={() => setLuckyWinPopup(null)}
-            />
-          )}
         </View>
       )}
 
@@ -6258,28 +6253,12 @@ function UserProfileOverlay({
                 />
               </View>
             ) : null}
-            {richLevel > 0 && (
-              <View style={pStyles.levelBadge}>
-                <Image
-                  source={
-                    RICH[Math.min(Math.max(richLevel, 1), 100)] ?? RICH[1]
-                  }
-                  style={pStyles.levelIcon}
-                  contentFit="contain"
-                />
-              </View>
-            )}
-            {charmLevel > 0 && (
-              <View style={pStyles.levelBadge}>
-                <Image
-                  source={
-                    CHARM[Math.min(Math.max(charmLevel, 0), 100)] ?? CHARM[0]
-                  }
-                  style={pStyles.levelIcon}
-                  contentFit="contain"
-                />
-              </View>
-            )}
+            {richLevel > 0 ? (
+              <RichLevelBadge level={richLevel} size={18} />
+            ) : null}
+            {charmLevel > 0 ? (
+              <CharmLevelBadge level={charmLevel} size={18} />
+            ) : null}
           </View>
           {profile?.tags && profile.tags.length > 0 && (
             <View style={pStyles.tagsRow}>
@@ -6500,15 +6479,6 @@ const pStyles = StyleSheet.create({
     height: 16,
     borderRadius: Radius.full,
     backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  levelBadge: {
-    alignItems: "center",
-    justifyContent: "center",
-    height: 16,
-  },
-  levelIcon: {
-    width: 40,
-    height: 18,
   },
   idCenter: {
     alignItems: "center",
@@ -7436,7 +7406,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: "25%",
+    bottom: GIFT_TOAST_ANCHOR_BOTTOM,
     height: GIFT_TOAST_ANCHOR_HEIGHT,
     zIndex: 9999,
     elevation: 30,

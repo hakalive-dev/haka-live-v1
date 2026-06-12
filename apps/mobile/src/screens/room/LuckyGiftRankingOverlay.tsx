@@ -5,10 +5,10 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 
 import { giftsApi, type RoomLuckyHistoryItem } from '@api/gifts';
@@ -16,16 +16,36 @@ import { formatApiError } from '@api/client';
 import { UserAvatar } from '@components/UserAvatar';
 import { RankingSkeleton } from '@components/Skeleton';
 import { RICH } from '@screens/level/LevelScreen';
+import { resolveDmGiftBubbleSource } from '@/utils/resolveGiftIconSource';
 import { Colors, Radius, Spacing } from '@/theme';
 import type { LeaderboardUserEntry } from '@/types';
 
+const COIN_IMG = require('../../../assets/coin.png');
+const BEAN_IMG = require('../../../assets/bean.png');
+
 type OverlayTab = 'rank' | 'history';
 
-const MEDAL_GOLD = '#FFD700';
-const MEDAL_SILVER = '#C0C0C0';
-const MEDAL_BRONZE = '#CD7F32';
+/** Burgundy/navy top fading to near-black base. */
+const OVERLAY_BASE = '#12121b';
+const SHEET_GRADIENT = ['#2a1528', '#1a1a3a', OVERLAY_BASE] as const;
 
-const GRADIENT_COLORS = ['#1A1530', '#1C2A6E', '#13249A'] as const;
+/** Frosted glass fill behind each podium seat. */
+const PODIUM_GLASS_TOP = 'rgba(255, 255, 255, 0.10)';
+const PODIUM_GLASS_MID = 'rgba(255, 255, 255, 0.05)';
+const PODIUM_GLASS_BOTTOM = 'rgba(255, 255, 255, 0.02)';
+
+/** Same podium rings as supporter ranking on PublicProfileScreen / SupporterListScreen. */
+const PODIUM_FRAME_SOURCES = {
+  1: require('../../../assets/supporter_ranking/podium_frame_1.png'),
+  2: require('../../../assets/supporter_ranking/podium_frame_2.png'),
+  3: require('../../../assets/supporter_ranking/podium_frame_3.png'),
+} as const;
+
+const PODIUM_FRAME_LAYOUT: Record<1 | 2 | 3, { width: number; height: number; innerDiameter: number }> = {
+  1: { width: 92, height: 96, innerDiameter: 64 },
+  2: { width: 78, height: 78, innerDiameter: 52 },
+  3: { width: 78, height: 78, innerDiameter: 52 },
+};
 
 interface Props {
   visible: boolean;
@@ -33,16 +53,11 @@ interface Props {
   onClose: () => void;
 }
 
-function medalColor(rank: 1 | 2 | 3): string {
-  if (rank === 1) return MEDAL_GOLD;
-  if (rank === 2) return MEDAL_SILVER;
-  return MEDAL_BRONZE;
-}
-
-function podiumHeight(rank: 1 | 2 | 3): number {
-  if (rank === 1) return 132;
-  if (rank === 2) return 112;
-  return 96;
+/** Tiered glass pedestal height — avatar/ring sits above this block. */
+function podiumGlassHeight(rank: 1 | 2 | 3): number {
+  if (rank === 1) return 80;
+  if (rank === 2) return 64;
+  return 48;
 }
 
 function RichLevelPill({ level }: { level: number }) {
@@ -70,6 +85,58 @@ function WinAmount({ coins, compact }: { coins: number; compact?: boolean }) {
   );
 }
 
+function PodiumFramedAvatar({
+  entry,
+  rank,
+}: {
+  entry: LeaderboardUserEntry | undefined;
+  rank: 1 | 2 | 3;
+}) {
+  const { width, height, innerDiameter } = PODIUM_FRAME_LAYOUT[rank];
+  const initial = (entry?.displayName?.[0] ?? '?').toUpperCase();
+
+  return (
+    <View style={[styles.podiumAvatarFrameWrap, { width, height }]}>
+      <View
+        style={[
+          styles.podiumAvatarClip,
+          {
+            width: innerDiameter,
+            height: innerDiameter,
+            borderRadius: innerDiameter / 2,
+          },
+        ]}
+      >
+        {entry?.avatar ? (
+          <Image
+            source={{ uri: entry.avatar }}
+            style={{ width: innerDiameter, height: innerDiameter }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <View
+            style={[
+              styles.podiumAvatarPlaceholder,
+              { width: innerDiameter, height: innerDiameter, borderRadius: innerDiameter / 2 },
+            ]}
+          >
+            <Text style={[styles.podiumAvatarInitial, { fontSize: innerDiameter * 0.38 }]}>
+              {initial}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Image
+        source={PODIUM_FRAME_SOURCES[rank]}
+        style={styles.podiumFrameOverlay}
+        contentFit="contain"
+        pointerEvents="none"
+      />
+    </View>
+  );
+}
+
 function PodiumSlot({
   entry,
   rank,
@@ -77,44 +144,27 @@ function PodiumSlot({
   entry: LeaderboardUserEntry | undefined;
   rank: 1 | 2 | 3;
 }) {
-  const border = medalColor(rank);
-  const avatarSize = rank === 1 ? 58 : 48;
-
   return (
     <View style={styles.podiumCol}>
-      <View style={[styles.podiumCard, { minHeight: podiumHeight(rank) }]}>
-        {entry ? (
-          <>
-            <View style={styles.podiumAvatarWrap}>
-              <Ionicons
-                name="ribbon"
-                size={rank === 1 ? 16 : 14}
-                color={border}
-                style={styles.crownIcon}
-              />
-              <View style={[styles.podiumAvatarRing, { borderColor: border, width: avatarSize + 6, height: avatarSize + 6, borderRadius: (avatarSize + 6) / 2 }]}>
-                <UserAvatar
-                  user={{
-                    displayName: entry.displayName,
-                    avatar: entry.avatar,
-                    equippedFrame: entry.equippedFrame ?? null,
-                  }}
-                  size={avatarSize}
-                  hideFrame
-                  hideBorder
-                />
-              </View>
-              <View style={[styles.rankBadge, { backgroundColor: border }]}>
-                <Text style={styles.rankBadgeText}>{rank}</Text>
-              </View>
-            </View>
-            <Text style={styles.podiumName} numberOfLines={1}>{entry.displayName}</Text>
-            <RichLevelPill level={entry.richLevel ?? 0} />
-            <WinAmount coins={entry.score} compact />
-          </>
-        ) : (
-          <Text style={styles.podiumEmpty}>—</Text>
-        )}
+      <View style={styles.podiumSlot}>
+        <View style={styles.podiumAvatarWrap}>
+          <PodiumFramedAvatar entry={entry} rank={rank} />
+        </View>
+        <LinearGradient
+          colors={[PODIUM_GLASS_TOP, PODIUM_GLASS_MID, PODIUM_GLASS_BOTTOM]}
+          locations={[0, 0.45, 1]}
+          style={[styles.podiumGlass, { minHeight: podiumGlassHeight(rank) }]}
+        >
+          {entry ? (
+            <>
+              <Text style={styles.podiumName} numberOfLines={1}>{entry.displayName}</Text>
+              <RichLevelPill level={entry.richLevel ?? 0} />
+              <WinAmount coins={entry.score} compact />
+            </>
+          ) : (
+            <Text style={styles.podiumEmpty}>—</Text>
+          )}
+        </LinearGradient>
       </View>
     </View>
   );
@@ -161,32 +211,59 @@ function RankListRow({ entry }: { entry: LeaderboardUserEntry }) {
   );
 }
 
-function HistoryRow({ item }: { item: RoomLuckyHistoryItem }) {
+function HistoryGiftThumb({ gift }: { gift: RoomLuckyHistoryItem['gift'] }) {
+  const source = resolveDmGiftBubbleSource(gift.icon, gift.image);
+  if (source.kind === 'bundled') {
+    return <Image source={source.value} style={styles.historyGiftIcon} contentFit="contain" />;
+  }
+  if (source.kind === 'remote') {
+    return <Image source={{ uri: source.value }} style={styles.historyGiftIcon} contentFit="contain" />;
+  }
+  if (source.kind === 'emoji') {
+    return <Text style={styles.historyGiftEmoji}>{source.value}</Text>;
+  }
+  return <Text style={styles.historyGiftEmoji}>🎁</Text>;
+}
+
+function HistoryTableHeader() {
   return (
-    <View style={styles.listRow}>
-      <UserAvatar
-        user={{
-          displayName: item.user.displayName,
-          avatar: item.user.avatar,
-          equippedFrame: item.user.equippedFrame ?? null,
-        }}
-        size={40}
-        hideFrame
-        hideBorder
-      />
-      <View style={styles.listMain}>
-        <View style={styles.nameRow}>
-          <Text style={styles.listName} numberOfLines={1}>{item.user.displayName}</Text>
-          <RichLevelPill level={item.user.richLevel ?? 0} />
-        </View>
-        <Text style={styles.historyGift} numberOfLines={1}>{item.gift.name}</Text>
-      </View>
-      <WinAmount coins={item.rewardCoins} />
+    <View style={styles.historyHeaderRow}>
+      <Text style={[styles.historyHeaderCell, styles.historyColGift]}>Gift</Text>
+      <Text style={[styles.historyHeaderCell, styles.historyColCost]}>Cost</Text>
+      <Text style={[styles.historyHeaderCell, styles.historyColBeans]}>To him/her</Text>
+      <Text style={[styles.historyHeaderCell, styles.historyColPrize]}>Prize</Text>
     </View>
   );
 }
 
+function HistoryTableRow({ item }: { item: RoomLuckyHistoryItem }) {
+  const qty = (item.qty ?? 1) > 0 ? (item.qty ?? 1) : 1;
+  return (
+    <View style={styles.historyRow}>
+      <View style={[styles.historyCell, styles.historyColGift]}>
+        <HistoryGiftThumb gift={item.gift} />
+        <Text style={styles.historyQtyText}>x{qty}</Text>
+      </View>
+      <View style={[styles.historyCell, styles.historyColCost]}>
+        <Image source={COIN_IMG} style={styles.historyValueIcon} contentFit="contain" />
+        <Text style={styles.historyValueText}>{item.coinCost.toLocaleString()}</Text>
+      </View>
+      <View style={[styles.historyCell, styles.historyColBeans]}>
+        <Text style={styles.historyValueText}>{(item.receiverBeans ?? 0).toLocaleString()}</Text>
+        <Image source={BEAN_IMG} style={styles.historyValueIcon} contentFit="contain" />
+      </View>
+      <View style={[styles.historyCell, styles.historyColPrize]}>
+        <Text style={styles.historyValueText}>{item.rewardCoins.toLocaleString()}</Text>
+        <Image source={COIN_IMG} style={styles.historyValueIcon} contentFit="contain" />
+      </View>
+    </View>
+  );
+}
+
+const SHEET_HEIGHT_RATIO = 0.8;
+
 export function LuckyGiftRankingOverlay({ visible, roomId, onClose }: Props) {
+  const { height: windowHeight } = useWindowDimensions();
   const [tab, setTab] = useState<OverlayTab>('rank');
   const [rankings, setRankings] = useState<LeaderboardUserEntry[]>([]);
   const [history, setHistory] = useState<RoomLuckyHistoryItem[]>([]);
@@ -232,11 +309,14 @@ export function LuckyGiftRankingOverlay({ visible, roomId, onClose }: Props) {
   const top3 = rankings.slice(0, 3);
   const restRankings = rankings.slice(3);
   const emptyMessage = 'No lucky wins in this room yet';
+  const emptyHistoryMessage = 'No lucky gift history in this room yet';
 
   return (
     <View style={styles.overlay}>
       <Pressable style={styles.backdropTap} onPress={onClose} accessibilityLabel="Close ranking" />
-      <LinearGradient colors={[...GRADIENT_COLORS]} style={styles.sheet}>
+      <View style={[styles.sheet, { height: windowHeight * SHEET_HEIGHT_RATIO }]}>
+        <LinearGradient colors={[...SHEET_GRADIENT]} style={styles.sheetBg} />
+        <View style={styles.sheetContent}>
         <View style={styles.tabRow}>
           {(['rank', 'history'] as const).map((key) => {
             const active = tab === key;
@@ -276,6 +356,7 @@ export function LuckyGiftRankingOverlay({ visible, roomId, onClose }: Props) {
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => <RankListRow entry={item} />}
               ListHeaderComponent={top3.length > 0 ? <PodiumSection entries={top3} /> : null}
+              style={styles.sheetBody}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               refreshControl={
@@ -285,21 +366,24 @@ export function LuckyGiftRankingOverlay({ visible, roomId, onClose }: Props) {
           )
         ) : history.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>{emptyMessage}</Text>
+            <Text style={styles.emptyText}>{emptyHistoryMessage}</Text>
           </View>
         ) : (
           <FlatList
             data={history}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <HistoryRow item={item} />}
+            renderItem={({ item }) => <HistoryTableRow item={item} />}
+            ListHeaderComponent={<HistoryTableHeader />}
+            style={styles.sheetBody}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={styles.historyListContent}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor="#FFD700" />
             }
           />
         )}
-      </LinearGradient>
+        </View>
+      </View>
     </View>
   );
 }
@@ -318,10 +402,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    top: '18%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     overflow: 'hidden',
+    backgroundColor: OVERLAY_BASE,
+  },
+  sheetBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  sheetContent: {
+    flex: 1,
+  },
+  sheetBody: {
+    flex: 1,
   },
   tabRow: {
     flexDirection: 'row',
@@ -336,12 +429,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
   },
   tabText: {
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(210, 200, 230, 0.55)',
     fontSize: 15,
     fontWeight: '500',
   },
   tabTextActive: {
-    color: '#FFFFFF',
+    color: '#F2ECFF',
     fontWeight: '700',
   },
   tabUnderline: {
@@ -349,7 +442,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F2ECFF',
   },
   loadingBox: {
     flex: 1,
@@ -363,7 +456,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
   },
   emptyText: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(210, 200, 230, 0.65)',
     fontSize: 14,
     textAlign: 'center',
   },
@@ -372,7 +465,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: 8,
     borderRadius: Radius.md,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   retryText: {
     color: Colors.textPrimary,
@@ -383,6 +476,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
     gap: Spacing.sm,
+  },
+  historyListContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xxl,
+  },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  historyHeaderCell: {
+    color: 'rgba(210, 200, 230, 0.55)',
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(196, 186, 220, 0.12)',
+  },
+  historyCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  historyColGift: {
+    flex: 1,
+  },
+  historyColCost: {
+    flex: 1,
+  },
+  historyColBeans: {
+    flex: 1,
+  },
+  historyColPrize: {
+    flex: 1,
+  },
+  historyGiftIcon: {
+    width: 28,
+    height: 28,
+  },
+  historyGiftEmoji: {
+    fontSize: 22,
+    width: 28,
+    textAlign: 'center',
+  },
+  historyQtyText: {
+    color: '#F2ECFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  historyValueIcon: {
+    width: 14,
+    height: 14,
+  },
+  historyValueText: {
+    color: '#F2ECFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   podiumSection: {
     marginBottom: Spacing.lg,
@@ -398,69 +555,70 @@ const styles = StyleSheet.create({
     flex: 1,
     maxWidth: 118,
   },
-  podiumCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.12)',
+  podiumSlot: {
+    width: '100%',
     alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    paddingBottom: Spacing.sm,
-    paddingTop: Spacing.md,
-    gap: 4,
   },
   podiumAvatarWrap: {
     alignItems: 'center',
-    marginBottom: 2,
+    zIndex: 1,
   },
-  crownIcon: {
-    position: 'absolute',
-    top: -10,
-    right: 4,
-    zIndex: 2,
+  podiumGlass: {
+    width: '100%',
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    gap: 4,
+    overflow: 'hidden',
   },
-  podiumAvatarRing: {
-    borderWidth: 2,
+  podiumAvatarFrameWrap: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rankBadge: {
-    position: 'absolute',
-    right: -2,
-    bottom: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  podiumAvatarClip: {
+    overflow: 'hidden',
+    backgroundColor: Colors.surfaceHighlight,
+    zIndex: 0,
+  },
+  podiumFrameOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    zIndex: 1,
+  },
+  podiumAvatarPlaceholder: {
+    backgroundColor: Colors.surfaceHighlight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rankBadgeText: {
-    color: '#1A1530',
-    fontSize: 10,
-    fontWeight: '800',
+  podiumAvatarInitial: {
+    color: Colors.textSecondary,
+    fontWeight: '600',
   },
   podiumName: {
-    color: '#FFFFFF',
+    color: '#F2ECFF',
     fontSize: 12,
     fontWeight: '700',
     maxWidth: '100%',
   },
   podiumEmpty: {
-    color: 'rgba(255,255,255,0.4)',
+    color: 'rgba(210, 200, 230, 0.4)',
     fontSize: 18,
-    marginTop: Spacing.xl,
   },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: Spacing.md,
   },
   listRank: {
     width: 22,
-    color: 'rgba(255,255,255,0.75)',
+    color: 'rgba(230, 222, 245, 0.8)',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
@@ -477,14 +635,9 @@ const styles = StyleSheet.create({
   },
   listName: {
     flexShrink: 1,
-    color: '#FFFFFF',
+    color: '#F2ECFF',
     fontSize: 14,
     fontWeight: '600',
-  },
-  historyGift: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
-    marginTop: 2,
   },
   levelBadge: {
     width: 22,
@@ -503,7 +656,7 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   winLabel: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(210, 200, 230, 0.72)',
     fontSize: 11,
     fontWeight: '500',
   },

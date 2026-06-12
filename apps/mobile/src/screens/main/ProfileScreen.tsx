@@ -32,7 +32,8 @@ import { useWalletBalanceQuery } from '@hooks/queries/useWalletBalanceQuery';
 import { useUserLevelQuery } from '@hooks/queries/useLevelQueries';
 import { authApi } from '@api/auth';
 import { TokenStorage } from '@/storage';
-import { RICH, CHARM } from '../level/LevelScreen';
+import { CharmLevelBadge } from '@components/CharmLevelBadge';
+import { RichLevelBadge } from '@components/RichLevelBadge';
 import { apiClient, formatApiError } from '@api/client';
 import { bannersApi, type Banner } from '@api/banners';
 import { settingsApi } from '@api/settings';
@@ -474,26 +475,22 @@ export function ProfileScreen() {
                 )}
               </View>
             )}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('Level', {})}
-            >
-              <Image
-                source={RICH[Math.min(Math.max(levelInfo?.richLevel ?? 0, 0), 100)]}
-                style={styles.levelIconImg}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('Level', {})}
-            >
-              <Image
-                source={CHARM[Math.min(Math.max(levelInfo?.charmLevel ?? 0, 0), 100)]}
-                style={styles.levelIconImg}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
+            {(levelInfo?.richLevel ?? 0) > 0 ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate('Level', {})}
+              >
+                <RichLevelBadge level={levelInfo?.richLevel ?? 0} size={18} />
+              </TouchableOpacity>
+            ) : null}
+            {(levelInfo?.charmLevel ?? 0) > 0 ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate('Level', {})}
+              >
+                <CharmLevelBadge level={levelInfo?.charmLevel ?? 0} size={18} />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.idRow}>
@@ -888,10 +885,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     flexWrap: 'wrap',
-  },
-  levelIconImg: {
-    width: 36,
-    height: 16,
   },
   genderPill: {
     flexDirection: 'row',

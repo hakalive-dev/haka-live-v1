@@ -28,6 +28,7 @@
     "backfill:gift-commission": "ts-node prisma/backfill-gift-commission.ts",
     "backfill:charm-xp": "ts-node prisma/backfill-charm-xp.ts",
     "backfill:last-live": "ts-node prisma/backfill-last-live.ts",
+    "backfill:welcome-dm": "ts-node src/scripts/backfill-welcome-dm.ts",
     "backfill:image-ceiling": "ts-node scripts/backfill-image-ceiling.ts",
     "rekognition:setup": "ts-node scripts/setup-rekognition.ts",
     "rekognition:check": "ts-node scripts/setup-rekognition.ts --check"

@@ -1163,7 +1163,7 @@ model Notification {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
-  type      String // new_follower | gift_received | room_invite | system | host_task_complete
+  type      String // new_follower | gift_received | room_invite | system | host_task_complete | moment_like | moment_comment | moment_share | moment_gift
   title     String
   body      String
   imageUrl  String   @default("")

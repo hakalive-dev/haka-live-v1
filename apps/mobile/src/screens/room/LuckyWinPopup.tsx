@@ -4,13 +4,19 @@ import { Image } from 'expo-image';
 
 import { Colors, Spacing } from '@/theme';
 
+import { TOAST_HEIGHT } from './GiftToast';
+
 /** Display size — downscaled from 1024×565 @3x art for a crisp render. */
 const BANNER_WIDTH = 94;
 const BANNER_HEIGHT = 52;
+/** Vertically center the banner with the first gift-toast row. */
+const ROW_TOP = (TOAST_HEIGHT - BANNER_HEIGHT) / 2;
 /** Flat ribbon band — coin row sits on the lower red banner (~22% from bottom). */
 const RIBBON_BOTTOM_OFFSET = BANNER_HEIGHT * 0.22;
 const HOLD_MS = 2400;
 const FLY_IN_MS = 480;
+const ENTER_OFFSET_Y = -48;
+const EXIT_OFFSET_Y = -16;
 
 const LUCKY_WIN_BANNER = require('../../../assets/lucky-gifts/lucky_win_banner.png');
 const COIN_ICON = require('../../../assets/coin.png');
@@ -24,22 +30,20 @@ export interface LuckyWinPopupItem {
 
 interface Props {
   item: LuckyWinPopupItem | null;
-  /** Screen Y where the banner rests — aligned with the gift-toast row. */
-  restTop: number;
   onDismiss: () => void;
 }
 
 export const LuckyWinPopup = React.memo(LuckyWinPopupInner);
 
-function LuckyWinPopupInner({ item, restTop, onDismiss }: Props) {
+function LuckyWinPopupInner({ item, onDismiss }: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(-restTop)).current;
+  const translateY = useRef(new Animated.Value(ENTER_OFFSET_Y)).current;
   const amountScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!item) return;
     opacity.setValue(0);
-    translateY.setValue(-restTop);
+    translateY.setValue(ENTER_OFFSET_Y);
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
@@ -54,7 +58,7 @@ function LuckyWinPopupInner({ item, restTop, onDismiss }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [item?.id, item?.bump, opacity, translateY, restTop]);
+  }, [item?.id, item?.bump, opacity, translateY]);
 
   useEffect(() => {
     if (!item) return;
@@ -78,7 +82,7 @@ function LuckyWinPopupInner({ item, restTop, onDismiss }: Props) {
           useNativeDriver: true,
         }),
         Animated.timing(translateY, {
-          toValue: -restTop * 0.35,
+          toValue: EXIT_OFFSET_Y,
           duration: 300,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
@@ -88,7 +92,7 @@ function LuckyWinPopupInner({ item, restTop, onDismiss }: Props) {
       });
     }, HOLD_MS);
     return () => clearTimeout(timer);
-  }, [item?.id, item?.bump, opacity, translateY, restTop, onDismiss]);
+  }, [item?.id, item?.bump, opacity, translateY, onDismiss]);
 
   if (!item) return null;
 
@@ -102,7 +106,7 @@ function LuckyWinPopupInner({ item, restTop, onDismiss }: Props) {
       pointerEvents="none"
       style={[
         styles.root,
-        { top: restTop, opacity, transform: [{ translateY }] },
+        { top: ROW_TOP, opacity, transform: [{ translateY }] },
       ]}
     >
       <Image

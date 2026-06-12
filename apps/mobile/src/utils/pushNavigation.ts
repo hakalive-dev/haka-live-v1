@@ -71,5 +71,18 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
     return true;
   }
 
+  if (
+    type === 'moment_like' ||
+    type === 'moment_comment' ||
+    type === 'moment_share' ||
+    type === 'moment_gift' ||
+    data.open === 'actor_profile'
+  ) {
+    if (data.actorId) {
+      navigationRef.navigate('PublicProfile', { userId: data.actorId });
+      return true;
+    }
+  }
+
   return false;
 }
