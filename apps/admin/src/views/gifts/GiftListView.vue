@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import * as giftsApi from '@/api/gifts'
+import GiftsSubnav from '@/components/gifts/GiftsSubnav.vue'
 import type { BulkImportResult } from '@/api/gifts'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import RowActionMenu from '@/components/common/RowActionMenu.vue'
@@ -197,6 +199,23 @@ onMounted(fetchGifts)
 
 <template>
   <div class="page">
+    <GiftsSubnav />
+
+    <div
+      v-if="auth.hasPermission('gift.manage')"
+      class="lucky-banner"
+    >
+      <div>
+        <p class="lucky-banner-title">Lucky gift win probability &amp; payouts</p>
+        <p class="lucky-banner-sub">
+          Configure win chance, multiplier, and host bean cut for all gifts in the Lucky category.
+        </p>
+      </div>
+      <RouterLink to="/gifts/lucky-gifts" class="btn btn-primary btn-sm">
+        Open Lucky Gift Settings
+      </RouterLink>
+    </div>
+
     <div class="toolbar">
       <div class="toolbar-left">
         <h2 class="page-subtitle">Gift Catalogue</h2>
@@ -406,6 +425,31 @@ onMounted(fetchGifts)
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
+.lucky-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--card-border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--card-bg));
+}
+.lucky-banner-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.lucky-banner-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.btn-sm { padding: 6px 12px; font-size: 12px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .toolbar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }

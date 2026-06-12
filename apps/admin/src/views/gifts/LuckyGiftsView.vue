@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import * as api from '@/api/luckyGifts'
+import GiftsSubnav from '@/components/gifts/GiftsSubnav.vue'
 import Pagination from '@/components/common/Pagination.vue'
 
 const loading = ref(true)
@@ -180,6 +181,8 @@ onMounted(() => void refreshAll())
 
 <template>
   <div class="page">
+    <GiftsSubnav />
+
     <div class="page-header">
       <div>
         <h1 class="page-title">Lucky Gifts</h1>
