@@ -41,7 +41,7 @@ import {
   syncCoinSellerProfileRatesFromTier,
   type TierRates,
 } from "../payments/coinSeller.service";
-import { isLuckyGiftCategory } from "../../shared-types/gifts";
+import { isLuckyGiftCategory, MAX_GIFT_SEND_QTY } from "../../shared-types/gifts";
 import { getLuckySetting } from "../lucky-gifts/lucky-setting";
 import { runLuckyDraw, luckyReceiverBeans } from "../lucky-gifts/lucky-draw";
 import {
@@ -372,8 +372,11 @@ export async function sendGift(input: GiftSendInput) {
 
   await assertNoRiskBlock(senderId, "freezeCoins", "disableGifts");
 
-  if (!Number.isInteger(qty) || qty < 1 || qty > 999) {
-    throw new AppError("qty must be an integer between 1 and 999", 400);
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_GIFT_SEND_QTY) {
+    throw new AppError(
+      `qty must be an integer between 1 and ${MAX_GIFT_SEND_QTY}`,
+      400,
+    );
   }
 
   const gift = await prisma.gift.findUnique({ where: { id: giftId } });
@@ -619,6 +622,7 @@ export async function sendGift(input: GiftSendInput) {
       giftId: gift.id,
       giftName: gift.name,
       giftIcon: gift.icon,
+      giftImage: gift.image,
       outcome: result.luckyOutcome,
     });
   }

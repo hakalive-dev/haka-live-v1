@@ -11,6 +11,7 @@ import { BATTLE_EVENTS } from '../../shared-types';
 import * as calcService from '../rooms/calculator.service';
 import { redis } from '../../config/redis';
 import * as luckyGiftsService from '../lucky-gifts/lucky-gifts.service';
+import { MAX_GIFT_SEND_QTY } from '../../shared-types/gifts';
 
 const sendGiftSchema = z
   .object({
@@ -18,7 +19,14 @@ const sendGiftSchema = z
     recipientId: z.string().min(1).optional(),
     recipientAgencyId: z.string().min(1).optional(),
     roomId: z.string().min(1).optional(),
-    qty: z.number().int().min(1).max(999).default(1),
+    qty: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_GIFT_SEND_QTY, {
+        message: `Quantity must be between 1 and ${MAX_GIFT_SEND_QTY}`,
+      })
+      .default(1),
   })
   .refine(
     (v) => !!v.recipientId !== !!v.recipientAgencyId,

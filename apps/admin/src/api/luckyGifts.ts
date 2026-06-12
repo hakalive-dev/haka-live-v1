@@ -2,20 +2,23 @@ import client from './client'
 
 export interface LuckyMultiplierTier {
   multiplier: number
+  rewardCoins: number
   weight: number
 }
 
 export interface LuckySettingDTO {
   enabled: boolean
   winProbability: number
-  /** Weighted average payout multiplier across tiers. */
+  /** Weighted average display multiplier across tiers. */
   winMultiplier: number
+  /** Weighted average coin reward across tiers. */
+  averageRewardCoins: number
   winMultiplierTiers: LuckyMultiplierTier[]
   receiverBenefitPercent: number
   dailyUserWinCapCoins: string
   updatedBy: string
   updatedAt: string
-  /** Expected sender return: winProbability × average multiplier */
+  /** Expected sender return: winProbability × avg reward / reference stake */
   expectedReturn: number
   /** Sender TRP + host receiver % (keep below 1.0 for house edge). */
   totalPayoutRatio: number

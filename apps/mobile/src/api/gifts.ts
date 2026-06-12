@@ -143,28 +143,28 @@ export const giftsApi = {
         ? (() => {
             const isWin = Math.random() < 0.98;
             const mockTiers = [
-              { multiplier: 2, weight: 50 },
-              { multiplier: 3, weight: 25 },
-              { multiplier: 5, weight: 15 },
-              { multiplier: 10, weight: 7 },
-              { multiplier: 50, weight: 2 },
-              { multiplier: 100, weight: 1 },
+              { multiplier: 2, rewardCoins: 20, weight: 50 },
+              { multiplier: 5, rewardCoins: 100, weight: 25 },
+              { multiplier: 10, rewardCoins: 500, weight: 15 },
+              { multiplier: 50, rewardCoins: 5000, weight: 7 },
+              { multiplier: 100, rewardCoins: 50000, weight: 2 },
+              { multiplier: 500, rewardCoins: 500000, weight: 1 },
             ];
             const totalWeight = mockTiers.reduce((sum, tier) => sum + tier.weight, 0);
             let roll = Math.random() * totalWeight;
-            let winMultiplier = mockTiers[0]!.multiplier;
+            let picked = mockTiers[0]!;
             for (const tier of mockTiers) {
               roll -= tier.weight;
               if (roll < 0) {
-                winMultiplier = tier.multiplier;
+                picked = tier;
                 break;
               }
             }
-            const rewardCoins = isWin ? Math.round(coinCost * winMultiplier) : 0;
+            const rewardCoins = isWin ? picked.rewardCoins : 0;
             return {
               drawId: `mock-draw-${Date.now()}`,
               isWin,
-              winMultiplier: isWin ? winMultiplier : 0,
+              winMultiplier: isWin ? picked.multiplier : 0,
               rewardCoins,
               coinCost,
               senderCoinBalance: 50_000 - coinCost + rewardCoins,

@@ -70,7 +70,12 @@ function LuckyWinNoticeRowInner({
             <Text style={styles.rewardText}>{rewardCoins.toLocaleString()}</Text>
             {' '}coins by sending
           </Text>
-          <GiftInlineIcon giftIcon={giftIcon} giftImage={giftImageFallback} size={24} />
+          <GiftInlineIcon
+            giftIcon={giftIcon}
+            giftImage={giftImageFallback}
+            size={28}
+            preferImage
+          />
           <Text style={styles.multiplier}>x {sendMultiplier}</Text>
         </View>
       </View>

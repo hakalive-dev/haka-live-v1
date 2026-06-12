@@ -31,9 +31,10 @@ export function broadcastLuckyDraw(params: {
   giftId: string;
   giftName: string;
   giftIcon: string;
+  giftImage: string;
   outcome: LuckyDrawOutcome;
 }): void {
-  const { senderId, senderName, roomId, giftId, giftName, giftIcon, outcome } = params;
+  const { senderId, senderName, roomId, giftId, giftName, giftIcon, giftImage, outcome } = params;
   const payload = {
     drawId: outcome.drawId,
     isWin: outcome.isWin,
@@ -43,6 +44,7 @@ export function broadcastLuckyDraw(params: {
     giftId,
     giftName,
     giftIcon,
+    giftImage,
     senderId,
     senderName,
     roomId,

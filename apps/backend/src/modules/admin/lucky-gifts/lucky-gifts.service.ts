@@ -3,12 +3,13 @@ import { prisma } from '../../../config/prisma';
 import { AppError } from '../../../middleware/error.middleware';
 import { clearLuckySettingCache } from '../../lucky-gifts/lucky-setting';
 import {
+  averageRewardCoins,
   averageWinMultiplier,
   expectedReturn,
   normalizeWinMultiplierTiers,
   parseWinMultiplierTiersJson,
   totalPayoutRatio,
-  type LuckyMultiplierTier,
+  type LuckyPayoutTier,
 } from '../../lucky-gifts/lucky-draw';
 import { logAdminAction } from '../../../utils/audit';
 import type { LuckyDrawsQuery, LuckySettingUpdateInput } from './lucky-gifts.validation';
@@ -16,14 +17,16 @@ import type { LuckyDrawsQuery, LuckySettingUpdateInput } from './lucky-gifts.val
 export interface LuckySettingDTO {
   enabled: boolean;
   winProbability: number;
-  /** Weighted average payout multiplier across tiers. */
+  /** Weighted average display multiplier across tiers. */
   winMultiplier: number;
-  winMultiplierTiers: LuckyMultiplierTier[];
+  /** Weighted average coin reward across tiers. */
+  averageRewardCoins: number;
+  winMultiplierTiers: LuckyPayoutTier[];
   receiverBenefitPercent: number;
   dailyUserWinCapCoins: string;
   updatedBy: string;
   updatedAt: string;
-  /** TRP — expected sender return (winProbability × average multiplier). */
+  /** TRP — expected sender return (winProbability × avg reward / reference stake). */
   expectedReturn: number;
   /** Expected total payout incl. the receiver cut. Keep < 1.0 for a house edge. */
   totalPayoutRatio: number;
@@ -47,6 +50,7 @@ function toSettingDTO(row: {
     winProbability: Number(row.winProbability),
     winMultiplierTiers,
     winMultiplier: averageWinMultiplier(winMultiplierTiers),
+    averageRewardCoins: averageRewardCoins(winMultiplierTiers),
     receiverBenefitPercent: Number(row.receiverBenefitPercent),
   };
   return {

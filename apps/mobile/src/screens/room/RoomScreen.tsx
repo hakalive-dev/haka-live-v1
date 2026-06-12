@@ -76,6 +76,7 @@ import {
   normalizeGiftCoinCost,
   type GiftSpecialEffect,
 } from "@components/gifts/GiftEffectOverlay";
+import { MAX_GIFT_SEND_QTY } from "@haka-live/shared-types/gifts";
 import { GiftPanel } from "./GiftPanel";
 import { preloadRemoteSvgaAssets } from "./SVGAGiftEffect";
 import { useRoomSession } from "@/room/RoomSessionProvider";
@@ -190,6 +191,28 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const COMBO_BTN_HALF = 41;
 const COMBO_BOTTOM_OFFSET = 70;
 const COMBO_TIMEOUT = 5000;
+const GIFT_QTY_LIMIT_TITLE = "Gift limit reached";
+const giftQtyLimitMessage = () =>
+  `You can send up to ${MAX_GIFT_SEND_QTY.toLocaleString()} gifts per batch. Slow down combo taps or pick a smaller quantity.`;
+
+function isGiftQtyValidationError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("qty") ||
+    m.includes("quantity") ||
+    m.includes("validation failed")
+  );
+}
+
+function giftSendErrorAlert(error: unknown): void {
+  const raw = formatApiError(error);
+  if (isGiftQtyValidationError(raw)) {
+    Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+    return;
+  }
+  Alert.alert("Could not send gift", raw, [{ text: "OK" }]);
+}
+
 /** Must match `styles.giftToastAnchor.height`. */
 const GIFT_TOAST_ANCHOR_HEIGHT = 200;
 /** Distance from screen bottom to gift-toast row (higher % = row sits higher). */
@@ -501,6 +524,8 @@ export function RoomScreen({ route, navigation }: Props) {
     [],
   );
   const specialEffect = specialEffectQueue[0] ?? null;
+  // Bumped on every combo tap to restart the combo-button SVGA from frame 0.
+  const [comboBtnRestartNonce, setComboBtnRestartNonce] = useState(0);
   const advanceGiftEffectQueue = useCallback(() => {
     setSpecialEffectQueue((prev) => (prev.length > 0 ? prev.slice(1) : prev));
   }, []);
@@ -1839,6 +1864,8 @@ export function RoomScreen({ route, navigation }: Props) {
           giftName:
             typeof data.giftName === "string" ? data.giftName : "Lucky Gift",
           giftIcon: typeof data.giftIcon === "string" ? data.giftIcon : "🍀",
+          giftImageFallback:
+            typeof data.giftImage === "string" ? data.giftImage : null,
           senderId: typeof data.senderId === "string" ? data.senderId : undefined,
           senderName:
             typeof data.senderName === "string" ? data.senderName : undefined,
@@ -2541,7 +2568,7 @@ export function RoomScreen({ route, navigation }: Props) {
           setCoinBalance((prev) => prev + pending.totalCost);
           coinBalanceRef.current += pending.totalCost;
         }
-        Alert.alert(formatApiError(e), undefined, [{ text: "OK" }]);
+        giftSendErrorAlert(e);
         dismissComboRef.current();
       }
     });
@@ -2549,8 +2576,7 @@ export function RoomScreen({ route, navigation }: Props) {
     return next;
   }, [currentUser, handleLuckyWin]);
 
-  // Sends any accumulated combo taps as a single batched API call (serialized via runGiftSend).
-  const flushPendingCombo = useCallback(() => {
+  const flushPendingComboNow = useCallback(() => {
     if (comboFlushTimerRef.current) {
       clearTimeout(comboFlushTimerRef.current);
       comboFlushTimerRef.current = null;
@@ -2558,8 +2584,16 @@ export function RoomScreen({ route, navigation }: Props) {
     const pending = pendingFlushRef.current;
     if (!pending || pending.qty === 0) return;
     pendingFlushRef.current = null;
+    if (pending.qty > MAX_GIFT_SEND_QTY) {
+      Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+      dismissComboRef.current();
+      return;
+    }
     void runGiftSend(pending);
   }, [runGiftSend]);
+
+  // Sends any accumulated combo taps as a single batched API call (serialized via runGiftSend).
+  const flushPendingCombo = flushPendingComboNow;
 
   const dismissCombo = useCallback(() => {
     flushPendingCombo();
@@ -2626,6 +2660,26 @@ export function RoomScreen({ route, navigation }: Props) {
   const handleComboTap = useCallback(() => {
     if (!comboState || !room) return;
     const { gift, recipient, seatPosition, step } = comboState;
+
+    if (step > MAX_GIFT_SEND_QTY) {
+      Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+      dismissCombo();
+      return;
+    }
+
+    let pendingQty = pendingFlushRef.current?.qty ?? 0;
+    if (pendingQty + step > MAX_GIFT_SEND_QTY) {
+      if (pendingQty > 0) {
+        flushPendingComboNow();
+      }
+      pendingQty = pendingFlushRef.current?.qty ?? 0;
+      if (pendingQty + step > MAX_GIFT_SEND_QTY) {
+        Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+        dismissCombo();
+        return;
+      }
+    }
+
     // Read from ref so rapid taps see the decremented balance without waiting for a re-render.
     if (coinBalanceRef.current < gift.coinCost * step) {
       Alert.alert(
@@ -2650,6 +2704,8 @@ export function RoomScreen({ route, navigation }: Props) {
       seatPosition,
       usesFlyingGift: !hasSvga && !!seatPosition,
     });
+    // Restart the combo-button SVGA from frame 0 on every tap (tactile feedback).
+    setComboBtnRestartNonce((n) => n + 1);
     if (!hasSvga && seatPosition) {
       enqueueFlyingGift(gift, seatPosition);
     } else {
@@ -2712,6 +2768,7 @@ export function RoomScreen({ route, navigation }: Props) {
     triggerGiftAnimation,
     currentUser,
     flushPendingCombo,
+    flushPendingComboNow,
     enqueueFlyingGift,
     pushSelfComboGiftToast,
   ]);
@@ -2749,6 +2806,11 @@ export function RoomScreen({ route, navigation }: Props) {
         (s) => s.user?.id === recipient.id,
       );
       if (!seated) return;
+
+      if (qty < 1 || qty > MAX_GIFT_SEND_QTY) {
+        Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+        return;
+      }
 
       const totalCost = gift.coinCost * qty;
 
@@ -4083,17 +4145,19 @@ export function RoomScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Always-present origin marker (combo button slot) — used when enqueueing gifts */}
-      <View
-        pointerEvents="none"
-        style={[styles.comboWrap, styles.giftFlyOriginWrap, { bottom: insets.bottom + COMBO_BOTTOM_OFFSET }]}
-      >
+      {/* Gift-fly origin marker — hidden while combo button is mounted (same slot). */}
+      {!comboState ? (
         <View
-          ref={giftFlyOriginFallbackRef}
-          collapsable={false}
-          style={styles.giftFlyOrigin}
-        />
-      </View>
+          pointerEvents="none"
+          style={[styles.giftFlyOriginWrap, { bottom: insets.bottom + COMBO_BOTTOM_OFFSET }]}
+        >
+          <View
+            ref={giftFlyOriginFallbackRef}
+            collapsable={false}
+            style={styles.giftFlyOrigin}
+          />
+        </View>
+      ) : null}
 
       {/* ── Flying gift animations (basic gifts) ── */}
       {flyingGifts.map((fg) => (
@@ -5198,11 +5262,12 @@ export function RoomScreen({ route, navigation }: Props) {
       {/* ── Combo button ── */}
       {comboState ? (
         <ComboTapButton
-          count={comboState.count}
+          coinBalance={coinBalance}
           comboScale={comboScale}
           bottomInset={insets.bottom + COMBO_BOTTOM_OFFSET}
           originRef={comboButtonOriginRef}
           onPress={handleComboTap}
+          restartNonce={comboBtnRestartNonce}
         />
       ) : null}
 
@@ -5385,6 +5450,8 @@ const FLYING_GIFT_CENTER_SCALE = 1.42;
 const FLYING_GIFT_SEAT_SCALE = 0.16;
 const FLYING_GIFT_RISE_MS = 700;
 const FLYING_GIFT_FLYOUT_MS = 540;
+/** Keep gift invisible at combo origin so it never peeks through the SVGA button. */
+const FLYING_GIFT_ORIGIN_HIDE_MS = 180;
 
 const flyingGiftStyles = StyleSheet.create({
   container: {
@@ -5510,7 +5577,7 @@ function FlyingGiftInner({
   useLayoutEffect(() => {
     const runId = ++animRunId.current;
     zoomScale.setValue(FLYING_GIFT_LAUNCH_SCALE);
-    imgOpacity.setValue(0.95);
+    imgOpacity.setValue(0);
 
     const finish = ({ finished }: { finished: boolean }) => {
       if (finished && animRunId.current === runId) onCompleteRef.current();
@@ -5534,14 +5601,14 @@ function FlyingGiftInner({
       posY.setValue(startY);
 
       Animated.sequence([
-        Animated.timing(imgOpacity, {
-          toValue: 1,
-          duration: 80,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.delay(40),
+        Animated.delay(FLYING_GIFT_ORIGIN_HIDE_MS),
         Animated.parallel([
+          Animated.timing(imgOpacity, {
+            toValue: 1,
+            duration: 120,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
           Animated.timing(posX, {
             toValue: centerX,
             duration: FLYING_GIFT_RISE_MS,
@@ -7647,6 +7714,10 @@ const styles = StyleSheet.create({
     elevation: 30,
   },
   giftFlyOriginWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
     zIndex: 9996,
     elevation: 26,
   },

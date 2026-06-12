@@ -42,7 +42,7 @@ async function setLuckySetting(input: {
   const tiers =
     input.winMultiplierTiers ??
     (input.winMultiplier != null
-      ? [{ multiplier: input.winMultiplier, weight: 1 }]
+      ? [{ multiplier: input.winMultiplier, rewardCoins: input.winMultiplier, weight: 1 }]
       : undefined);
   await prisma.luckyGiftSetting.upsert({
     where: { id: "singleton" },
@@ -108,7 +108,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplierTiers: [{ multiplier: 3, weight: 1 }],
+      winMultiplierTiers: [{ multiplier: 3, rewardCoins: 300, weight: 1 }],
       receiverBenefitPercent: 1.5,
     });
     const gift = await createGift("lucky");
@@ -218,7 +218,11 @@ describe("Lucky Gifts send flow", () => {
   });
 
   it("GET /gifts/lucky/history returns the sender's draws", async () => {
-    await setLuckySetting({ enabled: true, winProbability: 1, winMultiplier: 2 });
+    await setLuckySetting({
+      enabled: true,
+      winProbability: 1,
+      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+    });
     const gift = await createGift("lucky");
     await sendGift(senderId, gift.id, hostId);
     await sendGift(senderId, gift.id, hostId);
@@ -237,7 +241,11 @@ describe("Lucky Gifts send flow", () => {
   });
 
   it("GET /gifts/lucky/room/:roomId/rankings orders senders by total rewardCoins", async () => {
-    await setLuckySetting({ enabled: true, winProbability: 1, winMultiplier: 2 });
+    await setLuckySetting({
+      enabled: true,
+      winProbability: 1,
+      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+    });
     const gift = await createGift("lucky");
     const room = await createRoom(hostId);
     const sender2 = await createTestUser({ coinBalance: START_COINS });
@@ -264,7 +272,11 @@ describe("Lucky Gifts send flow", () => {
   });
 
   it("GET /gifts/lucky/room/:roomId/history returns room wins newest-first", async () => {
-    await setLuckySetting({ enabled: true, winProbability: 1, winMultiplier: 2 });
+    await setLuckySetting({
+      enabled: true,
+      winProbability: 1,
+      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+    });
     const gift = await createGift("lucky");
     const room = await createRoom(hostId);
     const otherRoom = await createRoom(hostId);

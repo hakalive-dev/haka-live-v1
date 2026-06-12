@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const multiplierTierSchema = z.object({
   multiplier: z.number().min(0),
+  rewardCoins: z.number().min(0),
   weight: z.number().min(0),
 });
 
@@ -18,8 +19,10 @@ export const luckySettingUpdateSchema = z
   .refine(
     (v) =>
       v.winMultiplierTiers === undefined ||
-      v.winMultiplierTiers.some((tier) => tier.weight > 0 && tier.multiplier > 0),
-    { message: 'At least one multiplier tier must have weight and multiplier > 0' },
+      v.winMultiplierTiers.some(
+        (tier) => tier.weight > 0 && tier.multiplier > 0 && tier.rewardCoins > 0,
+      ),
+    { message: 'At least one payout tier must have multiplier, rewardCoins, and weight > 0' },
   );
 
 export type LuckySettingUpdateInput = z.infer<typeof luckySettingUpdateSchema>;
