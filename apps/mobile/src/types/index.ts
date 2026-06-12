@@ -398,6 +398,8 @@ export interface ChatMessage {
     giftIcon: string;
     rewardCoins: number;
     giftImageFallback?: string | null;
+    /** Wins rolled into one chat line after a combo session (default 1). */
+    winCount?: number;
   };
 }
 
@@ -1266,6 +1268,7 @@ export interface MomentPost {
   user: MomentAuthor;
   post_type: "moment" | "video";
   media_url: string | null;
+  poster_url?: string | null;
   caption: string;
   hashtag: string;
   likes_count: number;

@@ -14,6 +14,7 @@ type Props = {
   giftIcon: string;
   giftImageFallback?: string | null;
   rewardCoins: number;
+  winCount?: number;
   onPressSender?: () => void;
 };
 
@@ -25,10 +26,13 @@ function LuckyWinNoticeRowInner({
   giftIcon,
   giftImageFallback,
   rewardCoins,
+  winCount = 1,
   onPressSender,
 }: Props) {
   const name = sender.displayName ?? 'User';
   const richLevel = sender.richLevel ?? 0;
+  const winLabel =
+    winCount > 1 ? `${winCount} lucky wins` : 'Lucky win';
 
   return (
     <View style={styles.row}>
@@ -64,7 +68,7 @@ function LuckyWinNoticeRowInner({
           ) : null}
         </TouchableOpacity>
         <View style={styles.actionRow}>
-          <Text style={styles.winLabel}>Lucky win</Text>
+          <Text style={styles.winLabel}>{winLabel}</Text>
           <GiftInlineIcon giftIcon={giftIcon} giftImage={giftImageFallback} size={24} />
           <Text style={styles.actionText} numberOfLines={2}>
             {giftName}

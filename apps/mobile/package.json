@@ -4,13 +4,15 @@
   "main": "./App",
   "scripts": {
     "start": "expo start",
-    "android": "bash scripts/with-jdk17.sh expo run:android",
+    "android": "npm run verify:expo-video && npm run android:clean && bash scripts/with-jdk17.sh expo run:android",
+    "android:clean": "rm -rf node_modules/expo-video/android/build android/app/build android/.gradle && cd android && ./gradlew clean",
     "ios": "expo run:ios",
     "lint": "eslint src --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
     "postinstall": "patch-package && node scripts/postinstall-fixes.mjs",
     "eas-build-pre-install": "bash ../../scripts/check-asset-size.sh scan ./assets && bash ../../scripts/check-asset-size.sh scan ./src/assets",
-    "eas-build-post-install": "patch-package && node scripts/postinstall-fixes.mjs"
+    "eas-build-post-install": "patch-package && node scripts/postinstall-fixes.mjs && node scripts/verify-expo-video-patch.mjs",
+    "verify:expo-video": "node scripts/verify-expo-video-patch.mjs"
   },
   "dependencies": {
     "@jayming/svga-player-rn": "^0.4.0",
@@ -36,6 +38,7 @@
     "expo-dev-client": "~6.0.21",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
+    "expo-haptics": "~15.0.8",
     "expo-image": "~3.0.11",
     "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",

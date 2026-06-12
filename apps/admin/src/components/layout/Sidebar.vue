@@ -102,6 +102,7 @@ const allSections: NavSection[] = [
       { label: 'Master Wallet',       to: '/master-wallet',             permission: 'payment.view' },
       { label: 'Bean Revenue',        to: '/gifts/platform-revenue',    permission: 'gift.manage' },
       { label: 'Commission Config',   to: '/gifts/commission-config',   permission: 'gift.manage' },
+      { label: 'Lucky Gifts',         to: '/gifts/lucky-gifts',         permission: 'gift.manage' },
       { label: 'Regions',             to: '/regions',                   permission: 'region.manage' },
     ],
   },
@@ -145,6 +146,7 @@ const allSections: NavSection[] = [
     title: 'Center',
     items: [
       { label: 'Gift Catalogue', to: '/gifts',   permission: 'gift.view' },
+      { label: 'Lucky Gifts',    to: '/gifts/lucky-gifts', permission: 'gift.manage' },
       { label: 'Store Items', to: '/store',   permission: 'store.manage' },
       { label: 'Events', to: '/events',  permission: 'event.view' },
       { label: 'Banners', to: '/banners', permission: 'banner.view' },

@@ -168,12 +168,16 @@ async function assertCanSignalCall(callerId: string, calleeId: string) {
 /**
  * Signal callee over socket + high-priority FCM. Callee mints their own Agora token (same channel).
  */
-export async function signalOutgoingVideoCall(callerId: string, calleeId: string) {
+export async function signalOutgoingCall(
+  callerId: string,
+  calleeId: string,
+  callType: 'voice' | 'video' = 'video',
+) {
   assertCannotReplyToSystemDm(calleeId);
   await assertCanSignalCall(callerId, calleeId);
 
   if (!(await userAcceptsCalls(calleeId))) {
-    throw new AppError('This user has disabled video calls', 403);
+    throw new AppError('This user has disabled calls', 403);
   }
 
   const caller = await prisma.user.findUnique({
@@ -186,9 +190,13 @@ export async function signalOutgoingVideoCall(callerId: string, calleeId: string
   const calleeUid = await getOrAssignUid(calleeId, channel);
   const { token, appId, expiresAt } = generateRtcToken(channel, calleeUid, 'publisher');
 
+  const modeLabel = callType === 'voice' ? 'voice' : 'video';
+  const pushType = callType === 'voice' ? 'voice_call' : 'video_call';
+
   const payload = {
     callerId,
     callerDisplayName,
+    callType,
     channelId: channel,
     agoraToken: token,
     appId,
@@ -204,16 +212,20 @@ export async function signalOutgoingVideoCall(callerId: string, calleeId: string
 
   void sendIncomingCallPush(
     calleeId,
-    'Incoming video call',
+    `Incoming ${modeLabel} call`,
     `${callerDisplayName} is calling`,
     {
-      type: 'video_call',
+      type: pushType,
+      callType,
       callerId,
       callerDisplayName,
       channelId: channel,
     },
   ).catch(() => {});
 }
+
+/** @deprecated Use signalOutgoingCall — kept for existing imports/tests */
+export const signalOutgoingVideoCall = signalOutgoingCall;
 
 function emitCallToUser(targetUserId: string, event: string, peerId: string) {
   try {

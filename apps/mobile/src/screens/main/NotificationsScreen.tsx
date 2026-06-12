@@ -37,7 +37,10 @@ function iconForType(type: string): React.ComponentProps<typeof Ionicons>['name'
     case 'follow':
       return 'person-add-outline';
     case 'room':
+    case 'video_call':
       return 'videocam-outline';
+    case 'voice_call':
+      return 'call-outline';
     case 'chat':
     case 'dm':
       return 'chatbubble-outline';
@@ -85,8 +88,13 @@ function openNotificationTarget(
     return;
   }
 
-  if (type === 'video_call' && data.callerId) {
-    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone');
+  if ((type === 'video_call' || type === 'voice_call') && data.callerId) {
+    const callType = data.callType === 'voice' || type === 'voice_call' ? 'voice' : 'video';
+    promptIncomingVideoCallFromPush(
+      data.callerId,
+      data.callerDisplayName ?? 'Someone',
+      callType,
+    );
     return;
   }
 

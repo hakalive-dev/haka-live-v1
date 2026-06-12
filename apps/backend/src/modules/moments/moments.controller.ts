@@ -29,7 +29,14 @@ export const momentController = {
 
       const file = req.file;
       if (file) {
-        const isVideo = /^video\//i.test(file.mimetype) || postType === 'video';
+        const isVideoFile = /^video\//i.test(file.mimetype);
+        if (postType === 'video' && !isVideoFile) {
+          return fail(res, 'Video posts require a video file', 400);
+        }
+        if (postType === 'moment' && isVideoFile) {
+          return fail(res, 'Moment posts require an image file', 400);
+        }
+        const isVideo = isVideoFile || postType === 'video';
         const folder = isVideo ? 'moments/videos' : 'moments/images';
         const requestBaseUrl = `${req.protocol}://${req.get('host')}`;
         mediaUrl = await uploadToStorage(

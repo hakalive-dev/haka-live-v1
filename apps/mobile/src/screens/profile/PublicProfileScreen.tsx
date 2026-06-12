@@ -30,7 +30,7 @@ import { RootStackScreenProps } from '@navigation/types';
 import { usersApi } from '@api/users';
 import type { RootState } from '../../store';
 import { momentsApi } from '@api/moments';
-import { startVideoCall } from '@/utils/videoCall';
+import { startVideoCall, startVoiceCall } from '@/utils/call';
 import type { FanEntry } from '@api/leaderboard';
 import {
   usePublicProfileQuery,
@@ -208,6 +208,11 @@ export function PublicProfileScreen({ route, navigation }: Props) {
   const handleVideoChat = useCallback(() => {
     if (!user) return;
     void startVideoCall(userId, user.displayName);
+  }, [user, userId]);
+
+  const handleVoiceCall = useCallback(() => {
+    if (!user) return;
+    void startVoiceCall(userId, user.displayName);
   }, [user, userId]);
 
   const openEditProfile = useCallback(() => {
@@ -602,9 +607,11 @@ export function PublicProfileScreen({ route, navigation }: Props) {
             <Ionicons name="chatbubble-ellipses" size={18} color="#7B4FFF" />
             <Text style={styles.messageBtnText}>Message</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.voiceCallBtn} onPress={handleVoiceCall}>
+            <Ionicons name="call" size={18} color="#7B4FFF" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.videoChatBtn} onPress={handleVideoChat}>
             <Ionicons name="videocam" size={18} color="#FFFFFF" />
-            <Text style={styles.videoChatText}>Video Chat</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1181,17 +1188,22 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   messageBtnText: { fontSize: 14, fontWeight: '700', color: '#7B4FFF' },
+  voiceCallBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.full,
+    backgroundColor: '#F2EEFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   videoChatBtn: {
-    flex: 1,
+    width: 44,
     height: 44,
     borderRadius: Radius.full,
     backgroundColor: '#7B4FFF',
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
   },
-  videoChatText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   toastWrap: {
     position: 'absolute',
     left: 0, right: 0,

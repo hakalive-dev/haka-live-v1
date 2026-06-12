@@ -4,7 +4,7 @@ import * as chatService from './chat.service';
 import {
   notifyDmRecipient,
   notifyRoomChatRecipients,
-  signalOutgoingVideoCall,
+  signalOutgoingCall,
   signalCallDeclined,
   signalCallEnded,
   signalCallCancelled,
@@ -300,10 +300,11 @@ export async function getCallToken(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 }
 
-/** POST /chat/conversations/:userId/call-invite — ring + socket signal for 1:1 video */
+/** POST /chat/conversations/:userId/call-invite — ring + socket signal for 1:1 voice/video */
 export async function postCallInvite(req: Request, res: Response, next: NextFunction) {
   try {
-    await signalOutgoingVideoCall(req.user!.id, req.params.userId);
+    const callType = req.body?.callType === 'voice' ? 'voice' : 'video';
+    await signalOutgoingCall(req.user!.id, req.params.userId, callType);
     ok(res, { signaled: true }, 'Call invite sent');
   } catch (err) { next(err); }
 }

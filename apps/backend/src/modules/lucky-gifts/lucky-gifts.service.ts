@@ -2,6 +2,8 @@ import { prisma } from '../../config/prisma';
 import { redis } from '../../config/redis';
 import { getIO } from '../../sockets';
 import { WS_EVENTS } from '../../shared-types';
+import { AppError } from '../../middleware/error.middleware';
+import { serializeUserSummary, userSummarySelect } from '../users/user-summary';
 
 /** Result of a committed lucky draw, as returned inside the sendGift result. */
 export interface LuckyDrawOutcome {
@@ -68,6 +70,176 @@ export function broadcastLuckyDraw(params: {
       }
     })();
   }
+}
+
+async function assertRoomExists(roomId: string): Promise<void> {
+  const room = await prisma.room.findUnique({ where: { id: roomId }, select: { id: true } });
+  if (!room) throw new AppError('Room not found', 404);
+}
+
+/** All-time lucky win totals per sender in a room, highest first. */
+export async function getRoomLuckyRankings(roomId: string, limit = 50) {
+  await assertRoomExists(roomId);
+
+  const grouped = await prisma.luckyGiftDraw.groupBy({
+    by: ['userId'],
+    where: { roomId, isWin: true },
+    _sum: { rewardCoins: true },
+  });
+
+  const ranked = grouped
+    .map((g) => ({ userId: g.userId, score: g._sum.rewardCoins ?? 0 }))
+    .filter((g) => g.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  if (ranked.length === 0) {
+    return { items: [] as Array<{ rank: number; score: number; user: ReturnType<typeof serializeUserSummary> }> };
+  }
+
+  const userIds = ranked.map((r) => r.userId);
+  const [users, hiddenSettings] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: userSummarySelect(),
+    }),
+    prisma.userSettings.findMany({
+      where: { userId: { in: userIds }, mysteryManRank: true },
+      select: { userId: true },
+    }),
+  ]);
+
+  const hiddenIds = new Set(hiddenSettings.map((s) => s.userId));
+  const userMap = new Map(users.map((u) => [u.id, serializeUserSummary(u)]));
+
+  const items = ranked.map((entry, idx) => {
+    const u = userMap.get(entry.userId) ?? {
+      id: entry.userId,
+      username: null,
+      displayName: '',
+      avatar: '',
+      hakaId: null,
+      originalHakaId: null,
+      activeSpecialId: null,
+      activeSpecialIdLevel: null,
+      equippedFrame: null,
+      equippedRing: null,
+      equippedChatBubble: null,
+      equippedMicVoiceWave: null,
+      equippedProfileCard: null,
+      equippedDynamicProfile: null,
+      richLevel: 1,
+      charmLevel: 1,
+    };
+    const masked = hiddenIds.has(entry.userId)
+      ? {
+          ...u,
+          username: null,
+          displayName: 'Mystery',
+          avatar: '',
+          hakaId: null,
+          activeSpecialId: null,
+          activeSpecialIdLevel: null,
+          equippedFrame: null,
+          equippedRing: null,
+          equippedChatBubble: null,
+          equippedMicVoiceWave: null,
+          equippedProfileCard: null,
+          equippedDynamicProfile: null,
+        }
+      : u;
+    return { rank: idx + 1, score: entry.score, user: masked };
+  });
+
+  return { items };
+}
+
+/** Paginated individual lucky wins in a room (newest first). */
+export async function getRoomLuckyHistory(roomId: string, page = 1, limit = 30) {
+  await assertRoomExists(roomId);
+
+  const skip = (page - 1) * limit;
+  const where = { roomId, isWin: true };
+
+  const [rows, total] = await Promise.all([
+    prisma.luckyGiftDraw.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      include: { gift: { select: { id: true, name: true, icon: true, image: true } } },
+    }),
+    prisma.luckyGiftDraw.count({ where }),
+  ]);
+
+  const userIds = [...new Set(rows.map((r) => r.userId))];
+  const [users, hiddenSettings] = userIds.length
+    ? await Promise.all([
+        prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: userSummarySelect(),
+        }),
+        prisma.userSettings.findMany({
+          where: { userId: { in: userIds }, mysteryManRank: true },
+          select: { userId: true },
+        }),
+      ])
+    : [[], []];
+
+  const hiddenIds = new Set(hiddenSettings.map((s) => s.userId));
+  const userMap = new Map(users.map((u) => [u.id, serializeUserSummary(u)]));
+
+  const items = rows.map((r) => {
+    const u = userMap.get(r.userId);
+    const masked = hiddenIds.has(r.userId)
+      ? {
+          id: r.userId,
+          username: null,
+          displayName: 'Mystery',
+          avatar: '',
+          hakaId: null,
+          originalHakaId: null,
+          activeSpecialId: null,
+          activeSpecialIdLevel: null,
+          equippedFrame: null,
+          equippedRing: null,
+          equippedChatBubble: null,
+          equippedMicVoiceWave: null,
+          equippedProfileCard: null,
+          equippedDynamicProfile: null,
+          richLevel: 1,
+          charmLevel: 1,
+        }
+      : u ?? {
+          id: r.userId,
+          username: null,
+          displayName: '',
+          avatar: '',
+          hakaId: null,
+          originalHakaId: null,
+          activeSpecialId: null,
+          activeSpecialIdLevel: null,
+          equippedFrame: null,
+          equippedRing: null,
+          equippedChatBubble: null,
+          equippedMicVoiceWave: null,
+          equippedProfileCard: null,
+          equippedDynamicProfile: null,
+          richLevel: 1,
+          charmLevel: 1,
+        };
+
+    return {
+      id: r.id,
+      rewardCoins: r.rewardCoins,
+      coinCost: r.coinCost,
+      createdAt: r.createdAt.toISOString(),
+      gift: r.gift,
+      user: masked,
+    };
+  });
+
+  return { items, total, page, limit };
 }
 
 /** Recent lucky winners in a room (newest first) from the capped Redis stream. */

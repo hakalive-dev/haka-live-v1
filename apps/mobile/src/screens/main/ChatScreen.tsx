@@ -167,6 +167,7 @@ export function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [teamAnnouncement, setTeamAnnouncement] =
     useState<TeamAnnouncementPayload | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const inboxQuery = useChatInboxQuery();
   useRefetchOnFocusIfStale(
@@ -174,6 +175,11 @@ export function ChatScreen() {
     inboxQuery.isStale,
     !inboxQuery.isLoading,
   );
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    void inboxQuery.refetch().finally(() => setRefreshing(false));
+  }, [inboxQuery]);
 
   useEffect(() => {
     if (!inboxQuery.data) return;
@@ -264,6 +270,8 @@ export function ChatScreen() {
         <FlatList
           data={filteredConversations}
           keyExtractor={(item, index) => `${item.otherUser.id}-${index}`}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,

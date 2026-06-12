@@ -39,8 +39,13 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
     return true;
   }
 
-  if (type === 'video_call' && data.callerId) {
-    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone');
+  if ((type === 'video_call' || type === 'voice_call') && data.callerId) {
+    const callType = data.callType === 'voice' || type === 'voice_call' ? 'voice' : 'video';
+    promptIncomingVideoCallFromPush(
+      data.callerId,
+      data.callerDisplayName ?? 'Someone',
+      callType,
+    );
     return true;
   }
 

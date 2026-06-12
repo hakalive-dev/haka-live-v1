@@ -23,6 +23,8 @@ import { Image } from 'expo-image';
 import { UserAvatar } from '@components/UserAvatar';
 
 import { giftsApi } from '@api/gifts';
+import { LuckyGiftBanner } from './LuckyGiftBanner';
+import { LuckyGiftRankingOverlay } from './LuckyGiftRankingOverlay';
 import { formatApiError } from '@api/client';
 import {
   getGiftsForTab,
@@ -79,9 +81,11 @@ interface Props {
   initialRecipientId?: string | null;
   /** Hide the mic "send-to-all" circle (e.g. DM gifting). */
   hideMic?: boolean;
+  /** When set, enables the Lucky tab banner + room-scoped ranking overlay. */
+  roomId?: string | null;
 }
 
-export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, initialRecipientId, hideMic }: Props) {
+export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, initialRecipientId, hideMic, roomId }: Props) {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(300)).current;
 
@@ -92,6 +96,7 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
   const [qty, setQty] = useState<number>(1);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [sendToAll, setSendToAll] = useState(false);
+  const [rankingOverlayVisible, setRankingOverlayVisible] = useState(false);
 
   // Reset/seed recipient selection whenever the panel opens.
   useEffect(() => {
@@ -156,6 +161,12 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
   const selectedGift = filtered.find((g) => g.id === selectedGiftId) ?? null;
 
   useEffect(() => { setSelectedGiftId(null); }, [activeTab]);
+
+  useEffect(() => {
+    if (!visible || activeTab !== 'lucky') {
+      setRankingOverlayVisible(false);
+    }
+  }, [visible, activeTab]);
 
   const handleSend = useCallback(
     async () => {
@@ -257,6 +268,10 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
             </TouchableOpacity>
           ))}
         </View>
+
+        {activeTab === 'lucky' && roomId ? (
+          <LuckyGiftBanner onPressRanking={() => setRankingOverlayVisible(true)} />
+        ) : null}
 
         {/* Gift grid */}
         <View style={styles.gridWrap}>
@@ -371,6 +386,14 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
             </TouchableOpacity>
           </View>
         </View>
+
+        {roomId ? (
+          <LuckyGiftRankingOverlay
+            visible={rankingOverlayVisible}
+            roomId={roomId}
+            onClose={() => setRankingOverlayVisible(false)}
+          />
+        ) : null}
       </Animated.View>
     </Modal>
   );
@@ -456,6 +479,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     maxHeight: '60%',
     minHeight: '50%',
+    position: 'relative',
   },
 
   // Top: avatars + mic circle (pill container)

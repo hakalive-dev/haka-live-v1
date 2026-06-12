@@ -208,6 +208,22 @@ export async function getRoomLuckyWinners(req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 }
 
+/** GET /gifts/lucky/room/:roomId/rankings — all-time lucky win totals per sender in a room */
+export async function getRoomLuckyRankings(req: Request, res: Response, next: NextFunction) {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '50'), 10)));
+    ok(res, await luckyGiftsService.getRoomLuckyRankings(req.params.roomId, limit));
+  } catch (err) { next(err); }
+}
+
+/** GET /gifts/lucky/room/:roomId/history — paginated lucky wins in a room */
+export async function getRoomLuckyHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit } = historyQuerySchema.parse(req.query);
+    ok(res, await luckyGiftsService.getRoomLuckyHistory(req.params.roomId, page, limit));
+  } catch (err) { next(err); }
+}
+
 /** GET /gifts/history — caller's sent-gift history (normal + lucky) */
 export async function getSentHistory(req: Request, res: Response, next: NextFunction) {
   try {

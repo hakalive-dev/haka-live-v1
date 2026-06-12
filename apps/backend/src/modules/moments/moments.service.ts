@@ -42,6 +42,7 @@ function formatMoment(
     id: string;
     postType: string;
     mediaUrl: string | null;
+    posterUrl: string | null;
     caption: string;
     hashtag: string;
     likesCount: number;
@@ -58,6 +59,7 @@ function formatMoment(
     user: formatAuthor(m.user),
     post_type: m.postType,
     media_url: m.mediaUrl,
+    poster_url: m.posterUrl,
     caption: m.caption,
     hashtag: m.hashtag,
     likes_count: m.likesCount,
@@ -140,13 +142,28 @@ export const momentsService = {
 
   async create(
     userId: string,
-    data: { postType?: string; mediaUrl?: string; caption?: string; hashtag?: string },
+    data: {
+      postType?: string;
+      mediaUrl?: string;
+      posterUrl?: string;
+      caption?: string;
+      hashtag?: string;
+    },
   ) {
+    const postType = data.postType ?? 'moment';
+    if (postType === 'video' && !data.mediaUrl) {
+      throw new AppError('Video posts require a video file', 400);
+    }
+    if (postType === 'moment' && !data.mediaUrl) {
+      throw new AppError('Moment posts require an image', 400);
+    }
+
     const moment = await prisma.moment.create({
       data: {
         userId,
-        postType: data.postType ?? 'moment',
+        postType,
         mediaUrl: data.mediaUrl ?? null,
+        posterUrl: data.posterUrl ?? null,
         caption: data.caption ?? '',
         hashtag: data.hashtag ?? '',
       },

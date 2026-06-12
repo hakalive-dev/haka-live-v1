@@ -4,6 +4,7 @@ import {
   FlatList,
   Linking,
   Modal,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,7 +31,7 @@ import { computeAgeFromBirthday } from '@/utils/age';
 import { formatMomentPostTime } from '@/utils/formatMomentTime';
 import { getGenderPillBackground, getGenderSymbol } from '@/utils/genderDisplay';
 import type { RootStackParamList } from '@navigation/types';
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useSelector } from 'react-redux';
 
 import { momentsApi } from '@api/moments';
@@ -39,8 +40,13 @@ import { giftsApi } from '@api/gifts';
 import { chatApi } from '@api/chat';
 import { usersApi } from '@api/users';
 import { invalidateUserLevels } from '@hooks/queries/useLevelQueries';
+import { onOutboundDmSent } from '@hooks/useDMConnection';
 import { MomentVideoCard, type MomentVideoPost } from '@screens/main/MomentVideoCard';
+import { VideoFeedPlayer } from '@screens/main/VideoFeedPlayer';
+import { ErrorBoundary } from '@components/ErrorBoundary';
 import { useToast } from '@components/Toast';
+import { logDiagnostic } from '@/diagnostics/releaseDiagnostics';
+import { isPlayableVideoUrl } from '@/utils/videoUrl';
 import type { RootState } from '../../store';
 import type {
   MomentPost as ApiMomentPost,
@@ -237,6 +243,7 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
 }
 
 function apiToVideo(p: ApiMomentPost): MomentVideoPost {
+  const mediaUrl = p.media_url ?? '';
   return {
     id: p.id,
     user: {
@@ -247,8 +254,8 @@ function apiToVideo(p: ApiMomentPost): MomentVideoPost {
       gender: p.user.gender ?? '',
       level: p.user.rich_level,
     },
-    video_url: p.media_url ?? '',
-    poster_url: null,
+    video_url: mediaUrl,
+    poster_url: p.poster_url ?? (isPlayableVideoUrl(mediaUrl) ? null : mediaUrl || null),
     description: p.caption,
     likes: p.likes_count,
     comments: p.comments_count,
@@ -721,6 +728,7 @@ function ShareModal({
 }) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const [friends, setFriends] = useState<PublicUser[]>([]);
   const [shareLabel, setShareLabel] = useState('');
@@ -764,14 +772,17 @@ function ShareModal({
   const handleShareToUser = useCallback(async (user: PublicUser) => {
     if (!postId || !shareLabel) return;
     try {
-      await chatApi.sendDM(user.id, shareLabel);
+      const sent = await chatApi.sendDM(user.id, shareLabel);
+      if (currentUser?.id) {
+        onOutboundDmSent(queryClient, sent, currentUser.id);
+      }
       await recordShare('dm');
       setSharedUserIds((prev) => new Set(prev).add(user.id));
       toast.show(`Shared with ${user.displayName}`, 'success');
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to share');
     }
-  }, [postId, shareLabel, recordShare, toast]);
+  }, [postId, shareLabel, recordShare, toast, currentUser?.id, queryClient]);
 
   const handleSocial = useCallback(async (platformId: string) => {
     if (!postId) return;
@@ -1020,21 +1031,72 @@ export function DiscoverScreen() {
     enabled: activeTab === 'moment',
     staleTime: 60_000,
   });
-  const videosQuery = useQuery({
+  const videosQuery = useInfiniteQuery({
     queryKey: queryKeys.discover.videos(),
-    queryFn: () => momentsApi.list('video').then((feed) => feed.results.map(apiToVideo)),
+    queryFn: ({ pageParam }) =>
+      momentsApi.list('video', pageParam).then((feed) => ({
+        items: feed.results.map(apiToVideo),
+        page: feed.page,
+        count: feed.count,
+        page_size: feed.page_size,
+      })),
+    initialPageParam: 1,
+    getNextPageParam: (last) => {
+      const totalPages = Math.ceil(last.count / last.page_size);
+      return last.page < totalPages ? last.page + 1 : undefined;
+    },
     enabled: activeTab === 'video',
     staleTime: 60_000,
   });
   const moments: MomentPost[] = momentsQuery.data ?? [];
-  const videos: MomentVideoPost[] = videosQuery.data ?? [];
+  const videos: MomentVideoPost[] = useMemo(
+    () => videosQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [videosQuery.data],
+  );
   const momentLoading = moments.length === 0 && momentsQuery.isLoading;
   const videoLoading = videos.length === 0 && videosQuery.isLoading;
+  const videoError = videosQuery.isError;
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+  const [videoMuted, setVideoMuted] = useState(true);
+  const [videoPaused, setVideoPaused] = useState(false);
+  const [followedUserIds, setFollowedUserIds] = useState<Set<string>>(() => new Set());
+  const [screenFocused, setScreenFocused] = useState(true);
+  const currentUserId = useSelector((s: RootState) => s.auth.user?.id ?? '');
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, []),
+  );
 
   useEffect(() => {
-    if (activeTab === 'video') setActiveVideoIndex(0);
+    if (activeTab === 'video') {
+      setActiveVideoIndex(0);
+      setVideoPaused(false);
+      logDiagnostic('native_note', 'video_tab_opened', { count: videos.length });
+    }
   }, [activeTab, videos.length]);
+
+  useEffect(() => {
+    setVideoPaused(false);
+  }, [activeVideoIndex]);
+
+  const activeVideo = videos[activeVideoIndex] ?? null;
+  const videoPlaybackActive =
+    activeTab === 'video' &&
+    screenFocused &&
+    !showComments &&
+    !showShare &&
+    !showGift &&
+    !!activeVideo &&
+    isPlayableVideoUrl(activeVideo.video_url);
+
+  const loadMoreVideos = useCallback(() => {
+    if (videosQuery.hasNextPage && !videosQuery.isFetchingNextPage) {
+      void videosQuery.fetchNextPage();
+    }
+  }, [videosQuery]);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 75 }).current;
   const onViewableItemsChanged = useRef(
@@ -1070,9 +1132,41 @@ export function DiscoverScreen() {
     [activePostId, queryClient],
   );
 
-  // Height available for each full-screen video card (below the header)
-  const headerH = insets.top + 48; // safe area + header height
-  const videoCardH = screenH - headerH;
+  // Full-screen TikTok-style paging (header floats over video)
+  const videoCardH = screenH;
+
+  const videoGetItemLayout = useCallback(
+    (_: unknown, index: number) => ({
+      length: videoCardH,
+      offset: videoCardH * index,
+      index,
+    }),
+    [videoCardH],
+  );
+
+  const handleVideoFollow = useCallback(
+    async (userId: string) => {
+      if (!userId || userId === currentUserId) return;
+      try {
+        await usersApi.follow(userId);
+        setFollowedUserIds((prev) => new Set(prev).add(userId));
+      } catch {
+        Alert.alert('Follow', 'Could not follow this user.');
+      }
+    },
+    [currentUserId],
+  );
+
+  const handleVideoDoubleTapLike = useCallback(
+    async (postId: string) => {
+      try {
+        await momentsApi.toggleLike(postId);
+      } catch {
+        /* MomentVideoCard rolls back optimistic UI on failure */
+      }
+    },
+    [],
+  );
 
   // Column wrapper style depends on runtime screen width
   const gameRowStyle = useMemo(
@@ -1089,7 +1183,14 @@ export function DiscoverScreen() {
   ];
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, isVideo && styles.screenVideo]}>
+      {isVideo ? (
+        <LinearGradient
+          colors={['rgba(0,0,0,0.55)', 'transparent']}
+          style={[styles.videoHeaderGradient, { height: insets.top + 56 }]}
+          pointerEvents="none"
+        />
+      ) : null}
       {/* ── Header — overlays for video tab, static for others ── */}
       <View
         style={[
@@ -1118,7 +1219,7 @@ export function DiscoverScreen() {
           ))}
         </View>
         <TouchableOpacity style={styles.searchBtn} onPress={() => nav.navigate('Search')}>
-          <Ionicons name="search-outline" size={22} color={isVideo ? '#000000' : Colors.textPrimary} />
+          <Ionicons name="search-outline" size={22} color={isVideo ? '#FFFFFF' : Colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -1165,36 +1266,98 @@ export function DiscoverScreen() {
         />
       ))}
 
-      {/* ── Video tab (full-screen paging) ── */}
-      {activeTab === 'video' && (videoLoading ? (
-        <View style={styles.videoSkeleton}>
-          <Skeleton width="100%" height={videoCardH} borderRadius={0} />
-        </View>
-      ) : (
-        <FlatList
-          data={videos}
-          keyExtractor={(p) => p.id}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={videoCardH}
-          decelerationRate="fast"
-          maxToRenderPerBatch={3}
-          windowSize={5}
-          removeClippedSubviews
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          renderItem={({ item, index }) => (
-            <MomentVideoCard
-              post={item}
-              height={videoCardH}
-              isActive={activeTab === 'video' && index === activeVideoIndex}
-              onComment={() => openComment(item.id)}
-              onShare={() => openShare(item.id)}
-              onGift={() => openGift(item.id)}
-            />
+      {/* ── Video tab (full-screen TikTok-style paging) ── */}
+      {activeTab === 'video' && (
+        <ErrorBoundary>
+          {videoLoading ? (
+            <View style={styles.videoSkeleton}>
+              <Skeleton width="100%" height={videoCardH} borderRadius={0} />
+            </View>
+          ) : videoError ? (
+            <View style={styles.videoEmpty}>
+              <Ionicons name="cloud-offline-outline" size={48} color={Colors.textTertiary} />
+              <Text style={styles.videoEmptyTitle}>Could not load videos</Text>
+              <Text style={styles.videoEmptyBody}>Check your connection and try again.</Text>
+              <TouchableOpacity
+                style={styles.videoEmptyBtn}
+                onPress={() => void videosQuery.refetch()}
+              >
+                <Text style={styles.videoEmptyBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : videos.length === 0 ? (
+            <View style={styles.videoEmpty}>
+              <Ionicons name="videocam-outline" size={48} color={Colors.textTertiary} />
+              <Text style={styles.videoEmptyTitle}>No videos yet</Text>
+              <Text style={styles.videoEmptyBody}>Be the first to share a short video.</Text>
+              <TouchableOpacity
+                style={styles.videoEmptyBtn}
+                onPress={() => nav.navigate('CreateMoment', { postType: 'video' })}
+              >
+                <Text style={styles.videoEmptyBtnText}>Create video</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.videoFeedWrap}>
+              {activeVideo ? (
+                <View style={styles.videoPlayerLayer} pointerEvents="box-none">
+                  <VideoFeedPlayer
+                    uri={activeVideo.video_url}
+                    poster={activeVideo.poster_url}
+                    isActive={videoPlaybackActive}
+                    paused={videoPaused}
+                    muted={videoMuted}
+                    height={videoCardH}
+                    onToggleMute={() => setVideoMuted((m) => !m)}
+                  />
+                </View>
+              ) : null}
+              <FlatList
+                data={videos}
+                keyExtractor={(p) => p.id}
+                pagingEnabled
+                showsVerticalScrollIndicator={false}
+                snapToInterval={videoCardH}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                getItemLayout={videoGetItemLayout}
+                initialNumToRender={1}
+                maxToRenderPerBatch={2}
+                windowSize={3}
+                removeClippedSubviews={false}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                onEndReached={loadMoreVideos}
+                onEndReachedThreshold={0.6}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={videosQuery.isRefetching && !videosQuery.isFetchingNextPage}
+                    onRefresh={() => void videosQuery.refetch()}
+                    tintColor="#FFFFFF"
+                  />
+                }
+                style={styles.videoList}
+                renderItem={({ item, index }) => (
+                  <MomentVideoCard
+                    post={item}
+                    height={videoCardH}
+                    isActive={index === activeVideoIndex}
+                    showPoster={index !== activeVideoIndex}
+                    onComment={() => openComment(item.id)}
+                    onShare={() => openShare(item.id)}
+                    onGift={() => openGift(item.id)}
+                    onProfilePress={() => nav.navigate('PublicProfile', { userId: item.user.id })}
+                    onFollowPress={() => void handleVideoFollow(item.user.id)}
+                    isFollowing={followedUserIds.has(item.user.id)}
+                    onDoubleTapLike={() => void handleVideoDoubleTapLike(item.id)}
+                    onTogglePause={() => setVideoPaused((p) => !p)}
+                  />
+                )}
+              />
+            </View>
           )}
-        />
-      ))}
+        </ErrorBoundary>
+      )}
 
       {/* ── FAB — visible on Moment and Video tabs ── */}
       {(activeTab === 'moment' || activeTab === 'video') && (
@@ -1236,6 +1399,14 @@ export function DiscoverScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
+  screenVideo: { backgroundColor: '#000000' },
+  videoHeaderGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9,
+  },
 
   // ── Header / tabs ──────────────────────────────────────────────────────────
   header: {
@@ -1248,13 +1419,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     zIndex: 10,
   },
-  // When video tab is active, header floats over the video
+  // When video tab is active, header floats over the video (immersive)
   headerOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     borderBottomWidth: 0,
     zIndex: 10,
   },
@@ -1275,13 +1446,13 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#5F22D9',
   },
-  // Video tab: dark text on white overlay header
+  // Video tab: light text on video overlay header
   tabTextVideo: {
-    color: 'rgba(0,0,0,0.7)',
+    color: 'rgba(255,255,255,0.75)',
   },
   tabTextVideoActive: {
     fontWeight: '600',
-    color: '#000000',
+    color: '#FFFFFF',
   },
   tabUnderline: {
     position: 'absolute',
@@ -1293,7 +1464,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
   },
   tabUnderlineVideo: {
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
   },
   searchBtn: {
     padding: Spacing.xs,
@@ -1871,6 +2042,49 @@ const styles = StyleSheet.create({
   },
   videoSkeleton: {
     flex: 1,
+  },
+  videoFeedWrap: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  videoPlayerLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  videoList: {
+    flex: 1,
+    zIndex: 1,
+    backgroundColor: 'transparent',
+  },
+  videoEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.md,
+  },
+  videoEmptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  videoEmptyBody: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  videoEmptyBtn: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+  },
+  videoEmptyBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 
   // ── Gift modal ─────────────────────────────────────────────────────────────

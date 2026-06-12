@@ -9,14 +9,15 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSelector } from 'react-redux';
 import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 
 import { queryKeys } from '@api/queryKeys';
+import type { ChatInboxData } from '@hooks/queries/useChatInboxQuery';
 import { TokenStorage } from '../storage';
 import type { RootState } from '../store';
-import type { DirectMessage } from '@/types';
+import type { DMConversation, DirectMessage } from '@/types';
 
 export interface DMWsEvent {
   event: 'new_dm' | 'dm:deleted';
@@ -35,6 +36,88 @@ export function invalidateChatUnreadQueries(
 ) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.chat.inbox() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.chat.messagesBadge() });
+}
+
+function sortConversationsByLastMessage(list: DMConversation[]): DMConversation[] {
+  return [...list].sort((a, b) => {
+    const aTime = a.lastMessage?.createdAt
+      ? new Date(a.lastMessage.createdAt).getTime()
+      : 0;
+    const bTime = b.lastMessage?.createdAt
+      ? new Date(b.lastMessage.createdAt).getTime()
+      : 0;
+    return bTime - aTime;
+  });
+}
+
+function patchConversationList(
+  list: DMConversation[],
+  peerId: string,
+  msg: DirectMessage,
+  otherUser: DMConversation['otherUser'],
+  allowNew: boolean,
+): DMConversation[] {
+  const idx = list.findIndex((c) => c.otherUser.id === peerId);
+  if (idx >= 0) {
+    const updated: DMConversation = {
+      ...list[idx],
+      lastMessage: msg,
+      unreadCount: 0,
+    };
+    const rest = list.filter((_, i) => i !== idx);
+    return sortConversationsByLastMessage([updated, ...rest]);
+  }
+  if (!allowNew) return list;
+  const newRow: DMConversation = {
+    otherUser,
+    lastMessage: msg,
+    unreadCount: 0,
+    isFollowing: false,
+    isFamiliar: false,
+  };
+  return sortConversationsByLastMessage([newRow, ...list]);
+}
+
+/** Optimistically update inbox preview when the current user sends a DM. */
+export function applyOutboundDmToInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  const peerId =
+    msg.sender.id === currentUserId ? msg.recipient.id : msg.sender.id;
+  const otherUser =
+    msg.sender.id === currentUserId ? msg.recipient : msg.sender;
+
+  queryClient.setQueryData<ChatInboxData>(queryKeys.chat.inbox(), (old) => {
+    if (!old) return old;
+    return {
+      ...old,
+      conversations: patchConversationList(
+        old.conversations,
+        peerId,
+        msg,
+        otherUser,
+        true,
+      ),
+      friendConversations: patchConversationList(
+        old.friendConversations,
+        peerId,
+        msg,
+        otherUser,
+        false,
+      ),
+    };
+  });
+}
+
+export function onOutboundDmSent(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  applyOutboundDmToInboxCache(queryClient, msg, currentUserId);
+  invalidateChatUnreadQueries(queryClient);
 }
 
 export function DMConnectionProvider({

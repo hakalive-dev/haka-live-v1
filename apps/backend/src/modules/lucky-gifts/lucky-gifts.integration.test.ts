@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import request from "supertest";
 import app from "../../app";
 import { prisma } from "../../config/prisma";
@@ -50,11 +51,27 @@ async function setLuckySetting(input: {
   clearLuckySettingCache();
 }
 
-async function sendGift(senderId: string, giftId: string, recipientId: string) {
+async function createRoom(hostId: string) {
+  return prisma.room.create({
+    data: {
+      hostId,
+      title: "Test Room",
+      agoraChannel: `ch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      micConfig: 5,
+    },
+  });
+}
+
+async function sendGift(
+  senderId: string,
+  giftId: string,
+  recipientId: string,
+  roomId?: string,
+) {
   return request(app)
     .post("/api/v1/gifts/send")
     .set("Authorization", `Bearer ${mintJwt(senderId)}`)
-    .send({ giftId, recipientId, qty: 1 });
+    .send({ giftId, recipientId, qty: 1, ...(roomId ? { roomId } : {}) });
 }
 
 describe("Lucky Gifts send flow", () => {
@@ -203,5 +220,65 @@ describe("Lucky Gifts send flow", () => {
       coinCost: 100,
     });
     expect(res.body.data.items[0].gift.id).toBe(gift.id);
+  });
+
+  it("GET /gifts/lucky/room/:roomId/rankings orders senders by total rewardCoins", async () => {
+    await setLuckySetting({ enabled: true, winProbability: 1, winMultiplier: 2 });
+    const gift = await createGift("lucky");
+    const room = await createRoom(hostId);
+    const sender2 = await createTestUser({ coinBalance: START_COINS });
+
+    await sendGift(senderId, gift.id, hostId, room.id);
+    await sendGift(senderId, gift.id, hostId, room.id);
+    await sendGift(sender2.id, gift.id, hostId, room.id);
+
+    const res = await request(app)
+      .get(`/api/v1/gifts/lucky/room/${room.id}/rankings`)
+      .set("Authorization", `Bearer ${mintJwt(senderId)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toHaveLength(2);
+    expect(res.body.data.items[0]).toMatchObject({
+      rank: 1,
+      score: 400,
+      user: { id: senderId },
+    });
+    expect(res.body.data.items[1]).toMatchObject({
+      rank: 2,
+      score: 200,
+      user: { id: sender2.id },
+    });
+  });
+
+  it("GET /gifts/lucky/room/:roomId/history returns room wins newest-first", async () => {
+    await setLuckySetting({ enabled: true, winProbability: 1, winMultiplier: 2 });
+    const gift = await createGift("lucky");
+    const room = await createRoom(hostId);
+    const otherRoom = await createRoom(hostId);
+
+    await sendGift(senderId, gift.id, hostId, room.id);
+    await sendGift(senderId, gift.id, hostId, room.id);
+    await sendGift(senderId, gift.id, hostId, otherRoom.id);
+
+    const res = await request(app)
+      .get(`/api/v1/gifts/lucky/room/${room.id}/history`)
+      .set("Authorization", `Bearer ${mintJwt(senderId)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.total).toBe(2);
+    expect(res.body.data.items).toHaveLength(2);
+    expect(res.body.data.items[0]).toMatchObject({
+      rewardCoins: 200,
+      user: { id: senderId },
+      gift: { id: gift.id },
+    });
+    expect(res.body.data.items.every((i: { rewardCoins: number }) => i.rewardCoins === 200)).toBe(
+      true,
+    );
+  });
+
+  it("GET /gifts/lucky/room/:roomId/rankings returns 404 for unknown room", async () => {
+    const res = await request(app)
+      .get(`/api/v1/gifts/lucky/room/${randomUUID()}/rankings`)
+      .set("Authorization", `Bearer ${mintJwt(senderId)}`);
+    expect(res.status).toBe(404);
   });
 });

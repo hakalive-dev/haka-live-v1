@@ -29,6 +29,7 @@ const router = createRouter({
         { path: 'gifts/transactions', name: 'GiftTransactions', component: () => import('@/views/gifts/GiftTransactionsView.vue') },
         { path: 'gifts/platform-revenue', name: 'PlatformRevenue', component: () => import('@/views/gifts/PlatformRevenueView.vue') },
         { path: 'gifts/commission-config', name: 'CommissionConfig', component: () => import('@/views/gifts/CommissionConfigView.vue') },
+        { path: 'gifts/lucky-gifts', name: 'LuckyGifts', component: () => import('@/views/gifts/LuckyGiftsView.vue'), meta: { permission: 'gift.manage' } },
         { path: 'wallets', name: 'Wallets', component: () => import('@/views/payments/WalletListView.vue') },
         { path: 'transactions', name: 'WalletTransactions', component: () => import('@/views/payments/WalletTransactionsView.vue') },
         { path: 'purchases', name: 'CoinPurchases', component: () => import('@/views/payments/CoinPurchaseHistoryView.vue') },

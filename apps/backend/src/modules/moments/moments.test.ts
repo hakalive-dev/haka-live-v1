@@ -102,6 +102,7 @@ const fakeMoment = {
   userId: USER_ID,
   postType: 'moment',
   mediaUrl: 'https://example.com/photo.jpg',
+  posterUrl: null,
   caption: 'Hello world',
   hashtag: '#haka',
   likesCount: 0,
@@ -175,7 +176,12 @@ describe('POST /api/v1/moments', () => {
     const res = await request(app)
       .post('/api/v1/moments')
       .set('Authorization', `Bearer ${makeToken()}`)
-      .send({ post_type: 'moment', caption: 'Hello world', hashtag: '#haka' });
+      .send({
+        post_type: 'moment',
+        media_url: 'https://example.com/photo.jpg',
+        caption: 'Hello world',
+        hashtag: '#haka',
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.data.id).toBe(MOMENT_ID);
