@@ -79,6 +79,7 @@ export type SafeUser = {
   updatedAt: Date;
   tags: TagSummary[];
   /** True when user has an active PayrollAgentProfile (may still be role `agent`). */
+  isPayrollAgent: boolean;
   /** True when user may browse state rankings across countries (super admin). */
   canInspectStateRankings: boolean;
 } & EquippedCosmetics;
