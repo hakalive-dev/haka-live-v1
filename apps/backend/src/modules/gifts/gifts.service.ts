@@ -622,7 +622,7 @@ export async function sendGift(input: GiftSendInput) {
       giftId: gift.id,
       giftName: gift.name,
       giftIcon: gift.icon,
-      giftImage: gift.image,
+      giftImage: gift.image ?? "",
       outcome: result.luckyOutcome,
     });
   }
