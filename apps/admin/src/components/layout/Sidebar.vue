@@ -61,6 +61,7 @@ const allSections: NavSection[] = [
     title: 'Config Center',
     items: [
       { label: 'System Settings', to: '/settings',   permission: 'settings.view' },
+      { label: 'Lucky Gift Settings', to: '/gifts/lucky-gifts', permission: 'gift.manage' },
       { label: 'Currency Rates', to: '/currencies', permission: 'payment.view' },
     ],
   },
@@ -102,6 +103,7 @@ const allSections: NavSection[] = [
       { label: 'Master Wallet',       to: '/master-wallet',             permission: 'payment.view' },
       { label: 'Bean Revenue',        to: '/gifts/platform-revenue',    permission: 'gift.manage' },
       { label: 'Commission Config',   to: '/gifts/commission-config',   permission: 'gift.manage' },
+      { label: 'Lucky Gift Settings', to: '/gifts/lucky-gifts',         permission: 'gift.manage' },
       { label: 'Regions',             to: '/regions',                   permission: 'region.manage' },
     ],
   },
@@ -145,6 +147,7 @@ const allSections: NavSection[] = [
     title: 'Center',
     items: [
       { label: 'Gift Catalogue', to: '/gifts',   permission: 'gift.view' },
+      { label: 'Lucky Gift Settings', to: '/gifts/lucky-gifts', permission: 'gift.manage' },
       { label: 'Store Items', to: '/store',   permission: 'store.manage' },
       { label: 'Events', to: '/events',  permission: 'event.view' },
       { label: 'Banners', to: '/banners', permission: 'banner.view' },
@@ -158,7 +161,8 @@ const sections = computed<NavSection[]>(() =>
     .filter(s => s.items.length > 0)
 )
 
-const openSections = ref<string[]>([])
+const DEFAULT_OPEN_SECTIONS = ['Config Center', 'Center', 'BD Center']
+const openSections = ref<string[]>([...DEFAULT_OPEN_SECTIONS])
 
 function isActive(to: string): boolean {
   return route.path === to || route.path.startsWith(to + '/')

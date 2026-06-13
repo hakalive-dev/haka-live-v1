@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { momentsService } from './moments.service';
 import { ok, fail } from '../../utils/response';
 import { assertNoRiskBlock } from '../../utils/risk-control';
+import { uploadToStorage } from '../../utils/storage';
+import { storageFilename } from '../../utils/upload';
 
 export const momentController = {
   async list(req: Request, res: Response, next: NextFunction) {
@@ -20,10 +22,38 @@ export const momentController = {
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const callerId = (req as any).user.id;
-      const { post_type, media_url, caption, hashtag } = req.body;
+      const postType = String(req.body.post_type ?? 'moment');
+      const caption = typeof req.body.caption === 'string' ? req.body.caption : '';
+      const hashtag = typeof req.body.hashtag === 'string' ? req.body.hashtag : '';
+      let mediaUrl = typeof req.body.media_url === 'string' ? req.body.media_url : undefined;
+
+      const file = req.file;
+      if (file) {
+        const isVideoFile = /^video\//i.test(file.mimetype);
+        if (postType === 'video' && !isVideoFile) {
+          return fail(res, 'Video posts require a video file', 400);
+        }
+        if (postType === 'moment' && isVideoFile) {
+          return fail(res, 'Moment posts require an image file', 400);
+        }
+        const isVideo = isVideoFile || postType === 'video';
+        const folder = isVideo ? 'moments/videos' : 'moments/images';
+        const requestBaseUrl = `${req.protocol}://${req.get('host')}`;
+        mediaUrl = await uploadToStorage(
+          file.buffer,
+          `${folder}/${storageFilename(file.originalname)}`,
+          file.mimetype,
+          undefined,
+          requestBaseUrl,
+          isVideo
+            ? { cacheControl: '31536000', immutable: true }
+            : { resize: { maxDim: 1920, format: 'jpeg', quality: 85 } },
+        );
+      }
+
       const moment = await momentsService.create(callerId, {
-        postType: post_type,
-        mediaUrl: media_url,
+        postType,
+        mediaUrl,
         caption,
         hashtag,
       });
@@ -80,8 +110,19 @@ export const momentController = {
 
   async getComments(req: Request, res: Response, next: NextFunction) {
     try {
-      const comments = await momentsService.getComments(req.params.id);
+      const callerId = (req as any).user.id;
+      const comments = await momentsService.getComments(callerId, req.params.id);
       return ok(res, comments);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async toggleCommentLike(req: Request, res: Response, next: NextFunction) {
+    try {
+      const callerId = (req as any).user.id;
+      const result = await momentsService.toggleCommentLike(callerId, req.params.commentId);
+      return ok(res, result);
     } catch (err) {
       next(err);
     }
@@ -102,7 +143,8 @@ export const momentController = {
 
   async share(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await momentsService.share(req.params.id);
+      const callerId = (req as any).user.id;
+      const result = await momentsService.share(callerId, req.params.id);
       return ok(res, result);
     } catch (err) {
       next(err);

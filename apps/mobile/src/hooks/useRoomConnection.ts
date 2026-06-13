@@ -22,9 +22,8 @@ import Constants from 'expo-constants';
 import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
 import { roomsApi } from '@api/rooms';
-import { refreshSession } from '@api/client';
 import { logDiagnostic } from '../diagnostics/releaseDiagnostics';
-import { TokenStorage } from '../storage';
+import { getFreshSocketToken, getSocketBaseUrl } from '../utils/socketAuth';
 import { useToast } from '@components/Toast';
 import {
   type SeatInvitationPayload,
@@ -47,41 +46,6 @@ function isVolumeSpeakerActive(speaker: { volume?: number; vad?: number }): bool
   // A clear voice level is required: vad is only reported reliably for the local
   // publisher, so the volume floor is the signal we trust for every speaker.
   return (speaker.volume ?? 0) >= SPEAK_VOLUME_THRESHOLD;
-}
-
-// Access tokens expire after ~15 min. REST recovers via the 401→refresh
-// interceptor, but the socket handshake sends a static `auth.token`, so a stale
-// token makes EVERY connect attempt fail ("Invalid or expired token") and the
-// room silently loses all live events (roster, chat, gifts). Refresh proactively
-// when the stored token is missing or about to expire.
-const TOKEN_EXPIRY_MARGIN_MS = 60_000;
-
-/** Decode a JWT's `exp` (ms since epoch) without verifying — null when unreadable. */
-function decodeJwtExpMs(token: string): number | null {
-  try {
-    const payload = token.split('.')[1];
-    const json = JSON.parse(
-      atob(payload.replace(/-/g, '+').replace(/_/g, '/')),
-    ) as { exp?: number };
-    return typeof json.exp === 'number' ? json.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Stored access token, refreshed first when absent or expiring within the margin.
- *  `force` skips the local expiry check — for when the server already rejected it. */
-async function getFreshSocketToken(force = false): Promise<string | null> {
-  const stored = await TokenStorage.getAccess();
-  const expMs = stored ? decodeJwtExpMs(stored) : null;
-  if (!force && stored && expMs !== null && expMs - Date.now() > TOKEN_EXPIRY_MARGIN_MS) {
-    return stored;
-  }
-  // Missing, unreadable, or stale — rotate via the shared (deduped) refresh flow.
-  const outcome = await refreshSession({ revokeSessionOnFailure: false });
-  if (outcome.status === 'success') return outcome.accessToken;
-  logDiagnostic('socket', 'token_refresh_failed', { status: outcome.status });
-  return stored; // last resort — may still be accepted if clocks disagree
 }
 
 // Deterministic 32-bit UID from a UUID — backend fallback when Redis is unavailable.
@@ -549,8 +513,7 @@ export function useRoomConnection({
     const token = await getFreshSocketToken();
     if (!token) return;
 
-    const baseUrl = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1')
-      .replace('/api/v1', '');
+    const baseUrl = getSocketBaseUrl();
 
     const socket = ioClient(baseUrl, {
       transports: ['websocket'],
@@ -593,7 +556,7 @@ export function useRoomConnection({
     const events = [
       'user.joined', 'user.left', 'seat.updated',
       'message.sent',
-      'room.ended', 'listener.count', 'room.roster', 'gift:received',
+      'room.ended', 'listener.count', 'room.roster', 'gift:received', 'lucky.reward',
       'emoji.received',
       'seat.application.added', 'seat.application.removed', 'seat.application.resolved',
       'room:kicked', 'room.configUpdated', 'room:theme_changed',

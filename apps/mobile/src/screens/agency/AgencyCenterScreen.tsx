@@ -36,6 +36,7 @@ import { agencyApi } from "@api/agency";
 import { hostApplicationApi } from "@api/hostApplication";
 import { Colors, Radius, Spacing } from "@/theme";
 import { DetailSkeleton } from "@components/Skeleton";
+import { TagBadges } from "@components/TagBadges";
 import type {
   AgencySummary,
   AgencySummaryV2,
@@ -52,6 +53,8 @@ type Props = RootStackScreenProps<"AgencyCenter">;
 
 const TOP_TABS = ["Make Money", "Manage", "Data"] as const;
 type TopTab = (typeof TOP_TABS)[number];
+
+const SELLER_TAG_NAMES = new Set(["coin_seller", "seller", "senior_seller"]);
 
 /** Same ladder as backend seed / admin defaults — shown when API returns fewer than 2 tiers so labels (0%, 5%, …) still render. */
 const DEFAULT_GIFT_BONUS_DISPLAY_TIERS: Array<{
@@ -397,6 +400,9 @@ function commissionLadderFooterNote(
 export function AgencyCenterScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const user = useSelector((s: RootState) => s.auth.user);
+  const sellerTags = (user?.tags ?? []).filter((t) =>
+    SELLER_TAG_NAMES.has(t.name),
+  );
   const lastCommissionAt = useSelector(
     (s: RootState) => s.auth.lastCommissionAt,
   );
@@ -470,7 +476,7 @@ export function AgencyCenterScreen({ navigation }: Props) {
 
       {/* Agent profile card */}
       <View style={styles.profileCard}>
-        {/* Left: name + tier letter + coin seller badge */}
+        {/* Left: name + tier letter + seller tags */}
         <View style={styles.profileLeft}>
           <Text style={styles.profileName} numberOfLines={1}>
             {user?.displayName ?? "Agent"}
@@ -481,11 +487,9 @@ export function AgencyCenterScreen({ navigation }: Props) {
                 <Text style={styles.tierLetterText}>{summary.tier_name}</Text>
               </View>
             )}
-            <Image
-              source={require("../../../assets/agency/coin_seller_badge.png")}
-              style={styles.coinSellerBadgeImg}
-              contentFit="contain"
-            />
+            {sellerTags.length > 0 && (
+              <TagBadges tags={sellerTags} size="sm" />
+            )}
           </View>
         </View>
 
@@ -2415,10 +2419,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 45,
     color: "#000",
-  },
-  coinSellerBadgeImg: {
-    width: 89,
-    height: 26,
   },
   profileBadgeRow: {
     flexDirection: "row",

@@ -51,8 +51,11 @@ import {
 } from "../components/SeatInvitePrompt";
 import { normalizeSeatInvitationPayload } from "../utils/seatInvitePayload";
 import { getActiveRoomIdFromNavigation } from "../navigation/roomNavigation";
-import { promptIncomingVideoCallFromSocket } from "../utils/incomingVideoCall";
-import { leaveVideoCallIfActive } from "../utils/videoCall";
+import {
+  dismissIncomingCall,
+  promptIncomingVideoCallFromSocket,
+} from "../utils/incomingVideoCall";
+import { leaveCallIfActive } from "../utils/call";
 import { CALL_EVENTS } from "@haka-live/shared-types/events";
 import { queryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
@@ -355,6 +358,7 @@ export function useUserSocket(enabled: boolean) {
         (payload: {
           callerId: string;
           callerDisplayName: string;
+          callType?: "voice" | "video";
           channelId: string;
           agoraToken: string;
           appId: string;
@@ -365,6 +369,7 @@ export function useUserSocket(enabled: boolean) {
           promptIncomingVideoCallFromSocket({
             callerId: payload.callerId,
             callerDisplayName: payload.callerDisplayName ?? "Someone",
+            callType: payload.callType === "voice" ? "voice" : "video",
             channelId: payload.channelId,
             agoraToken: payload.agoraToken,
             appId: payload.appId,
@@ -374,7 +379,8 @@ export function useUserSocket(enabled: boolean) {
       );
 
       const onCallPeerSignal = (payload: { peerId?: string }) => {
-        leaveVideoCallIfActive(payload?.peerId);
+        dismissIncomingCall(payload?.peerId);
+        leaveCallIfActive(payload?.peerId);
       };
     client.on(CALL_EVENTS.DECLINED, onCallPeerSignal);
     client.on(CALL_EVENTS.ENDED, onCallPeerSignal);

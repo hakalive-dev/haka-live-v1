@@ -17,7 +17,10 @@ export const WELCOME_DM_MESSAGE =
  * which is itself guarded against re-running). No-op if the recipient is the
  * Haka Team account itself.
  */
-export async function sendWelcomeDm(userId: string): Promise<void> {
+export async function sendWelcomeDm(
+  userId: string,
+  opts?: { skipRecipientNotify?: boolean },
+): Promise<void> {
   const hakaTeamId = getHakaTeamUserId();
   if (!userId || userId === hakaTeamId) return;
 
@@ -26,6 +29,7 @@ export async function sendWelcomeDm(userId: string): Promise<void> {
     recipientId: userId,
     content: WELCOME_DM_MESSAGE,
     messageType: 'text',
+    skipRecipientNotify: opts?.skipRecipientNotify,
   });
 }
 

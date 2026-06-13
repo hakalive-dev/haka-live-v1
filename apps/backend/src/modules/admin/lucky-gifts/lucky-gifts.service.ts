@@ -2,19 +2,31 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma';
 import { AppError } from '../../../middleware/error.middleware';
 import { clearLuckySettingCache } from '../../lucky-gifts/lucky-setting';
-import { expectedReturn, totalPayoutRatio } from '../../lucky-gifts/lucky-draw';
+import {
+  averageRewardCoins,
+  averageWinMultiplier,
+  expectedReturn,
+  normalizeWinMultiplierTiers,
+  parseWinMultiplierTiersJson,
+  totalPayoutRatio,
+  type LuckyPayoutTier,
+} from '../../lucky-gifts/lucky-draw';
 import { logAdminAction } from '../../../utils/audit';
 import type { LuckyDrawsQuery, LuckySettingUpdateInput } from './lucky-gifts.validation';
 
 export interface LuckySettingDTO {
   enabled: boolean;
   winProbability: number;
+  /** Weighted average display multiplier across tiers. */
   winMultiplier: number;
+  /** Weighted average coin reward across tiers. */
+  averageRewardCoins: number;
+  winMultiplierTiers: LuckyPayoutTier[];
   receiverBenefitPercent: number;
   dailyUserWinCapCoins: string;
   updatedBy: string;
   updatedAt: string;
-  /** TRP — expected sender return (winProbability × winMultiplier). */
+  /** TRP — expected sender return (winProbability × avg reward / reference stake). */
   expectedReturn: number;
   /** Expected total payout incl. the receiver cut. Keep < 1.0 for a house edge. */
   totalPayoutRatio: number;
@@ -24,14 +36,21 @@ function toSettingDTO(row: {
   enabled: boolean;
   winProbability: unknown;
   winMultiplier: unknown;
+  winMultiplierTiers: unknown;
   receiverBenefitPercent: unknown;
   dailyUserWinCapCoins: bigint;
   updatedBy: string;
   updatedAt: Date;
 }): LuckySettingDTO {
+  const winMultiplierTiers = normalizeWinMultiplierTiers(
+    parseWinMultiplierTiersJson(row.winMultiplierTiers),
+    Number(row.winMultiplier),
+  );
   const config = {
     winProbability: Number(row.winProbability),
-    winMultiplier: Number(row.winMultiplier),
+    winMultiplierTiers,
+    winMultiplier: averageWinMultiplier(winMultiplierTiers),
+    averageRewardCoins: averageRewardCoins(winMultiplierTiers),
     receiverBenefitPercent: Number(row.receiverBenefitPercent),
   };
   return {
@@ -64,9 +83,16 @@ export async function updateSetting(
   const current = await ensureSetting();
 
   // Validate the MERGED config so a partial patch can't sneak past the house edge.
+  const mergedTiers = normalizeWinMultiplierTiers(
+    input.winMultiplierTiers ??
+      parseWinMultiplierTiersJson(current.winMultiplierTiers),
+    input.winMultiplier ?? Number(current.winMultiplier),
+  );
   const merged = {
     winProbability: input.winProbability ?? Number(current.winProbability),
-    winMultiplier: input.winMultiplier ?? Number(current.winMultiplier),
+    winMultiplierTiers: mergedTiers,
+    receiverBenefitPercent:
+      input.receiverBenefitPercent ?? Number(current.receiverBenefitPercent),
   };
   if (expectedReturn(merged) >= 1) {
     throw new AppError('expected_return_too_high', 400);
@@ -78,6 +104,9 @@ export async function updateSetting(
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       ...(input.winProbability !== undefined ? { winProbability: input.winProbability } : {}),
       ...(input.winMultiplier !== undefined ? { winMultiplier: input.winMultiplier } : {}),
+      ...(input.winMultiplierTiers !== undefined
+        ? { winMultiplierTiers: input.winMultiplierTiers }
+        : {}),
       ...(input.receiverBenefitPercent !== undefined
         ? { receiverBenefitPercent: input.receiverBenefitPercent }
         : {}),

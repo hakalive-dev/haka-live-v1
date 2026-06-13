@@ -1,18 +1,23 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Linking,
   Modal,
+  RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
+  type ViewToken,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,16 +27,36 @@ import { Colors, Radius, Spacing } from '@/theme';
 import { MomentGridSkeleton, Skeleton } from '@components/Skeleton';
 import { UserAvatar } from '@components/UserAvatar';
 import { CopyIcon } from '@components/CopyIcon';
+import { computeAgeFromBirthday } from '@/utils/age';
+import { formatMomentPostTime } from '@/utils/formatMomentTime';
+import { getGenderPillBackground, getGenderSymbol } from '@/utils/genderDisplay';
 import type { RootStackParamList } from '@navigation/types';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useSelector } from 'react-redux';
 
 import { momentsApi } from '@api/moments';
 import { queryKeys } from '@api/queryKeys';
 import { giftsApi } from '@api/gifts';
+import { chatApi } from '@api/chat';
+import { usersApi } from '@api/users';
 import { invalidateUserLevels } from '@hooks/queries/useLevelQueries';
+import { onOutboundDmSent } from '@hooks/useDMConnection';
+import { MomentVideoCard, type MomentVideoPost } from '@screens/main/MomentVideoCard';
+import { VideoFeedPlayer } from '@screens/main/VideoFeedPlayer';
+import { ErrorBoundary } from '@components/ErrorBoundary';
+import { useToast } from '@components/Toast';
+import { logDiagnostic } from '@/diagnostics/releaseDiagnostics';
+import { isPlayableVideoUrl } from '@/utils/videoUrl';
 import type { RootState } from '../../store';
-import type { MomentPost as ApiMomentPost, MomentComment as ApiComment, Gift } from '@/types';
+import type {
+  MomentPost as ApiMomentPost,
+  MomentComment as ApiComment,
+  Gift,
+  PublicUser,
+} from '@/types';
+
+const MOMENT_CAMERA_ICON = require('../../../assets/discover/moment_camera_icon.png');
+const MOMENT_CAMERA_BTN_SIZE = 60;
 
 const GIFT_CATALOG_IMAGES: Record<string, ReturnType<typeof require>> = {
   'gifts/86.png': require('../../../assets/gifts/86.png'),
@@ -98,9 +123,9 @@ type MomentPost = {
     username: string;
     displayName: string;
     avatar: string | null;
-    country_flag: string;
-    rich_level: number;
-    charm_level: number;
+    country: string;
+    gender: string;
+    age: number | null;
   };
   coverImage: string | null;
   cover_color: string;
@@ -112,25 +137,7 @@ type MomentPost = {
   gifts: number;
   live_viewers: number;   // shown in the pink badge on avatar
   default_liked: boolean; // initial liked state
-  timestamp: string;
-};
-
-type VideoPost = {
-  id: string;
-  user: {
-    displayName: string;
-    avatar: string | null;
-    country_flag: string;
-    gender: string;
-    level: number;
-  };
-  video_image: string;
-  description: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  gifts: number;
-  default_liked: boolean;
+  createdAt: string;
 };
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -149,13 +156,6 @@ const GAMES: Game[] = [
 
 const SEARCH_HISTORY  = ['#NovaVibes', '#StarLife', '#DJRhythm', '#HakaLive', '#LuckyWheel'];
 const RECOMMENDED     = ['#Trending', '#NewHosts', '#LuckyWheel', '#GiftRain', '#BattleRoyale', '#LiveMusic', '#Gaming', '#Moments'];
-const SHARE_USERS     = [
-  { id: 'u1', displayName: 'Kai Rivera'     },
-  { id: 'u2', displayName: 'Preeti Sharma'  },
-  { id: 'u3', displayName: 'Yuki Tanaka'    },
-  { id: 'u4', displayName: 'Omar Hassan'    },
-  { id: 'u5', displayName: 'Rosa Martinez'  },
-];
 const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }[] = [
   { id: 'copy',      label: 'Copy',      icon: 'copy-outline',           color: '#666666'  },
   { id: 'whatsapp',  label: 'WhatsApp',  icon: 'logo-whatsapp',          color: '#25D366'  },
@@ -163,6 +163,7 @@ const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<
   { id: 'twitter',   label: 'X',         icon: 'logo-twitter',           color: '#000000'  },
   { id: 'instagram', label: 'Instagram', icon: 'logo-instagram',         color: '#E1306C'  },
   { id: 'messenger', label: 'Messenger', icon: 'chatbubble-ellipses',    color: '#0099FF'  },
+  { id: 'more',      label: 'More apps', icon: 'share-outline',          color: '#7B4FFF'  },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -170,6 +171,49 @@ const SOCIAL_PLATFORMS: { id: string; label: string; icon: React.ComponentProps<
 function fmtCount(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
+}
+
+function MomentCameraButton({
+  size = MOMENT_CAMERA_BTN_SIZE,
+  onPress,
+  style,
+}: {
+  size?: number;
+  onPress?: () => void;
+  style?: object;
+}) {
+  const iconSize = Math.round(size * 0.4);
+  const circle = (
+    <View
+      style={[
+        styles.momentCameraCircle,
+        { width: size, height: size, borderRadius: size / 2 },
+      ]}
+    >
+      <Image
+        source={MOMENT_CAMERA_ICON}
+        style={{ width: iconSize, height: iconSize }}
+        contentFit="contain"
+      />
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity style={style} onPress={onPress} activeOpacity={0.85}>
+        {circle}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={style}>{circle}</View>;
+}
+
+function resolveAuthorAge(user: ApiMomentPost['user']): number | null {
+  const fromBirthday = computeAgeFromBirthday(user.date_of_birth);
+  if (fromBirthday != null) return fromBirthday;
+  if (typeof user.age === 'number' && user.age > 0) return user.age;
+  return null;
 }
 
 function apiToMoment(p: ApiMomentPost): MomentPost {
@@ -180,9 +224,9 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
       username: p.user.username,
       displayName: p.user.displayName,
       avatar: p.user.avatar,
-      country_flag: p.user.country ?? '',
-      rich_level: p.user.rich_level,
-      charm_level: p.user.charm_level,
+      country: p.user.country ?? '',
+      gender: p.user.gender ?? '',
+      age: resolveAuthorAge(p.user),
     },
     coverImage: p.media_url,
     cover_color: '#E0E0E0',
@@ -194,21 +238,24 @@ function apiToMoment(p: ApiMomentPost): MomentPost {
     gifts: p.gifts_count,
     live_viewers: 0,
     default_liked: p.is_liked,
-    timestamp: new Date(p.created_at).toLocaleDateString(),
+    createdAt: p.created_at,
   };
 }
 
-function apiToVideo(p: ApiMomentPost): VideoPost {
+function apiToVideo(p: ApiMomentPost): MomentVideoPost {
+  const mediaUrl = p.media_url ?? '';
   return {
     id: p.id,
     user: {
+      id: p.user.id,
       displayName: p.user.displayName,
       avatar: p.user.avatar,
       country_flag: p.user.country ?? '',
       gender: p.user.gender ?? '',
       level: p.user.rich_level,
     },
-    video_image: p.media_url ?? '',
+    video_url: mediaUrl,
+    poster_url: p.poster_url ?? (isPlayableVideoUrl(mediaUrl) ? null : mediaUrl || null),
     description: p.caption,
     likes: p.likes_count,
     comments: p.comments_count,
@@ -216,6 +263,25 @@ function apiToVideo(p: ApiMomentPost): VideoPost {
     gifts: p.gifts_count,
     default_liked: p.is_liked,
   };
+}
+
+function getMomentShareLink(postId: string) {
+  return `https://haka.live/moment/${postId}`;
+}
+
+type DiscoverCountField = 'comments' | 'shares' | 'gifts';
+
+function bumpDiscoverPostCount(
+  queryClient: QueryClient,
+  postId: string,
+  field: DiscoverCountField,
+) {
+  queryClient.setQueryData<MomentPost[]>(queryKeys.discover.moments(), (prev) =>
+    prev?.map((p) => (p.id === postId ? { ...p, [field]: p[field] + 1 } : p)),
+  );
+  queryClient.setQueryData<MomentVideoPost[]>(queryKeys.discover.videos(), (prev) =>
+    prev?.map((p) => (p.id === postId ? { ...p, [field]: p[field] + 1 } : p)),
+  );
 }
 
 // ── Game card ─────────────────────────────────────────────────────────────────
@@ -298,18 +364,22 @@ const GameCard = React.memo(function GameCard({ game, dims }: { game: Game; dims
 //   Action row:    left:10, top:461, gap:20 between items (24px icons, 14px/600/black counts)
 //   Timestamp:     right-aligned, top:466 (14px/600/black)
 
+const POST_AVATAR_SIZE = 56;
+
 const PostCard = React.memo(function PostCard({
   post,
   isVideo,
   onComment,
   onShare,
   onGift,
+  onProfilePress,
 }: {
   post: MomentPost;
   isVideo: boolean;
   onComment: () => void;
   onShare: () => void;
   onGift: () => void;
+  onProfilePress: () => void;
 }) {
   const [liked,     setLiked]     = useState(post.default_liked);
   const [likeCount, setLikeCount] = useState(post.likes);
@@ -327,46 +397,74 @@ const PostCard = React.memo(function PostCard({
     }
   }, [liked, post.id]);
 
+  const genderSymbol = getGenderSymbol(post.user.gender);
+  const countryCode = post.user.country?.trim().slice(0, 2).toLowerCase() ?? '';
+
   return (
     <View style={styles.postCard}>
 
-      {/* ── Header: avatar + user info (height 113px) ── */}
+      {/* ── Header: avatar + user info ── */}
       <View style={styles.postHeader}>
-        {/* Avatar with follow button */}
         <View style={styles.postAvatarWrap}>
-          <View style={styles.postAvatar80}>
-            <Text style={styles.postAvatarInitial}>{post.user.displayName[0]}</Text>
-          </View>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onProfilePress}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${post.user.displayName}'s profile`}
+          >
+            <UserAvatar
+              user={{
+                displayName: post.user.displayName,
+                avatar: post.user.avatar,
+                equippedFrame: null,
+              }}
+              size={POST_AVATAR_SIZE}
+              hideFrame
+            />
+          </TouchableOpacity>
           {/* Follow / + button — bottom-right of avatar */}
           <TouchableOpacity style={styles.postFollowBtn}>
-            <Ionicons name="add" size={13} color="#FFFFFF" />
+            <Ionicons name="add" size={11} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        {/* Name + level badges + live badge */}
-        <View style={styles.postUserCol}>
-          {/* Name row: display_name + flag + level badges */}
+        <TouchableOpacity
+          style={styles.postUserCol}
+          activeOpacity={0.8}
+          onPress={onProfilePress}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${post.user.displayName}'s profile`}
+        >
           <View style={styles.postNameRow}>
             <Text style={styles.postDisplayName} numberOfLines={1}>{post.user.displayName}</Text>
-            <Text style={styles.postFlag}>{post.user.country_flag}</Text>
-            {/* Rich level badge */}
-            <View style={styles.postLevelBadgeRich}>
-              <Ionicons name="diamond" size={8} color="#E8A020" />
-              <Text style={styles.postLevelBadgeRichText}>Lv.{post.user.rich_level}</Text>
-            </View>
-            {/* Charm level badge */}
-            <View style={styles.postLevelBadgeCharm}>
-              <Ionicons name="heart" size={8} color="#FF69B4" />
-              <Text style={styles.postLevelBadgeCharmText}>Lv.{post.user.charm_level}</Text>
-            </View>
+            {countryCode.length === 2 ? (
+              <View style={styles.postFlagWrap}>
+                <Image
+                  source={{ uri: `https://flagcdn.com/w80/${countryCode}.png` }}
+                  style={styles.postFlagIcon}
+                  contentFit="cover"
+                />
+              </View>
+            ) : null}
           </View>
-          {/* Pink live-viewers badge */}
-          <View style={styles.postLiveBadge}>
-            <Ionicons name="heart" size={8} color="#FFFFFF" />
-            <View style={styles.postLiveDot} />
-            <Text style={styles.postLiveCount}>{fmtCount(post.live_viewers)}</Text>
-          </View>
-        </View>
+          {(genderSymbol || (post.user.age != null && post.user.age > 0)) ? (
+            <View
+              style={[
+                styles.postGenderPill,
+                { backgroundColor: getGenderPillBackground(post.user.gender) },
+              ]}
+            >
+              {genderSymbol ? (
+                <Text style={styles.postGenderText}>{genderSymbol}</Text>
+              ) : null}
+              {post.user.age != null && post.user.age > 0 ? (
+                <Text style={styles.postGenderText}>
+                  {genderSymbol ? ` ${post.user.age}` : String(post.user.age)}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </TouchableOpacity>
       </View>
 
       {/* ── Cover image / video (height 300px) ── */}
@@ -384,11 +482,7 @@ const PostCard = React.memo(function PostCard({
           </View>
         )}
         {/* Camera / record button — video tab only, bottom-right of cover */}
-        {isVideo && (
-          <TouchableOpacity style={styles.postCameraBtn}>
-            <Ionicons name="camera" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
+        {isVideo && <MomentCameraButton style={styles.postCameraBtn} />}
       </View>
 
       {/* ── Hashtag ── */}
@@ -421,105 +515,13 @@ const PostCard = React.memo(function PostCard({
           <Text style={styles.postActionCount}>{fmtCount(post.gifts)}</Text>
         </TouchableOpacity>
         {/* Timestamp — pushed to right */}
-        <Text style={styles.postTimestamp}>{post.timestamp}</Text>
-      </View>
-
-    </View>
-  );
-});
-
-// ── Video card (full-screen TikTok-style) ────────────────────────────────────
-
-const VideoCard = React.memo(function VideoCard({
-  post,
-  height,
-  onComment,
-  onShare,
-}: {
-  post: VideoPost;
-  height: number;
-  onComment: () => void;
-  onShare: () => void;
-}) {
-  const [liked, setLiked] = useState(post.default_liked);
-  const [likeCount, setLikeCount] = useState(post.likes);
-
-  const handleLike = () => {
-    setLiked((v) => !v);
-    setLikeCount((c) => (liked ? c - 1 : c + 1));
-  };
-
-  const genderColor = post.user.gender === 'female' ? '#F9467D' : '#4DA6FF';
-
-  return (
-    <View style={[styles.videoCard, { height }]}>
-      {/* Full-screen background image */}
-      <Image
-        source={{ uri: post.video_image }}
-        style={StyleSheet.absoluteFillObject}
-        contentFit="cover"
-      />
-
-      {/* Right-side action bar */}
-      <View style={styles.videoActions}>
-        {/* Avatar + follow */}
-        <View style={styles.videoAvatarWrap}>
-          <View style={styles.videoAvatar}>
-            <Text style={styles.videoAvatarInitial}>{post.user.displayName[0]}</Text>
-          </View>
-          <View style={styles.videoFollowBtn}>
-            <Ionicons name="add" size={10} color="#FFFFFF" />
-          </View>
+        <View style={styles.postTimestampWrap}>
+          <Text style={styles.postTimestamp} numberOfLines={1}>
+            {formatMomentPostTime(post.createdAt)}
+          </Text>
         </View>
-
-        {/* Gift */}
-        <TouchableOpacity style={styles.videoActionItem}>
-          <Ionicons name="gift" size={24} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.gifts)}</Text>
-        </TouchableOpacity>
-        {/* Like */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={handleLike}>
-          <Ionicons
-            name={liked ? 'heart' : 'heart-outline'}
-            size={22}
-            color={liked ? '#FF383C' : '#FFFFFF'}
-          />
-          <Text style={styles.videoActionCount}>{fmtCount(likeCount)}</Text>
-        </TouchableOpacity>
-        {/* Comment */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={onComment}>
-          <Ionicons name="chatbubble-outline" size={22} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.comments)}</Text>
-        </TouchableOpacity>
-        {/* Share */}
-        <TouchableOpacity style={styles.videoActionItem} onPress={onShare}>
-          <Ionicons name="arrow-redo-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.videoActionCount}>{fmtCount(post.shares)}</Text>
-        </TouchableOpacity>
-        {/* More */}
-        <TouchableOpacity style={styles.videoActionItem}>
-          <Ionicons name="ellipsis-horizontal" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
       </View>
 
-      {/* Bottom-left user info + description */}
-      <View style={styles.videoBottomInfo}>
-        {/* Name row: display_name + flag + gender/level badge */}
-        <View style={styles.videoNameRow}>
-          <Text style={styles.videoDisplayName}>{post.user.displayName}</Text>
-          <Text style={styles.videoFlag}>{post.user.country_flag}</Text>
-          <View style={[styles.videoGenderBadge, { backgroundColor: genderColor }]}>
-            <Ionicons
-              name={post.user.gender === 'female' ? 'female' : 'male'}
-              size={8}
-              color="#FFFFFF"
-            />
-            <Text style={styles.videoGenderText}>.{post.user.level}</Text>
-          </View>
-        </View>
-        {/* Description */}
-        <Text style={styles.videoDescription} numberOfLines={3}>{post.description}</Text>
-      </View>
     </View>
   );
 });
@@ -581,10 +583,12 @@ function CommentsModal({
   visible,
   onClose,
   postId,
+  onCommentAdded,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
+  onCommentAdded?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [comments, setComments] = useState<ApiComment[]>([]);
@@ -603,12 +607,40 @@ function CommentsModal({
       const newComment = await momentsApi.postComment(postId, comment.trim());
       setComments((prev) => [newComment, ...prev]);
       setComment('');
+      onCommentAdded?.();
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to post comment');
     } finally {
       setSending(false);
     }
-  }, [comment, postId]);
+  }, [comment, postId, onCommentAdded]);
+
+  const handleToggleCommentLike = useCallback(async (commentId: string) => {
+    if (!postId) return;
+    setComments((prev) =>
+      prev.map((c) => {
+        if (c.id !== commentId) return c;
+        const nextLiked = !(c.is_liked ?? false);
+        return {
+          ...c,
+          is_liked: nextLiked,
+          likes_count: Math.max(0, c.likes_count + (nextLiked ? 1 : -1)),
+        };
+      }),
+    );
+    try {
+      const result = await momentsApi.toggleCommentLike(postId, commentId);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? { ...c, is_liked: result.liked, likes_count: result.likes_count }
+            : c,
+        ),
+      );
+    } catch {
+      momentsApi.getComments(postId).then(setComments).catch(() => {});
+    }
+  }, [postId]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -655,19 +687,20 @@ function CommentsModal({
                   <Text style={styles.commentDate}>{formatDate(item.created_at)}</Text>
                   <Text style={styles.commentText}>{item.text}</Text>
                 </View>
-                <View style={styles.commentActions}>
-                  <TouchableOpacity style={styles.commentActionItem}>
-                    <Ionicons
-                      name={item.likes_count > 0 ? 'heart' : 'heart-outline'}
-                      size={16}
-                      color={item.likes_count > 0 ? '#FF2D55' : '#999999'}
-                    />
+                <TouchableOpacity
+                  style={styles.commentActionItem}
+                  onPress={() => handleToggleCommentLike(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={item.is_liked ?? false ? 'heart' : 'heart-outline'}
+                    size={16}
+                    color={item.is_liked ?? false ? '#FF2D55' : '#999999'}
+                  />
+                  {item.likes_count > 0 ? (
                     <Text style={styles.commentActionCount}>{item.likes_count}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.commentActionItem}>
-                    <Ionicons name="happy-outline" size={16} color="#999999" />
-                  </TouchableOpacity>
-                </View>
+                  ) : null}
+                </TouchableOpacity>
               </View>
             )}
           />
@@ -702,20 +735,118 @@ function ShareModal({
   visible,
   onClose,
   postId,
+  onShared,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
+  onShared?: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const currentUser = useSelector((state: RootState) => state.auth.user);
+  const [friends, setFriends] = useState<PublicUser[]>([]);
+  const [shareLabel, setShareLabel] = useState('');
+  const [sharedUserIds, setSharedUserIds] = useState<Set<string>>(new Set());
+  const [loadingFriends, setLoadingFriends] = useState(false);
 
-  const handleShare = useCallback(async (platform: string) => {
+  useEffect(() => {
+    if (!visible || !postId) return;
+    setSharedUserIds(new Set());
+    setLoadingFriends(true);
+    momentsApi.get(postId)
+      .then((post) => {
+        const link = getMomentShareLink(postId);
+        const snippet = post.caption?.trim()
+          ? `"${post.caption.trim()}" by ${post.user.displayName}`
+          : `a post by ${post.user.displayName}`;
+        setShareLabel(`${snippet} on Haka Live — ${link}`);
+      })
+      .catch(() => {
+        setShareLabel(`Check this out on Haka Live: ${getMomentShareLink(postId)}`);
+      });
+
+    if (currentUser?.id) {
+      usersApi.following(currentUser.id)
+        .then((res) => setFriends(res.items))
+        .catch(() => setFriends([]))
+        .finally(() => setLoadingFriends(false));
+    } else {
+      setLoadingFriends(false);
+    }
+  }, [visible, postId, currentUser?.id]);
+
+  const recordShare = useCallback(async (platform: string) => {
     if (!postId) return;
     try {
       await momentsApi.share(postId, platform);
+      onShared?.();
     } catch { /* silent */ }
+  }, [postId, onShared]);
+
+  const handleShareToUser = useCallback(async (user: PublicUser) => {
+    if (!postId || !shareLabel) return;
+    try {
+      const sent = await chatApi.sendDM(user.id, shareLabel);
+      if (currentUser?.id) {
+        onOutboundDmSent(queryClient, sent, currentUser.id);
+      }
+      await recordShare('dm');
+      setSharedUserIds((prev) => new Set(prev).add(user.id));
+      toast.show(`Shared with ${user.displayName}`, 'success');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to share');
+    }
+  }, [postId, shareLabel, recordShare, toast, currentUser?.id, queryClient]);
+
+  const handleSocial = useCallback(async (platformId: string) => {
+    if (!postId) return;
+    const link = getMomentShareLink(postId);
+    const message = shareLabel || `Check this out on Haka Live: ${link}`;
+
+    if (platformId === 'copy') {
+      await Clipboard.setStringAsync(link);
+      await recordShare('copy');
+      toast.show('Link copied!', 'success');
+      onClose();
+      return;
+    }
+    if (platformId === 'whatsapp') {
+      Linking.openURL(`whatsapp://send?text=${encodeURIComponent(message)}`).catch(() =>
+        toast.show('WhatsApp is not installed', 'error'),
+      );
+      await recordShare('whatsapp');
+      onClose();
+      return;
+    }
+    if (platformId === 'facebook') {
+      Linking.openURL(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`);
+      await recordShare('facebook');
+      onClose();
+      return;
+    }
+    if (platformId === 'twitter') {
+      Linking.openURL(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`);
+      await recordShare('twitter');
+      onClose();
+      return;
+    }
+    if (platformId === 'instagram' || platformId === 'messenger') {
+      try {
+        await Share.share({ message });
+        await recordShare(platformId);
+      } catch { /* user cancelled */ }
+      onClose();
+      return;
+    }
+
+    try {
+      await Share.share({ message });
+      await recordShare(platformId);
+    } catch { /* user cancelled */ }
     onClose();
-  }, [postId, onClose]);
+  }, [postId, shareLabel, recordShare, toast, onClose]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -730,30 +861,41 @@ function ShareModal({
             </TouchableOpacity>
           </View>
 
-          {/* User list */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.shareUserList}
             contentContainerStyle={styles.shareUserListContent}
           >
-            {SHARE_USERS.map((u) => (
-              <View key={u.id} style={styles.shareUserItem}>
-                <View style={styles.shareUserAvatar}>
-                  <Text style={styles.shareUserInitial}>{u.displayName[0]}</Text>
+            {loadingFriends ? (
+              <Text style={styles.shareLoadingText}>Loading friends…</Text>
+            ) : friends.length === 0 ? (
+              <Text style={styles.shareLoadingText}>Follow people to share via DM</Text>
+            ) : (
+              friends.map((u) => (
+                <View key={u.id} style={styles.shareUserItem}>
+                  <UserAvatar
+                    user={{ displayName: u.displayName, avatar: u.avatar, equippedFrame: null }}
+                    size={48}
+                  />
+                  <Text style={styles.shareUserName} numberOfLines={1}>{u.displayName}</Text>
+                  <TouchableOpacity
+                    style={[styles.shareBtn, sharedUserIds.has(u.id) && styles.shareBtnDone]}
+                    onPress={() => handleShareToUser(u)}
+                    disabled={sharedUserIds.has(u.id)}
+                  >
+                    <Text style={styles.shareBtnText}>
+                      {sharedUserIds.has(u.id) ? 'Sent' : 'Share'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.shareUserName} numberOfLines={1}>{u.displayName}</Text>
-                <TouchableOpacity style={styles.shareBtn} onPress={() => handleShare('user')}>
-                  <Text style={styles.shareBtnText}>Share</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
 
-          {/* Social platforms */}
           <View style={styles.socialGrid}>
             {SOCIAL_PLATFORMS.map((p) => (
-              <TouchableOpacity key={p.id} style={styles.socialItem} onPress={() => handleShare(p.id)}>
+              <TouchableOpacity key={p.id} style={styles.socialItem} onPress={() => handleSocial(p.id)}>
                 <View style={[styles.socialIcon, { backgroundColor: p.color + '22' }]}>
                   {p.id === 'copy' ? (
                     <CopyIcon size={24} color={p.color} />
@@ -778,11 +920,13 @@ function GiftModal({
   onClose,
   postId,
   authorUserId,
+  onGiftSent,
 }: {
   visible: boolean;
   onClose: () => void;
   postId: string | null;
   authorUserId?: string | null;
+  onGiftSent?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -794,12 +938,21 @@ function GiftModal({
     giftsApi.catalogue().then(setGifts).catch(() => {});
   }, [visible]);
 
+  const isOwnPost = Boolean(
+    currentUser?.id && authorUserId && currentUser.id === authorUserId,
+  );
+
   const handleGift = useCallback(async (gift: Gift) => {
     if (!postId) return;
+    if (isOwnPost) {
+      Alert.alert('Not allowed', 'You cannot send a gift to your own post.');
+      return;
+    }
     setSending(true);
     try {
       const res = await momentsApi.sendGift(postId, gift.id);
       invalidateUserLevels(currentUser?.id, authorUserId);
+      onGiftSent?.();
       Alert.alert('Gift sent!', `You sent "${res.gift_name}"`);
       onClose();
     } catch (e: unknown) {
@@ -807,7 +960,7 @@ function GiftModal({
     } finally {
       setSending(false);
     }
-  }, [postId, onClose, currentUser?.id, authorUserId]);
+  }, [postId, onClose, onGiftSent, currentUser?.id, authorUserId, isOwnPost]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -821,6 +974,11 @@ function GiftModal({
               <Ionicons name="close" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
+          {isOwnPost ? (
+            <Text style={styles.giftOwnPostHint}>
+              You cannot send a gift to your own post.
+            </Text>
+          ) : null}
           <FlatList
             data={gifts}
             keyExtractor={(g) => g.id}
@@ -869,6 +1027,7 @@ function GiftModal({
 export function DiscoverScreen() {
   const insets  = useSafeAreaInsets();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const queryClient = useQueryClient();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const dims    = useCardDims(screenW);
 
@@ -888,16 +1047,80 @@ export function DiscoverScreen() {
     enabled: activeTab === 'moment',
     staleTime: 60_000,
   });
-  const videosQuery = useQuery({
+  const videosQuery = useInfiniteQuery({
     queryKey: queryKeys.discover.videos(),
-    queryFn: () => momentsApi.list('video').then((feed) => feed.results.map(apiToVideo)),
+    queryFn: ({ pageParam }) =>
+      momentsApi.list('video', pageParam).then((feed) => ({
+        items: feed.results.map(apiToVideo),
+        page: feed.page,
+        count: feed.count,
+        page_size: feed.page_size,
+      })),
+    initialPageParam: 1,
+    getNextPageParam: (last) => {
+      const totalPages = Math.ceil(last.count / last.page_size);
+      return last.page < totalPages ? last.page + 1 : undefined;
+    },
     enabled: activeTab === 'video',
     staleTime: 60_000,
   });
   const moments: MomentPost[] = momentsQuery.data ?? [];
-  const videos: VideoPost[] = videosQuery.data ?? [];
+  const videos: MomentVideoPost[] = useMemo(
+    () => videosQuery.data?.pages.flatMap((p) => p.items) ?? [],
+    [videosQuery.data],
+  );
   const momentLoading = moments.length === 0 && momentsQuery.isLoading;
   const videoLoading = videos.length === 0 && videosQuery.isLoading;
+  const videoError = videosQuery.isError;
+  const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+  const [videoMuted, setVideoMuted] = useState(true);
+  const [videoPaused, setVideoPaused] = useState(false);
+  const [followedUserIds, setFollowedUserIds] = useState<Set<string>>(() => new Set());
+  const [screenFocused, setScreenFocused] = useState(true);
+  const currentUserId = useSelector((s: RootState) => s.auth.user?.id ?? '');
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, []),
+  );
+
+  useEffect(() => {
+    if (activeTab === 'video') {
+      setActiveVideoIndex(0);
+      setVideoPaused(false);
+      logDiagnostic('native_note', 'video_tab_opened', { count: videos.length });
+    }
+  }, [activeTab, videos.length]);
+
+  useEffect(() => {
+    setVideoPaused(false);
+  }, [activeVideoIndex]);
+
+  const activeVideo = videos[activeVideoIndex] ?? null;
+  const videoPlaybackActive =
+    activeTab === 'video' &&
+    screenFocused &&
+    !showComments &&
+    !showShare &&
+    !showGift &&
+    !!activeVideo &&
+    isPlayableVideoUrl(activeVideo.video_url);
+
+  const loadMoreVideos = useCallback(() => {
+    if (videosQuery.hasNextPage && !videosQuery.isFetchingNextPage) {
+      void videosQuery.fetchNextPage();
+    }
+  }, [videosQuery]);
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 75 }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const first = viewableItems.find((v) => v.isViewable && v.index != null);
+      if (first?.index != null) setActiveVideoIndex(first.index);
+    },
+  ).current;
 
   const openComment = useCallback((postId: string) => {
     setActivePostId(postId);
@@ -910,15 +1133,56 @@ export function DiscoverScreen() {
   }, []);
 
   const openGift = useCallback((postId: string) => {
-    const post = moments.find((m) => m.id === postId);
+    const momentPost = moments.find((m) => m.id === postId);
+    const videoPost = videos.find((v) => v.id === postId);
     setActivePostId(postId);
-    setGiftAuthorId(post?.user.id ?? null);
+    setGiftAuthorId(momentPost?.user.id ?? videoPost?.user.id ?? null);
     setShowGift(true);
-  }, [moments]);
+  }, [moments, videos]);
 
-  // Height available for each full-screen video card (below the header)
-  const headerH = insets.top + 48; // safe area + header height
-  const videoCardH = screenH - headerH;
+  const bumpActivePostCount = useCallback(
+    (field: DiscoverCountField) => {
+      if (!activePostId) return;
+      bumpDiscoverPostCount(queryClient, activePostId, field);
+    },
+    [activePostId, queryClient],
+  );
+
+  // Full-screen TikTok-style paging (header floats over video)
+  const videoCardH = screenH;
+
+  const videoGetItemLayout = useCallback(
+    (_: unknown, index: number) => ({
+      length: videoCardH,
+      offset: videoCardH * index,
+      index,
+    }),
+    [videoCardH],
+  );
+
+  const handleVideoFollow = useCallback(
+    async (userId: string) => {
+      if (!userId || userId === currentUserId) return;
+      try {
+        await usersApi.follow(userId);
+        setFollowedUserIds((prev) => new Set(prev).add(userId));
+      } catch {
+        Alert.alert('Follow', 'Could not follow this user.');
+      }
+    },
+    [currentUserId],
+  );
+
+  const handleVideoDoubleTapLike = useCallback(
+    async (postId: string) => {
+      try {
+        await momentsApi.toggleLike(postId);
+      } catch {
+        /* MomentVideoCard rolls back optimistic UI on failure */
+      }
+    },
+    [],
+  );
 
   // Column wrapper style depends on runtime screen width
   const gameRowStyle = useMemo(
@@ -935,7 +1199,14 @@ export function DiscoverScreen() {
   ];
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, isVideo && styles.screenVideo]}>
+      {isVideo ? (
+        <LinearGradient
+          colors={['rgba(0,0,0,0.55)', 'transparent']}
+          style={[styles.videoHeaderGradient, { height: insets.top + 56 }]}
+          pointerEvents="none"
+        />
+      ) : null}
       {/* ── Header — overlays for video tab, static for others ── */}
       <View
         style={[
@@ -964,7 +1235,7 @@ export function DiscoverScreen() {
           ))}
         </View>
         <TouchableOpacity style={styles.searchBtn} onPress={() => nav.navigate('Search')}>
-          <Ionicons name="search-outline" size={22} color={isVideo ? '#000000' : Colors.textPrimary} />
+          <Ionicons name="search-outline" size={22} color={isVideo ? '#FFFFFF' : Colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -1006,53 +1277,127 @@ export function DiscoverScreen() {
               onComment={() => openComment(item.id)}
               onShare={() => openShare(item.id)}
               onGift={() => openGift(item.id)}
+              onProfilePress={() => nav.navigate('PublicProfile', { userId: item.user.id })}
             />
           )}
         />
       ))}
 
-      {/* ── Video tab (full-screen paging) ── */}
-      {activeTab === 'video' && (videoLoading ? (
-        <View style={styles.videoSkeleton}>
-          <Skeleton width="100%" height={videoCardH} borderRadius={0} />
-        </View>
-      ) : (
-        <FlatList
-          data={videos}
-          keyExtractor={(p) => p.id}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={videoCardH}
-          decelerationRate="fast"
-          maxToRenderPerBatch={8}
-          windowSize={7}
-          removeClippedSubviews
-          renderItem={({ item }) => (
-            <VideoCard
-              post={item}
-              height={videoCardH}
-              onComment={() => openComment(item.id)}
-              onShare={() => openShare(item.id)}
-            />
+      {/* ── Video tab (full-screen TikTok-style paging) ── */}
+      {activeTab === 'video' && (
+        <ErrorBoundary>
+          {videoLoading ? (
+            <View style={styles.videoSkeleton}>
+              <Skeleton width="100%" height={videoCardH} borderRadius={0} />
+            </View>
+          ) : videoError ? (
+            <View style={styles.videoEmpty}>
+              <Ionicons name="cloud-offline-outline" size={48} color={Colors.textTertiary} />
+              <Text style={styles.videoEmptyTitle}>Could not load videos</Text>
+              <Text style={styles.videoEmptyBody}>Check your connection and try again.</Text>
+              <TouchableOpacity
+                style={styles.videoEmptyBtn}
+                onPress={() => void videosQuery.refetch()}
+              >
+                <Text style={styles.videoEmptyBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : videos.length === 0 ? (
+            <View style={styles.videoEmpty}>
+              <Ionicons name="videocam-outline" size={48} color={Colors.textTertiary} />
+              <Text style={styles.videoEmptyTitle}>No videos yet</Text>
+              <Text style={styles.videoEmptyBody}>Be the first to share a short video.</Text>
+              <TouchableOpacity
+                style={styles.videoEmptyBtn}
+                onPress={() => nav.navigate('CreateMoment', { postType: 'video' })}
+              >
+                <Text style={styles.videoEmptyBtnText}>Create video</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.videoFeedWrap}>
+              {activeVideo ? (
+                <View style={styles.videoPlayerLayer} pointerEvents="box-none">
+                  <VideoFeedPlayer
+                    uri={activeVideo.video_url}
+                    poster={activeVideo.poster_url}
+                    isActive={videoPlaybackActive}
+                    paused={videoPaused}
+                    muted={videoMuted}
+                    height={videoCardH}
+                    onToggleMute={() => setVideoMuted((m) => !m)}
+                  />
+                </View>
+              ) : null}
+              <FlatList
+                data={videos}
+                keyExtractor={(p) => p.id}
+                pagingEnabled
+                showsVerticalScrollIndicator={false}
+                snapToInterval={videoCardH}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                getItemLayout={videoGetItemLayout}
+                initialNumToRender={1}
+                maxToRenderPerBatch={2}
+                windowSize={3}
+                removeClippedSubviews={false}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                onEndReached={loadMoreVideos}
+                onEndReachedThreshold={0.6}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={videosQuery.isRefetching && !videosQuery.isFetchingNextPage}
+                    onRefresh={() => void videosQuery.refetch()}
+                    tintColor="#FFFFFF"
+                  />
+                }
+                style={styles.videoList}
+                renderItem={({ item, index }) => (
+                  <MomentVideoCard
+                    post={item}
+                    height={videoCardH}
+                    isActive={index === activeVideoIndex}
+                    showPoster={index !== activeVideoIndex}
+                    onComment={() => openComment(item.id)}
+                    onShare={() => openShare(item.id)}
+                    onGift={() => openGift(item.id)}
+                    onProfilePress={() => nav.navigate('PublicProfile', { userId: item.user.id })}
+                    onFollowPress={() => void handleVideoFollow(item.user.id)}
+                    isFollowing={followedUserIds.has(item.user.id)}
+                    onDoubleTapLike={() => void handleVideoDoubleTapLike(item.id)}
+                    onTogglePause={() => setVideoPaused((p) => !p)}
+                  />
+                )}
+              />
+            </View>
           )}
-        />
-      ))}
+        </ErrorBoundary>
+      )}
 
       {/* ── FAB — visible on Moment and Video tabs ── */}
       {(activeTab === 'moment' || activeTab === 'video') && (
-        <TouchableOpacity
+        <MomentCameraButton
           style={[styles.fab, { bottom: insets.bottom + 70 }]}
           onPress={() => nav.navigate('CreateMoment', { postType: activeTab as 'moment' | 'video' })}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
+        />
       )}
 
       {/* ── Overlays ── */}
       <SearchModal   visible={showSearch}   onClose={() => setShowSearch(false)}   />
-      <CommentsModal visible={showComments} onClose={() => setShowComments(false)} postId={activePostId} />
-      <ShareModal    visible={showShare}    onClose={() => setShowShare(false)}    postId={activePostId} />
+      <CommentsModal
+        visible={showComments}
+        onClose={() => setShowComments(false)}
+        postId={activePostId}
+        onCommentAdded={() => bumpActivePostCount('comments')}
+      />
+      <ShareModal
+        visible={showShare}
+        onClose={() => setShowShare(false)}
+        postId={activePostId}
+        onShared={() => bumpActivePostCount('shares')}
+      />
       <GiftModal
         visible={showGift}
         onClose={() => {
@@ -1061,6 +1406,7 @@ export function DiscoverScreen() {
         }}
         postId={activePostId}
         authorUserId={giftAuthorId}
+        onGiftSent={() => bumpActivePostCount('gifts')}
       />
     </View>
   );
@@ -1070,6 +1416,14 @@ export function DiscoverScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
+  screenVideo: { backgroundColor: '#000000' },
+  videoHeaderGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9,
+  },
 
   // ── Header / tabs ──────────────────────────────────────────────────────────
   header: {
@@ -1082,13 +1436,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     zIndex: 10,
   },
-  // When video tab is active, header floats over the video
+  // When video tab is active, header floats over the video (immersive)
   headerOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     borderBottomWidth: 0,
     zIndex: 10,
   },
@@ -1109,13 +1463,13 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#5F22D9',
   },
-  // Video tab: dark text on white overlay header
+  // Video tab: light text on video overlay header
   tabTextVideo: {
-    color: 'rgba(0,0,0,0.7)',
+    color: 'rgba(255,255,255,0.75)',
   },
   tabTextVideoActive: {
     fontWeight: '600',
-    color: '#000000',
+    color: '#FFFFFF',
   },
   tabUnderline: {
     position: 'absolute',
@@ -1127,7 +1481,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.full,
   },
   tabUnderlineVideo: {
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
   },
   searchBtn: {
     padding: Spacing.xs,
@@ -1180,124 +1534,78 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 0,
     overflow: 'hidden',
   },
-  // Header section (height:113): avatar left:10 top:18, user info to the right
+  // Header section: avatar left:10 top:18, user info to the right
   postHeader: {
-    height: 113,
+    height: 90,
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingLeft: 10,
     paddingTop: 18,
-    gap: 19,
+    gap: 12,
   },
-  // Avatar container (80×80) — relative so follow button can be absolute inside
+  // Avatar container — relative so follow button can be absolute inside
   postAvatarWrap: {
-    width: 80,
-    height: 80,
+    width: POST_AVATAR_SIZE,
+    height: POST_AVATAR_SIZE,
   },
-  postAvatar80: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  postAvatarInitial: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-  },
-  // Follow button: 20×20, purple #5F22D9, white border, bottom-right of avatar
+  // Follow button: purple #5F22D9, white border, bottom-right of avatar
   postFollowBtn: {
     position: 'absolute',
-    bottom: 2,
+    bottom: 1,
     right: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#5F22D9',
     borderWidth: 1,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // User info column: paddingTop:20 so name aligns at top:38 from card (18+20=38)
+  // User info column: paddingTop aligns name beside avatar
   postUserCol: {
     flex: 1,
-    paddingTop: 20,
-    gap: 6,
+    paddingTop: 8,
+    gap: 4,
   },
   postNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  // Name: 16px/600/black (Figma: weight:600, color:#000000)
+  // Name: 14px/600/black
   postDisplayName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#000000',
-    lineHeight: 24,
+    lineHeight: 20,
     flexShrink: 1,
   },
-  postFlag: {
-    fontSize: 16,
+  postFlagWrap: {
+    width: 22,
+    height: 15,
+    borderRadius: 2,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
-  // Rich level badge: gold pill
-  postLevelBadgeRich: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8A02018',
-    borderRadius: Radius.full,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    gap: 2,
+  postFlagIcon: {
+    width: '100%',
+    height: '100%',
   },
-  postLevelBadgeRichText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#E8A020',
-  },
-  // Charm level badge: pink pill
-  postLevelBadgeCharm: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF69B418',
-    borderRadius: Radius.full,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    gap: 2,
-  },
-  postLevelBadgeCharmText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#FF69B4',
-  },
-  // Live badge: pink #F9467D pill, height:13, borderRadius:10
-  postLiveBadge: {
+  postGenderPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#F9467D',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    gap: 3,
-    height: 13,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minHeight: 18,
   },
-  // White dot inside live badge
-  postLiveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  postLiveCount: {
+  postGenderText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '600',
-    lineHeight: 11,
   },
   // Cover: full card width, height:300
   postCover: {
@@ -1315,15 +1623,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Camera button: bottom-right of cover, 60×60, rgba(223,223,223,0.5) (video tab)
+  // Camera button: bottom-right of cover, 60×60 (video tab)
   postCameraBtn: {
     position: 'absolute',
     bottom: 15,
     right: 15,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(223,223,223,0.5)',
+  },
+  momentCameraCircle: {
+    backgroundColor: 'rgba(58, 58, 58, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1358,9 +1665,13 @@ const styles = StyleSheet.create({
     color: '#000000',
     lineHeight: 21,
   },
+  postTimestampWrap: {
+    marginLeft: 'auto',
+    flexShrink: 0,
+    maxWidth: '42%',
+  },
   // Timestamp: right-aligned, 14px/600/black
   postTimestamp: {
-    flex: 1,
     textAlign: 'right',
     fontSize: 14,
     fontWeight: '600',
@@ -1524,15 +1835,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 2,
   },
-  commentActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingTop: 4,
-  },
   commentActionItem: {
     alignItems: 'center',
     gap: 2,
+    paddingTop: 4,
   },
   commentActionCount: {
     color: '#999999',
@@ -1613,6 +1919,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
+  },
+  shareBtnDone: {
+    backgroundColor: Colors.textTertiary,
+  },
+  shareLoadingText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   socialGrid: {
     flexDirection: 'row',
@@ -1735,21 +2050,58 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
+    zIndex: 20,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.28,
     shadowRadius: 8,
     elevation: 8,
-    zIndex: 20,
   },
   videoSkeleton: {
     flex: 1,
+  },
+  videoFeedWrap: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  videoPlayerLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  videoList: {
+    flex: 1,
+    zIndex: 1,
+    backgroundColor: 'transparent',
+  },
+  videoEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.md,
+  },
+  videoEmptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  videoEmptyBody: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  videoEmptyBtn: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.lg,
+  },
+  videoEmptyBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 
   // ── Gift modal ─────────────────────────────────────────────────────────────
@@ -1784,6 +2136,13 @@ const styles = StyleSheet.create({
   },
 
   // ── Empty states ───────────────────────────────────────────────────────────
+  giftOwnPostHint: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
   emptyComments: {
     textAlign: 'center',
     color: Colors.textTertiary,

@@ -2,7 +2,8 @@
  * Moments module tests
  * Tests: GET /, POST /, GET /user/:userId, GET /:id,
  *        DELETE /:id, POST /:id/like, GET /:id/comments,
- *        POST /:id/comments, POST /:id/share, POST /:id/gift
+ *        POST /:id/comments, POST /:id/comments/:commentId/like,
+ *        POST /:id/share, POST /:id/gift
  *
  * Prisma is mocked — no real database needed.
  */
@@ -13,6 +14,13 @@ jest.mock('../../config/firebase', () => ({
   firebaseAdmin: {
     auth: () => ({ verifyIdToken: jest.fn() }),
   },
+}));
+
+jest.mock('./moments-notify.service', () => ({
+  notifyMomentLiked: jest.fn().mockResolvedValue(undefined),
+  notifyMomentCommented: jest.fn().mockResolvedValue(undefined),
+  notifyMomentShared: jest.fn().mockResolvedValue(undefined),
+  notifyMomentGifted: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../config/prisma', () => ({
@@ -33,7 +41,15 @@ jest.mock('../../config/prisma', () => ({
     },
     momentComment: {
       findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
+      update: jest.fn(),
+    },
+    momentCommentLike: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
     },
     gift: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -61,6 +77,12 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import app from '../../app';
 import { prisma } from '../../config/prisma';
+import {
+  notifyMomentCommented,
+  notifyMomentGifted,
+  notifyMomentLiked,
+  notifyMomentShared,
+} from './moments-notify.service';
 
 const JWT_SECRET = 'test-jwt-access-secret-at-least-16';
 const USER_ID = 'user-moments-1';
@@ -78,8 +100,12 @@ const mockMomentLike = prisma.momentLike as unknown as {
   findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock;
 };
 const mockMomentComment = prisma.momentComment as unknown as {
-  findMany: jest.Mock; create: jest.Mock;
+  findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock;
 };
+const mockMomentCommentLike = prisma.momentCommentLike as unknown as {
+  findMany: jest.Mock; findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock;
+};
+const COMMENT_ID = 'comment-uuid-1';
 const mockGift = prisma.gift as unknown as { findUnique: jest.Mock };
 const mockWallet = prisma.wallet as unknown as { findUnique: jest.Mock };
 const mockTransaction = prisma as unknown as { $transaction: jest.Mock };
@@ -89,6 +115,7 @@ const fakeMoment = {
   userId: USER_ID,
   postType: 'moment',
   mediaUrl: 'https://example.com/photo.jpg',
+  posterUrl: null,
   caption: 'Hello world',
   hashtag: '#haka',
   likesCount: 0,
@@ -162,7 +189,12 @@ describe('POST /api/v1/moments', () => {
     const res = await request(app)
       .post('/api/v1/moments')
       .set('Authorization', `Bearer ${makeToken()}`)
-      .send({ post_type: 'moment', caption: 'Hello world', hashtag: '#haka' });
+      .send({
+        post_type: 'moment',
+        media_url: 'https://example.com/photo.jpg',
+        caption: 'Hello world',
+        hashtag: '#haka',
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.data.id).toBe(MOMENT_ID);
@@ -262,6 +294,7 @@ describe('POST /api/v1/moments/:id/like', () => {
   });
 
   it('likes a moment (was not liked)', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: USER_ID, postType: 'moment' });
     mockMomentLike.findUnique.mockResolvedValue(null);
     mockMomentLike.create.mockResolvedValue({});
     mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 1 });
@@ -275,7 +308,26 @@ describe('POST /api/v1/moments/:id/like', () => {
     expect(res.body.data.likes_count).toBe(1);
   });
 
+  it('notifies the author when another user likes', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'video' });
+    mockMomentLike.findUnique.mockResolvedValue(null);
+    mockMomentLike.create.mockResolvedValue({});
+    mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 1 });
+
+    await request(app)
+      .post(`/api/v1/moments/${MOMENT_ID}/like`)
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(notifyMomentLiked).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'video',
+    );
+  });
+
   it('unlikes a moment (was liked)', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: USER_ID, postType: 'moment' });
     mockMomentLike.findUnique.mockResolvedValue({ momentId: MOMENT_ID, userId: USER_ID });
     mockMomentLike.delete.mockResolvedValue({});
     mockMoment.update.mockResolvedValue({ ...fakeMoment, likesCount: 0 });
@@ -300,7 +352,7 @@ describe('GET /api/v1/moments/:id/comments', () => {
   it('returns comments for a moment', async () => {
     mockMomentComment.findMany.mockResolvedValue([
       {
-        id: 'comment-1',
+        id: COMMENT_ID,
         momentId: MOMENT_ID,
         userId: USER_ID,
         text: 'Great post!',
@@ -309,6 +361,7 @@ describe('GET /api/v1/moments/:id/comments', () => {
         user: fakeMoment.user,
       },
     ]);
+    mockMomentCommentLike.findMany.mockResolvedValue([]);
 
     const res = await request(app)
       .get(`/api/v1/moments/${MOMENT_ID}/comments`)
@@ -317,6 +370,7 @@ describe('GET /api/v1/moments/:id/comments', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].text).toBe('Great post!');
+    expect(res.body.data[0].is_liked).toBe(false);
   });
 });
 
@@ -331,6 +385,7 @@ describe('POST /api/v1/moments/:id/comments', () => {
   });
 
   it('posts a comment', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'moment' });
     mockMomentComment.create.mockResolvedValue({
       id: 'comment-new',
       text: 'Nice!',
@@ -347,6 +402,13 @@ describe('POST /api/v1/moments/:id/comments', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.text).toBe('Nice!');
+    expect(notifyMomentCommented).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+      'Nice!',
+    );
   });
 
   it('rejects empty comment text', async () => {
@@ -359,6 +421,58 @@ describe('POST /api/v1/moments/:id/comments', () => {
   });
 });
 
+describe('POST /api/v1/moments/:id/comments/:commentId/like', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 401 without auth token', async () => {
+    const res = await request(app).post(
+      `/api/v1/moments/${MOMENT_ID}/comments/${COMMENT_ID}/like`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('likes a comment (was not liked)', async () => {
+    mockMomentComment.findUnique.mockResolvedValue({
+      id: COMMENT_ID,
+      momentId: MOMENT_ID,
+      likesCount: 0,
+    });
+    mockMomentCommentLike.findUnique.mockResolvedValue(null);
+    mockMomentCommentLike.create.mockResolvedValue({});
+    mockMomentComment.update.mockResolvedValue({ likesCount: 1 });
+
+    const res = await request(app)
+      .post(`/api/v1/moments/${MOMENT_ID}/comments/${COMMENT_ID}/like`)
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.liked).toBe(true);
+    expect(res.body.data.likes_count).toBe(1);
+  });
+
+  it('unlikes a comment (was liked)', async () => {
+    mockMomentComment.findUnique.mockResolvedValue({
+      id: COMMENT_ID,
+      momentId: MOMENT_ID,
+      likesCount: 1,
+    });
+    mockMomentCommentLike.findUnique.mockResolvedValue({
+      commentId: COMMENT_ID,
+      userId: USER_ID,
+    });
+    mockMomentCommentLike.delete.mockResolvedValue({});
+    mockMomentComment.update.mockResolvedValue({ likesCount: 0 });
+
+    const res = await request(app)
+      .post(`/api/v1/moments/${MOMENT_ID}/comments/${COMMENT_ID}/like`)
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.liked).toBe(false);
+    expect(res.body.data.likes_count).toBe(0);
+  });
+});
+
 describe('POST /api/v1/moments/:id/share', () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -368,6 +482,7 @@ describe('POST /api/v1/moments/:id/share', () => {
   });
 
   it('increments share count', async () => {
+    mockMoment.findUnique.mockResolvedValue({ userId: 'author-id', postType: 'moment' });
     mockMoment.update.mockResolvedValue({ ...fakeMoment, sharesCount: 1 });
 
     const res = await request(app)
@@ -376,6 +491,12 @@ describe('POST /api/v1/moments/:id/share', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.shares_count).toBe(1);
+    expect(notifyMomentShared).toHaveBeenCalledWith(
+      'author-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+    );
   });
 });
 
@@ -429,7 +550,19 @@ describe('POST /api/v1/moments/:id/gift', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects gifting your own post', async () => {
+    mockMoment.findUnique.mockResolvedValue(fakeMoment);
+
+    const res = await request(app)
+      .post(`/api/v1/moments/${MOMENT_ID}/gift`)
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ gift_id: 'gift-1' });
+
+    expect(res.status).toBe(400);
+  });
+
   it('sends a gift successfully', async () => {
+    mockMoment.findUnique.mockResolvedValue({ ...fakeMoment, userId: 'other-user-id' });
     mockGift.findUnique.mockResolvedValue({ id: 'gift-1', name: 'Rose', coinCost: 50 });
     mockWallet.findUnique.mockResolvedValue({ id: 'wallet-1', coinBalance: 200 });
     mockMoment.update.mockResolvedValue({ ...fakeMoment, giftsCount: 1 });
@@ -442,5 +575,12 @@ describe('POST /api/v1/moments/:id/gift', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.gift_name).toBe('Rose');
     expect(res.body.data.coin_cost).toBe(50);
+    expect(notifyMomentGifted).toHaveBeenCalledWith(
+      'other-user-id',
+      USER_ID,
+      MOMENT_ID,
+      'moment',
+      'Rose',
+    );
   });
 });

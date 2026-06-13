@@ -43,6 +43,14 @@ export const momentsApi = {
     return res.data;
   },
 
+  async toggleCommentLike(
+    momentId: string,
+    commentId: string,
+  ): Promise<{ liked: boolean; likes_count: number }> {
+    const res = await apiClient.post(`/moments/${momentId}/comments/${commentId}/like`);
+    return res.data;
+  },
+
   async share(id: string, platform = ''): Promise<{ shares_count: number }> {
     const res = await apiClient.post(`/moments/${id}/share`, { platform });
     return res.data;

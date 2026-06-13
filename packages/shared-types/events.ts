@@ -40,3 +40,6 @@ export const CALL_EVENTS = {
 } as const;
 
 export type CallEvent = typeof CALL_EVENTS[keyof typeof CALL_EVENTS];
+
+/** 1:1 DM call mode — voice-only or video (default). */
+export type CallType = 'voice' | 'video';

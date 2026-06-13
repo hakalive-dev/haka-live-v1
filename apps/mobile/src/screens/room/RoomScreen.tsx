@@ -54,8 +54,11 @@ import { Colors, Radius, Spacing } from "@/theme";
 import { DetailSkeleton } from "@components/Skeleton";
 import { useToast } from "@components/Toast";
 import { CopyableId } from "@components/CopyableId";
-import { UserAvatar } from "@components/UserAvatar";
-import { frameAvatarSizeFromHole } from "@components/AvatarFrameRing";
+import { AVATAR_RING_SCALE, UserAvatar } from "@components/UserAvatar";
+import {
+  frameAvatarSizeFromHole,
+  frameOuterSizeFromScale,
+} from "@components/AvatarFrameRing";
 import { SpeakingSeatGlow } from "@components/SpeakingSeatGlow";
 import { MicTimeTicker } from "@components/room/MicTimeTicker";
 import { UserIdBadge } from "@components/UserIdBadge";
@@ -66,13 +69,14 @@ import { UsernameRoleBadges } from "@components/RoomRoleBadges";
 import { canKickRoomMember, formatRoomKickBanMessage } from "@/utils/roomKick";
 import { bootstrapRoomMusicFromLibrary } from "@/utils/roomMusicBootstrap";
 import { normalizeSeatInvitationPayload } from "@/utils/seatInvitePayload";
+import { resolveDmGiftBubbleSource } from "@/utils/resolveGiftIconSource";
 import {
-  isBagGiftCategory,
   isLuckyGiftCategory,
   mergeGiftEffectQueueSorted,
   normalizeGiftCoinCost,
   type GiftSpecialEffect,
 } from "@components/gifts/GiftEffectOverlay";
+import { MAX_GIFT_SEND_QTY } from "@haka-live/shared-types/gifts";
 import { GiftPanel } from "./GiftPanel";
 import { preloadRemoteSvgaAssets } from "./SVGAGiftEffect";
 import { useRoomSession } from "@/room/RoomSessionProvider";
@@ -84,7 +88,8 @@ import { RoomShareOverlay } from "./RoomShareOverlay";
 import { RoomPlayOverlay } from "./RoomPlayOverlay";
 import { PhotoShareOverlay } from "./PhotoShareOverlay";
 import { PhotoViewerModal } from "./PhotoViewerModal";
-import { RICH, CHARM, getLevelColor } from "@screens/level/LevelScreen";
+import { CharmLevelBadge } from "@components/CharmLevelBadge";
+import { RichLevelBadge } from "@components/RichLevelBadge";
 import PkIcon from "../../../assets/room-toolbar/pk.svg";
 import AppsIcon from "../../../assets/room-toolbar/apps.svg";
 import GameIcon from "../../../assets/room-toolbar/game.svg";
@@ -99,10 +104,10 @@ import SofaIcon from "../../../assets/seat-menu/sofa-outline.svg";
 import LockIcon from "../../../assets/seat-menu/lock.svg";
 import MicOffIcon from "../../../assets/seat-menu/microphone-off.svg";
 import MicOnIcon from "../../../assets/seat-menu/microphone-on.svg";
-import Svg, { Circle } from "react-native-svg";
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { RoomPKOverlay, CalculatorOverlay } from "./RoomGameOverlays";
 import { usePKBattle } from "@hooks/usePKBattle";
+import { useGiftSound } from "@hooks/useGiftSound";
+import { triggerLuckyWinVibration } from "@/services/haptics";
 import { pkApi } from "@api/pk";
 import { PKBattleOverlay } from "./components/PKBattleOverlay";
 import { PKInviteModal } from "./components/PKInviteModal";
@@ -121,9 +126,12 @@ import { InboxOverlay } from "./InboxOverlay";
 import { CalculatorResultModal } from "./components/CalculatorResultModal";
 import { CalculatorContributorsModal } from "./components/CalculatorContributorsModal";
 import { GiftNoticeRow } from "./GiftNoticeRow";
+import { LuckyWinNoticeRow } from "./LuckyWinNoticeRow";
+import { LuckyWinPopup, type LuckyWinPopupItem } from "./LuckyWinPopup";
 import { GiftToastStack, type GiftToastItem } from "./GiftToast";
 import { SpecialGiftEffect } from "./SpecialGiftEffect";
 import { SVGAGiftEffect, preloadSvgaAssets } from "./SVGAGiftEffect";
+import { ComboTapButton, preloadComboButtonSvga } from "./ComboTapButton";
 import { EntryEffectOverlay } from "./EntryEffectOverlay";
 import { SeatSvgaEffect } from "./SeatSvgaEffect";
 import {
@@ -180,6 +188,35 @@ type PendingGiftFlush = {
 };
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const COMBO_BTN_HALF = 41;
+const COMBO_BOTTOM_OFFSET = 70;
+const COMBO_TIMEOUT = 5000;
+const GIFT_QTY_LIMIT_TITLE = "Gift limit reached";
+const giftQtyLimitMessage = () =>
+  `You can send up to ${MAX_GIFT_SEND_QTY.toLocaleString()} gifts per batch. Slow down combo taps or pick a smaller quantity.`;
+
+function isGiftQtyValidationError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("qty") ||
+    m.includes("quantity") ||
+    m.includes("validation failed")
+  );
+}
+
+function giftSendErrorAlert(error: unknown): void {
+  const raw = formatApiError(error);
+  if (isGiftQtyValidationError(raw)) {
+    Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+    return;
+  }
+  Alert.alert("Could not send gift", raw, [{ text: "OK" }]);
+}
+
+/** Must match `styles.giftToastAnchor.height`. */
+const GIFT_TOAST_ANCHOR_HEIGHT = 200;
+/** Distance from screen bottom to gift-toast row (higher % = row sits higher). */
+const GIFT_TOAST_ANCHOR_BOTTOM = "32%";
 
 // Responsive toolbar button size — shrinks on narrow phones so all icons fit
 const TOOLBAR_BTN_SIZE = SCREEN_WIDTH < 390 ? 30 : 34;
@@ -326,6 +363,44 @@ export function RoomScreen({ route, navigation }: Props) {
   } | null>(null);
   const [coinBalance, setCoinBalance] = useState(0);
   const coinBalanceRef = useRef(0);
+  const shownLuckyDrawIdsRef = useRef<Set<string>>(new Set());
+  const vibratedLuckyDrawIdsRef = useRef<Set<string>>(new Set());
+  type PendingLuckyChatWin = {
+    drawId: string;
+    rewardCoins: number;
+    giftName: string;
+    giftIcon: string;
+    giftImageFallback?: string | null;
+    sender: import("@/types").RoomUser;
+  };
+  const pendingSelfLuckyChatRef = useRef<PendingLuckyChatWin[]>([]);
+  const remoteLuckyChatBuffersRef = useRef<
+    Map<
+      string,
+      {
+        wins: PendingLuckyChatWin[];
+        sendMultiplier?: number;
+        timer?: ReturnType<typeof setTimeout>;
+      }
+    >
+  >(new Map());
+  type RemoteGiftComboBuffer = {
+    comboKey: string;
+    senderName: string;
+    senderAvatar: string | null;
+    recipientName: string;
+    giftIcon: string;
+    giftImage: string | null;
+    giftName: string;
+    comboCount: number;
+    sender: import("@/types").RoomUser;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+  const remoteGiftComboBuffersRef = useRef<
+    Map<string, RemoteGiftComboBuffer>
+  >(new Map());
+  const selfGiftNoticesFlushedRef = useRef(false);
+  const selfComboSendMultiplierRef = useRef<number | null>(null);
   const giftSvgaPreloadStartedRef = useRef(false);
   const recentGiftEventIdsRef = useRef<Map<string, number> | null>(null);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -333,11 +408,74 @@ export function RoomScreen({ route, navigation }: Props) {
   const [seatEmojis, setSeatEmojis] = useState<
     Record<number, { key: string; animKey: number }>
   >({});
+  const screenRootRef = useRef<View | null>(null);
   const seatRefs = useRef<Record<number, View | null>>({});
-  const [rtcUidByUserId, setRtcUidByUserId] = useState<Record<string, number>>({});
+  const seatAvatarRefs = useRef<Record<number, View | null>>({});
+  const comboButtonOriginRef = useRef<View | null>(null);
+  /** Invisible fallback at the combo-button slot before the real combo button mounts. */
+  const giftFlyOriginFallbackRef = useRef<View | null>(null);
   const [flyingGifts, setFlyingGifts] = useState<
-    { id: string; icon: string; image: string | null; targetPosition: number }[]
+    {
+      id: string;
+      icon: string;
+      image: string | null;
+      targetPosition: number;
+      originX: number;
+      originY: number;
+    }[]
   >([]);
+  const comboOriginFallback = useMemo(
+    () => ({
+      x: SCREEN_WIDTH / 2,
+      y: SCREEN_HEIGHT - (insets.bottom + COMBO_BOTTOM_OFFSET + COMBO_BTN_HALF),
+    }),
+    [insets.bottom],
+  );
+  const enqueueFlyingGift = useCallback(
+    (gift: Gift, seatPosition: number) => {
+      const flyId = `fly-${Date.now()}-${Math.random()}`;
+      const push = (originX: number, originY: number) => {
+        console.log("[giftfly] enqueue", {
+          category: gift.category,
+          originX: Math.round(originX),
+          originY: Math.round(originY),
+          screenCenterX: Math.round(SCREEN_WIDTH / 2),
+          screenCenterY: Math.round(SCREEN_HEIGHT / 2),
+          screenH: Math.round(SCREEN_HEIGHT),
+        });
+        setFlyingGifts((prev) => [
+          ...prev,
+          {
+            id: flyId,
+            icon: gift.icon,
+            image: gift.image,
+            targetPosition: seatPosition,
+            originX,
+            originY,
+          },
+        ]);
+      };
+      const node = comboButtonOriginRef.current ?? giftFlyOriginFallbackRef.current;
+      console.log("[giftfly] node source", {
+        hasComboBtn: !!comboButtonOriginRef.current,
+        hasFallback: !!giftFlyOriginFallbackRef.current,
+      });
+      if (!node) {
+        push(comboOriginFallback.x, comboOriginFallback.y);
+        return;
+      }
+      node.measureInWindow((x, y, w, h) => {
+        console.log("[giftfly] measured", { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
+        if (w > 0 && h > 0) {
+          push(x + w / 2, y + h / 2);
+        } else {
+          push(comboOriginFallback.x, comboOriginFallback.y);
+        }
+      });
+    },
+    [comboOriginFallback],
+  );
+  const [rtcUidByUserId, setRtcUidByUserId] = useState<Record<string, number>>({});
   const [comboState, setComboState] = useState<{
     gift: Gift;
     recipient: { id: string; displayName: string };
@@ -345,6 +483,8 @@ export function RoomScreen({ route, navigation }: Props) {
     count: number;
     step: number;
   } | null>(null);
+  const comboStateRef = useRef(comboState);
+  comboStateRef.current = comboState;
   const comboTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const comboFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFlushRef = useRef<{
@@ -357,7 +497,6 @@ export function RoomScreen({ route, navigation }: Props) {
   const dismissComboRef = useRef<() => void>(() => {});
   /** Serializes POST /gifts/send so rapid combo + send-to-all never race the wallet. */
   const giftSendTailRef = useRef(Promise.resolve());
-  const comboProgress = useRef(new Animated.Value(1)).current;
   const comboScale = useRef(new Animated.Value(0)).current;
 
   // Auto-dismiss the join confirmation toast.
@@ -385,6 +524,8 @@ export function RoomScreen({ route, navigation }: Props) {
     [],
   );
   const specialEffect = specialEffectQueue[0] ?? null;
+  // Bumped on every combo tap to restart the combo-button SVGA from frame 0.
+  const [comboBtnRestartNonce, setComboBtnRestartNonce] = useState(0);
   const advanceGiftEffectQueue = useCallback(() => {
     setSpecialEffectQueue((prev) => (prev.length > 0 ? prev.slice(1) : prev));
   }, []);
@@ -398,6 +539,10 @@ export function RoomScreen({ route, navigation }: Props) {
     setEntryEffectQueue((prev) => (prev.length > 0 ? prev.slice(1) : prev));
   }, []);
   const [giftToasts, setGiftToasts] = useState<GiftToastItem[]>([]);
+  const [luckyWinPopup, setLuckyWinPopup] = useState<LuckyWinPopupItem | null>(
+    null,
+  );
+  const luckyWinPopupBumpRef = useRef(0);
   const dismissGiftToast = useCallback((id: string) => {
     setGiftToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -405,13 +550,21 @@ export function RoomScreen({ route, navigation }: Props) {
     (t: Omit<GiftToastItem, "id" | "bump" | "combo"> & { combo?: number }) => {
       setGiftToasts((prev) => {
         const idx = prev.findIndex((x) => x.comboKey === t.comboKey);
+        const cumulativeQty = t.combo ?? t.qty;
         if (idx >= 0) {
           const existing = prev[idx];
+          const nextQty =
+            t.combo != null
+              ? Math.max(existing.qty, t.combo)
+              : existing.qty + t.qty;
           const merged: GiftToastItem = {
             ...existing,
-            qty: existing.qty + t.qty,
-            combo: Math.max(existing.combo + 1, t.combo ?? existing.combo + 1),
-            bump: existing.bump + 1,
+            qty: nextQty,
+            combo:
+              t.combo != null
+                ? Math.max(existing.combo, t.combo)
+                : Math.max(existing.combo + 1, t.combo ?? existing.combo + 1),
+            bump: nextQty > existing.qty ? existing.bump + 1 : existing.bump,
           };
           const next = prev.slice();
           next[idx] = merged;
@@ -421,7 +574,8 @@ export function RoomScreen({ route, navigation }: Props) {
           ...prev,
           {
             ...t,
-            combo: t.combo ?? 1,
+            qty: cumulativeQty,
+            combo: t.combo ?? cumulativeQty,
             bump: 0,
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           },
@@ -429,6 +583,27 @@ export function RoomScreen({ route, navigation }: Props) {
       });
     },
     [],
+  );
+  const pushSelfComboGiftToast = useCallback(
+    (
+      gift: Gift,
+      recipient: { id: string; displayName: string },
+      count: number,
+    ) => {
+      if (!currentUser || count <= 0) return;
+      const comboKey = `${currentUser.id}-${gift.id}-${recipient.id}`;
+      pushGiftToast({
+        comboKey,
+        senderName: currentUser.displayName ?? "You",
+        senderAvatar: currentUser.avatar ?? null,
+        recipientName: recipient.displayName,
+        giftIcon: gift.icon,
+        giftImage: gift.image ?? null,
+        qty: count,
+        combo: count,
+      });
+    },
+    [currentUser, pushGiftToast],
   );
   const [inviteOverlayVisible, setInviteOverlayVisible] = useState(false);
   const [inviteSeatPosition, setInviteSeatPosition] = useState<number | null>(null);
@@ -563,6 +738,9 @@ export function RoomScreen({ route, navigation }: Props) {
   // the current value without a stale closure or re-subscribing the socket.
   const giftEffectsEnabledRef = useRef(giftEffectsEnabled);
   giftEffectsEnabledRef.current = giftEffectsEnabled;
+  const { playLuckyWin } = useGiftSound();
+  const playLuckyWinRef = useRef(playLuckyWin);
+  playLuckyWinRef.current = playLuckyWin;
   const [callEnabled, setCallEnabled] = useState(true);
 
   const isHost =
@@ -749,10 +927,11 @@ export function RoomScreen({ route, navigation }: Props) {
       coinCost: number = 0,
       targetSeatPosition: number | null = null,
     ) => {
-      // Basic gifts only show the toast — unless the gift has an SVGA asset.
+      // Non-SVGA gifts only show the toast + combo-button fly animation; the
+      // full-screen center effect is reserved for gifts with an SVGA asset.
       const hasSvga =
         typeof svgaAsset === "string" && svgaAsset.trim().length > 0;
-      if (isBagGiftCategory(category) && !hasSvga) return;
+      if (!hasSvga) return;
       if (!giftEffectsEnabled) return;
       const playCount = Math.max(1, Math.min(50, Math.floor(qty)));
       const baseId = Date.now();
@@ -805,6 +984,314 @@ export function RoomScreen({ route, navigation }: Props) {
       }
     },
     [],
+  );
+
+  const postGiftNoticeChat = useCallback(
+    (notice: {
+      sender: import("@/types").RoomUser;
+      giftName: string;
+      giftIcon: string;
+      giftImageFallback?: string | null;
+      recipientName: string;
+      qty: number;
+    }) => {
+      const { sender, giftName, giftIcon, giftImageFallback, recipientName, qty } =
+        notice;
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `gift-notice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          sender,
+          content: `Send ${giftName} ${recipientName} x${qty}`,
+          createdAt: new Date().toISOString(),
+          type: "gift_notice",
+          giftNotice: {
+            giftName,
+            giftIcon,
+            recipientName,
+            qty,
+            giftImageFallback: giftImageFallback ?? null,
+          },
+        },
+      ]);
+    },
+    [],
+  );
+
+  const postLuckyWinChat = useCallback(
+    (wins: PendingLuckyChatWin[], sendMultiplier = 1) => {
+      if (wins.length === 0) return;
+      const first = wins[0];
+      const totalReward = wins.reduce((sum, w) => sum + w.rewardCoins, 0);
+      const idSuffix =
+        wins.length === 1
+          ? first.drawId
+          : wins.map((w) => w.drawId).join("-");
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `lucky-win-${idSuffix}`,
+          sender: first.sender,
+          content: null,
+          createdAt: new Date().toISOString(),
+          type: "lucky_win_notice",
+          luckyWin: {
+            giftName: first.giftName,
+            giftIcon: first.giftIcon,
+            rewardCoins: totalReward,
+            giftImageFallback: first.giftImageFallback ?? null,
+            winCount: wins.length,
+            sendMultiplier,
+          },
+        },
+      ]);
+    },
+    [],
+  );
+
+  const flushSelfGiftNotices = useCallback((): number | null => {
+    const combo = comboStateRef.current;
+    if (!combo || combo.count <= 0 || !currentUser) return null;
+    if (selfGiftNoticesFlushedRef.current) return combo.count;
+
+    selfGiftNoticesFlushedRef.current = true;
+    const senderName = currentUser.displayName ?? "You";
+    const senderAvatar = currentUser.avatar ?? null;
+
+    postGiftNoticeChat({
+      sender: {
+        id: currentUser.id,
+        username: currentUser.username ?? null,
+        displayName: senderName,
+        avatar: senderAvatar ?? "",
+        richLevel: currentUser.richLevel ?? 0,
+        charmLevel: currentUser.charmLevel ?? 0,
+        equippedFrame: currentUser.equippedFrame ?? null,
+      },
+      giftName: combo.gift.name,
+      giftIcon: combo.gift.icon,
+      giftImageFallback: combo.gift.image ?? null,
+      recipientName: combo.recipient.displayName,
+      qty: combo.count,
+    });
+
+    return combo.count;
+  }, [currentUser, postGiftNoticeChat]);
+
+  const flushSelfLuckyChat = useCallback(() => {
+    const pending = pendingSelfLuckyChatRef.current;
+    if (pending.length === 0) return;
+    pendingSelfLuckyChatRef.current = [];
+    const sendMultiplier =
+      selfComboSendMultiplierRef.current ??
+      comboStateRef.current?.count ??
+      1;
+    postLuckyWinChat(pending, sendMultiplier);
+  }, [postLuckyWinChat]);
+
+  const deferRemoteGiftNotices = useCallback(
+    (params: {
+      comboKey: string;
+      senderId: string;
+      senderName: string;
+      senderAvatar: string | null;
+      recipientName: string;
+      giftIcon: string;
+      giftImage: string | null;
+      giftName: string;
+      comboCount: number;
+      sender: import("@/types").RoomUser;
+    }) => {
+      const buffers = remoteGiftComboBuffersRef.current;
+      let buf = buffers.get(params.comboKey);
+      if (!buf) {
+        buf = { ...params };
+        buffers.set(params.comboKey, buf);
+      } else {
+        buf.senderName = params.senderName;
+        buf.senderAvatar = params.senderAvatar;
+        buf.recipientName = params.recipientName;
+        buf.giftIcon = params.giftIcon;
+        buf.giftImage = params.giftImage;
+        buf.giftName = params.giftName;
+        buf.comboCount = params.comboCount;
+        buf.sender = params.sender;
+      }
+
+      const luckyBuf = remoteLuckyChatBuffersRef.current.get(params.senderId);
+      if (luckyBuf) {
+        luckyBuf.sendMultiplier = Math.max(
+          luckyBuf.sendMultiplier ?? 0,
+          params.comboCount,
+        );
+      }
+
+      if (buf.timer) clearTimeout(buf.timer);
+      buf.timer = setTimeout(() => {
+        const current = buffers.get(params.comboKey);
+        buffers.delete(params.comboKey);
+        if (!current) return;
+
+        postGiftNoticeChat({
+          sender: current.sender,
+          giftName: current.giftName,
+          giftIcon: current.giftIcon,
+          giftImageFallback: current.giftImage,
+          recipientName: current.recipientName,
+          qty: current.comboCount,
+        });
+      }, COMBO_TIMEOUT);
+    },
+    [postGiftNoticeChat],
+  );
+
+  const deferRemoteLuckyChat = useCallback(
+    (senderId: string, win: PendingLuckyChatWin) => {
+      const buffers = remoteLuckyChatBuffersRef.current;
+      let buf = buffers.get(senderId);
+      if (!buf) {
+        let sendMultiplier = 1;
+        for (const gbuf of remoteGiftComboBuffersRef.current.values()) {
+          if (gbuf.sender.id === senderId) {
+            sendMultiplier = Math.max(sendMultiplier, gbuf.comboCount);
+          }
+        }
+        buf = { wins: [], sendMultiplier };
+        buffers.set(senderId, buf);
+      }
+      buf.wins.push(win);
+      for (const gbuf of remoteGiftComboBuffersRef.current.values()) {
+        if (gbuf.sender.id === senderId) {
+          buf.sendMultiplier = Math.max(buf.sendMultiplier ?? 0, gbuf.comboCount);
+        }
+      }
+      if (buf.timer) clearTimeout(buf.timer);
+      buf.timer = setTimeout(() => {
+        const current = buffers.get(senderId);
+        buffers.delete(senderId);
+        if (current && current.wins.length > 0) {
+          postLuckyWinChat(current.wins, current.sendMultiplier ?? 1);
+        }
+      }, COMBO_TIMEOUT);
+    },
+    [postLuckyWinChat],
+  );
+
+  const handleLuckyWin = useCallback(
+    (payload: {
+      drawId: string;
+      rewardCoins: number;
+      giftName: string;
+      giftIcon: string;
+      giftImageFallback?: string | null;
+      senderId?: string;
+      senderName?: string;
+      senderAvatar?: string | null;
+      senderCoinBalance?: number;
+      /** Set when the win comes from our own gift send API response. */
+      fromSelfSend?: boolean;
+    }) => {
+      if (!payload.drawId) return;
+
+      const isSelf =
+        payload.fromSelfSend === true ||
+        (!!payload.senderId &&
+          typeof currentUser?.id === "string" &&
+          payload.senderId === currentUser.id);
+
+      const alreadyHandled = shownLuckyDrawIdsRef.current.has(payload.drawId);
+
+      // Haptics tracked separately so a late API response still vibrates after
+      // an earlier room WS event that handled sound/chat without matching senderId.
+      if (
+        isSelf &&
+        giftEffectsEnabledRef.current &&
+        !vibratedLuckyDrawIdsRef.current.has(payload.drawId)
+      ) {
+        vibratedLuckyDrawIdsRef.current.add(payload.drawId);
+        if (vibratedLuckyDrawIdsRef.current.size > 50) {
+          const oldest = vibratedLuckyDrawIdsRef.current.values().next().value;
+          if (oldest) vibratedLuckyDrawIdsRef.current.delete(oldest);
+        }
+        triggerLuckyWinVibration();
+      }
+
+      if (alreadyHandled) return;
+
+      shownLuckyDrawIdsRef.current.add(payload.drawId);
+      if (shownLuckyDrawIdsRef.current.size > 50) {
+        const oldest = shownLuckyDrawIdsRef.current.values().next().value;
+        if (oldest) shownLuckyDrawIdsRef.current.delete(oldest);
+      }
+
+      // Immediate feedback — sound, win banner, balance — not deferred.
+      if (giftEffectsEnabledRef.current) {
+        playLuckyWinRef.current();
+        if (isSelf) {
+          luckyWinPopupBumpRef.current += 1;
+          setLuckyWinPopup({
+            id: payload.drawId,
+            rewardCoins: payload.rewardCoins,
+            bump: luckyWinPopupBumpRef.current,
+          });
+        }
+      }
+
+      if (
+        isSelf &&
+        typeof payload.senderCoinBalance === "number" &&
+        Number.isFinite(payload.senderCoinBalance)
+      ) {
+        setCoinBalance(payload.senderCoinBalance);
+        coinBalanceRef.current = payload.senderCoinBalance;
+      }
+
+      const sender: import("@/types").RoomUser = isSelf
+        ? {
+            id: currentUser!.id,
+            username: currentUser!.username ?? null,
+            displayName: currentUser!.displayName ?? payload.senderName ?? "You",
+            avatar: currentUser!.avatar ?? "",
+            richLevel: currentUser!.richLevel ?? 0,
+            charmLevel: currentUser!.charmLevel ?? 0,
+            equippedFrame: currentUser!.equippedFrame ?? null,
+          }
+        : {
+            id: payload.senderId ?? "",
+            username: null,
+            displayName: payload.senderName ?? "Someone",
+            avatar: payload.senderAvatar ?? "",
+            richLevel: 0,
+            charmLevel: 0,
+          };
+
+      const chatWin: PendingLuckyChatWin = {
+        drawId: payload.drawId,
+        rewardCoins: payload.rewardCoins,
+        giftName: payload.giftName,
+        giftIcon: payload.giftIcon,
+        giftImageFallback: payload.giftImageFallback ?? null,
+        sender,
+      };
+
+      // Chat is deferred until the combo session ends (self) or the sender
+      // goes quiet (other room members watching a combo).
+      const inSelfComboSession =
+        isSelf &&
+        (comboStateRef.current !== null || pendingFlushRef.current !== null);
+      if (inSelfComboSession) {
+        pendingSelfLuckyChatRef.current.push(chatWin);
+        return;
+      }
+
+      if (!isSelf && payload.senderId) {
+        deferRemoteLuckyChat(payload.senderId, chatWin);
+        return;
+      }
+
+      postLuckyWinChat([chatWin]);
+    },
+    [currentUser, deferRemoteLuckyChat, postLuckyWinChat],
   );
 
   // ── Handle real-time WebSocket events ─────────────────────────────────────
@@ -1229,25 +1716,73 @@ export function RoomScreen({ route, navigation }: Props) {
           data.recipient?.displayName ?? data.recipientName ?? "Host";
         const incomingQty =
           typeof data.qty === "number" && data.qty > 0 ? data.qty : 1;
+        const comboCount =
+          typeof data.comboCount === "number" ? data.comboCount : incomingQty;
         const comboKey = `${data.senderId ?? senderName}-${data.giftId ?? icon}-${data.recipientId ?? recipientName}`;
-        pushGiftToast({
-          comboKey,
-          senderName,
-          senderAvatar,
-          recipientName,
-          giftIcon: icon,
-          giftImage: data.gift?.image ?? null,
-          qty: incomingQty,
-          combo:
-            typeof data.comboCount === "number" ? data.comboCount : undefined,
-        });
+        const isSelfSend =
+          currentUser &&
+          (data.senderId === currentUser.id ||
+            data.sender?.id === currentUser.id);
+        const inSelfComboSession =
+          !!isSelfSend &&
+          (comboStateRef.current !== null || pendingFlushRef.current !== null);
+        const skipSelfGiftChat =
+          inSelfComboSession ||
+          (!!isSelfSend && selfGiftNoticesFlushedRef.current);
+
+        const noticeSender = data.sender ?? {
+          id: data.senderId ?? "",
+          username: null,
+          displayName: senderName,
+          avatar: senderAvatar ?? "",
+          richLevel: 0,
+          charmLevel: 0,
+        };
+
+        // GiftToast: show immediately; multiplier updates as combo grows.
+        if (!(isSelfSend && selfGiftNoticesFlushedRef.current)) {
+          pushGiftToast({
+            comboKey,
+            senderName,
+            senderAvatar,
+            recipientName,
+            giftIcon: icon,
+            giftImage: data.gift?.image ?? null,
+            qty: comboCount,
+            combo: comboCount,
+          });
+        }
+
+        // Chat gift_notice: one aggregated row after combo ends.
+        if (!skipSelfGiftChat && isSelfSend) {
+          postGiftNoticeChat({
+            sender: noticeSender,
+            giftName: data.gift?.name ?? "Gift",
+            giftIcon: icon,
+            giftImageFallback: data.gift?.image ?? null,
+            recipientName,
+            qty: comboCount,
+          });
+        } else if (!isSelfSend && data.senderId) {
+          deferRemoteGiftNotices({
+            comboKey,
+            senderId: data.senderId,
+            senderName,
+            senderAvatar,
+            recipientName,
+            giftIcon: icon,
+            giftImage: data.gift?.image ?? null,
+            giftName: data.gift?.name ?? "Gift",
+            comboCount,
+            sender: noticeSender,
+          });
+        }
 
         // Flying gift animation for basic gifts (toward recipient's seat).
         // If the gift has an SVGA asset, we prioritize the full-screen SVGA effect instead.
         const hasSvga =
           typeof (data.gift?.svgaAsset ?? data.svgaKey) === "string" &&
           String(data.gift?.svgaAsset ?? data.svgaKey).trim().length > 0;
-        const isBagGift = isBagGiftCategory(data.gift?.category);
         const recipientSeat = room?.seats?.find(
           (s) => s.user?.id === data.recipientId,
         );
@@ -1259,23 +1794,19 @@ export function RoomScreen({ route, navigation }: Props) {
             : null;
         const targetPosition =
           serverSeatPosition ?? recipientSeat?.position ?? undefined;
-        const isSelfSend =
-          currentUser &&
-          (data.senderId === currentUser.id ||
-            data.sender?.id === currentUser.id);
-        if (isBagGift && !hasSvga && targetPosition != null) {
+        if (!hasSvga && targetPosition != null && !isSelfSend) {
           const flyId = `fly-${Date.now()}-${Math.random()}`;
-          if (!isSelfSend) {
-            setFlyingGifts((prev) => [
-              ...prev,
-              {
-                id: flyId,
-                icon,
-                image: data.gift?.image ?? null,
-                targetPosition,
-              },
-            ]);
-          }
+          setFlyingGifts((prev) => [
+            ...prev,
+            {
+              id: flyId,
+              icon,
+              image: data.gift?.image ?? null,
+              targetPosition,
+              originX: comboOriginFallback.x,
+              originY: comboOriginFallback.y,
+            },
+          ]);
         }
 
         // Skip full-screen effect for self-sent gifts — already fired optimistically
@@ -1307,35 +1838,6 @@ export function RoomScreen({ route, navigation }: Props) {
             .then((bal) => setCoinBalance(bal.coinBalance))
             .catch(() => {});
         }
-
-        const giftNoticeName = data.gift?.name ?? "Gift";
-        const giftNoticeIcon = data.gift?.icon ?? "";
-        const noticeContent = `Send ${giftNoticeName} ${recipientName} x${incomingQty}`;
-        const noticeSender = data.sender ?? {
-          id: data.senderId ?? "",
-          username: null,
-          displayName: senderName,
-          avatar: senderAvatar ?? "",
-          richLevel: 0,
-          charmLevel: 0,
-        };
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: `gift-notice-${rawGiftTxId ?? Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            sender: noticeSender,
-            content: noticeContent,
-            createdAt: new Date().toISOString(),
-            type: "gift_notice",
-            giftNotice: {
-              giftName: giftNoticeName,
-              giftIcon: giftNoticeIcon,
-              recipientName,
-              qty: incomingQty,
-              giftImageFallback: data.gift?.image ?? null,
-            },
-          },
-        ]);
       } else if (event === "calculator:started") {
         setCalculatorSession({
           sessionId: data.sessionId,
@@ -1355,13 +1857,29 @@ export function RoomScreen({ route, navigation }: Props) {
         setSeatScores({});
         setCalcResultScores(data.scores);
         setCalcResultVisible(true);
+      } else if (event === "lucky.reward" && data.isWin) {
+        handleLuckyWin({
+          drawId: typeof data.drawId === "string" ? data.drawId : "",
+          rewardCoins: Number(data.rewardCoins) || 0,
+          giftName:
+            typeof data.giftName === "string" ? data.giftName : "Lucky Gift",
+          giftIcon: typeof data.giftIcon === "string" ? data.giftIcon : "🍀",
+          giftImageFallback:
+            typeof data.giftImage === "string" ? data.giftImage : null,
+          senderId: typeof data.senderId === "string" ? data.senderId : undefined,
+          senderName:
+            typeof data.senderName === "string" ? data.senderName : undefined,
+        });
       }
     }),
     [
       navigation,
       triggerGiftAnimation,
       pushGiftToast,
+      postGiftNoticeChat,
+      deferRemoteGiftNotices,
       currentUser,
+      handleLuckyWin,
       toast,
       room,
       getViewerCountFromPayload,
@@ -1749,6 +2267,7 @@ export function RoomScreen({ route, navigation }: Props) {
   // Pre-load SVGA gift assets in background so animations play instantly.
   useEffect(() => {
     void preloadSvgaAssets();
+    void preloadComboButtonSvga();
   }, []);
 
   useEffect(() => {
@@ -2000,8 +2519,6 @@ export function RoomScreen({ route, navigation }: Props) {
   }, [room?.id, calculatorSession, isScreenFocused]);
 
   // ── Combo logic ─────────────────────────────────────────────────────────────
-  const COMBO_TIMEOUT = 5000;
-
   const clearComboTimer = useCallback(() => {
     if (comboTimerRef.current) {
       clearTimeout(comboTimerRef.current);
@@ -2014,12 +2531,26 @@ export function RoomScreen({ route, navigation }: Props) {
   const runGiftSend = useCallback((pending: PendingGiftFlush) => {
     const next = giftSendTailRef.current.catch(() => {}).then(async () => {
       try {
-        await giftsApi.send({
+        const tx = await giftsApi.send({
           giftId: pending.gift.id,
           recipientId: pending.recipient.id,
           roomId: pending.roomId,
           qty: pending.qty,
         });
+        if (tx.luckyDraw?.isWin) {
+          handleLuckyWin({
+            drawId: tx.luckyDraw.drawId,
+            rewardCoins: tx.luckyDraw.rewardCoins,
+            giftName: tx.gift?.name ?? "Lucky Gift",
+            giftIcon: tx.gift?.icon ?? "🍀",
+            giftImageFallback: tx.gift?.image ?? null,
+            senderId: currentUser?.id ?? tx.sender?.id,
+            senderName: currentUser?.displayName ?? tx.sender?.displayName,
+            senderAvatar: currentUser?.avatar ?? tx.sender?.avatar,
+            senderCoinBalance: tx.luckyDraw.senderCoinBalance,
+            fromSelfSend: true,
+          });
+        }
         invalidateUserLevels(currentUser?.id, pending.recipient.id);
         try {
           const bal = await walletApi.getBalance();
@@ -2037,16 +2568,15 @@ export function RoomScreen({ route, navigation }: Props) {
           setCoinBalance((prev) => prev + pending.totalCost);
           coinBalanceRef.current += pending.totalCost;
         }
-        Alert.alert(formatApiError(e), undefined, [{ text: "OK" }]);
+        giftSendErrorAlert(e);
         dismissComboRef.current();
       }
     });
     giftSendTailRef.current = next.then(() => undefined).catch(() => undefined);
     return next;
-  }, [currentUser?.id]);
+  }, [currentUser, handleLuckyWin]);
 
-  // Sends any accumulated combo taps as a single batched API call (serialized via runGiftSend).
-  const flushPendingCombo = useCallback(() => {
+  const flushPendingComboNow = useCallback(() => {
     if (comboFlushTimerRef.current) {
       clearTimeout(comboFlushTimerRef.current);
       comboFlushTimerRef.current = null;
@@ -2054,20 +2584,32 @@ export function RoomScreen({ route, navigation }: Props) {
     const pending = pendingFlushRef.current;
     if (!pending || pending.qty === 0) return;
     pendingFlushRef.current = null;
+    if (pending.qty > MAX_GIFT_SEND_QTY) {
+      Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+      dismissComboRef.current();
+      return;
+    }
     void runGiftSend(pending);
   }, [runGiftSend]);
 
+  // Sends any accumulated combo taps as a single batched API call (serialized via runGiftSend).
+  const flushPendingCombo = flushPendingComboNow;
+
   const dismissCombo = useCallback(() => {
     flushPendingCombo();
-    clearComboTimer();
-    Animated.timing(comboScale, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      setComboState(null);
+    const sendMultiplier = flushSelfGiftNotices();
+    selfComboSendMultiplierRef.current = sendMultiplier;
+    // Wait for in-flight gift sends so their lucky wins land in the pending buffer.
+    void giftSendTailRef.current.finally(() => {
+      flushSelfLuckyChat();
+      selfComboSendMultiplierRef.current = null;
     });
-  }, [flushPendingCombo, clearComboTimer, comboScale]);
+    clearComboTimer();
+    // Stop tap-pulse / enter springs so they cannot snap scale back to 1 after dismiss.
+    comboScale.stopAnimation();
+    comboScale.setValue(0);
+    setComboState(null);
+  }, [flushPendingCombo, flushSelfGiftNotices, flushSelfLuckyChat, clearComboTimer, comboScale]);
 
   // Keep the ref current so flushPendingCombo's error path can call dismissCombo.
   useEffect(() => {
@@ -2076,15 +2618,8 @@ export function RoomScreen({ route, navigation }: Props) {
 
   const resetComboTimer = useCallback(() => {
     clearComboTimer();
-    comboProgress.setValue(1);
-    Animated.timing(comboProgress, {
-      toValue: 0,
-      duration: COMBO_TIMEOUT,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
     comboTimerRef.current = setTimeout(dismissCombo, COMBO_TIMEOUT);
-  }, [clearComboTimer, comboProgress, dismissCombo]);
+  }, [clearComboTimer, dismissCombo]);
 
   const startCombo = useCallback(
     (
@@ -2093,6 +2628,13 @@ export function RoomScreen({ route, navigation }: Props) {
       seatPosition: number,
       initialCount = 1,
     ) => {
+      selfGiftNoticesFlushedRef.current = false;
+      const nextCount =
+        comboStateRef.current?.gift.id === gift.id &&
+        comboStateRef.current?.recipient.id === recipient.id
+          ? comboStateRef.current.count + initialCount
+          : initialCount;
+      pushSelfComboGiftToast(gift, recipient, nextCount);
       setComboState((prev) =>
         prev?.gift.id === gift.id && prev.recipient.id === recipient.id
           ? {
@@ -2112,12 +2654,32 @@ export function RoomScreen({ route, navigation }: Props) {
       }).start();
       resetComboTimer();
     },
-    [comboScale, resetComboTimer],
+    [comboScale, resetComboTimer, pushSelfComboGiftToast],
   );
 
   const handleComboTap = useCallback(() => {
     if (!comboState || !room) return;
     const { gift, recipient, seatPosition, step } = comboState;
+
+    if (step > MAX_GIFT_SEND_QTY) {
+      Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+      dismissCombo();
+      return;
+    }
+
+    let pendingQty = pendingFlushRef.current?.qty ?? 0;
+    if (pendingQty + step > MAX_GIFT_SEND_QTY) {
+      if (pendingQty > 0) {
+        flushPendingComboNow();
+      }
+      pendingQty = pendingFlushRef.current?.qty ?? 0;
+      if (pendingQty + step > MAX_GIFT_SEND_QTY) {
+        Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+        dismissCombo();
+        return;
+      }
+    }
+
     // Read from ref so rapid taps see the decremented balance without waiting for a re-render.
     if (coinBalanceRef.current < gift.coinCost * step) {
       Alert.alert(
@@ -2136,17 +2698,16 @@ export function RoomScreen({ route, navigation }: Props) {
     setCoinBalance((prev) => Math.max(0, prev - gift.coinCost * step));
     const hasSvga =
       typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-    if (isBagGiftCategory(gift.category) && !hasSvga && seatPosition) {
-      const flyId = `fly-${Date.now()}-${Math.random()}`;
-      setFlyingGifts((prev) => [
-        ...prev,
-        {
-          id: flyId,
-          icon: gift.icon,
-          image: gift.image,
-          targetPosition: seatPosition,
-        },
-      ]);
+    console.log("[giftfly] combo-tap branch", {
+      category: gift.category,
+      hasSvga,
+      seatPosition,
+      usesFlyingGift: !hasSvga && !!seatPosition,
+    });
+    // Restart the combo-button SVGA from frame 0 on every tap (tactile feedback).
+    setComboBtnRestartNonce((n) => n + 1);
+    if (!hasSvga && seatPosition) {
+      enqueueFlyingGift(gift, seatPosition);
     } else {
       triggerGiftAnimation(
         gift.icon,
@@ -2161,6 +2722,8 @@ export function RoomScreen({ route, navigation }: Props) {
         seatPosition ?? null,
       );
     }
+    const nextCount = comboState.count + step;
+    pushSelfComboGiftToast(gift, recipient, nextCount);
     setComboState((prev) => (prev ? { ...prev, count: prev.count + step } : null));
     Animated.sequence([
       Animated.timing(comboScale, {
@@ -2205,6 +2768,9 @@ export function RoomScreen({ route, navigation }: Props) {
     triggerGiftAnimation,
     currentUser,
     flushPendingCombo,
+    flushPendingComboNow,
+    enqueueFlyingGift,
+    pushSelfComboGiftToast,
   ]);
 
   // Cleanup combo timers on unmount
@@ -2212,8 +2778,22 @@ export function RoomScreen({ route, navigation }: Props) {
     return () => {
       if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
       if (comboFlushTimerRef.current) clearTimeout(comboFlushTimerRef.current);
+      for (const buf of remoteLuckyChatBuffersRef.current.values()) {
+        if (buf.timer) clearTimeout(buf.timer);
+      }
+      remoteLuckyChatBuffersRef.current.clear();
+      for (const buf of remoteGiftComboBuffersRef.current.values()) {
+        if (buf.timer) clearTimeout(buf.timer);
+      }
+      remoteGiftComboBuffersRef.current.clear();
+      if (comboStateRef.current) {
+        const mult = flushSelfGiftNotices();
+        selfComboSendMultiplierRef.current = mult;
+        flushSelfLuckyChat();
+        selfComboSendMultiplierRef.current = null;
+      }
     };
-  }, []);
+  }, [flushSelfGiftNotices, flushSelfLuckyChat]);
 
   const handleSendGift = useCallback(
     async (
@@ -2226,6 +2806,11 @@ export function RoomScreen({ route, navigation }: Props) {
         (s) => s.user?.id === recipient.id,
       );
       if (!seated) return;
+
+      if (qty < 1 || qty > MAX_GIFT_SEND_QTY) {
+        Alert.alert(GIFT_QTY_LIMIT_TITLE, giftQtyLimitMessage(), [{ text: "OK" }]);
+        return;
+      }
 
       const totalCost = gift.coinCost * qty;
 
@@ -2244,21 +2829,23 @@ export function RoomScreen({ route, navigation }: Props) {
 
       // Optimistic deduction so the balance updates instantly
       setCoinBalance((prev) => Math.max(0, prev - totalCost));
+      startCombo(gift, recipient, seated.position, qty);
 
       // Trigger animation immediately — no waiting for the server
       const hasSvga =
         typeof gift.svgaAsset === "string" && gift.svgaAsset.trim().length > 0;
-      if (isBagGiftCategory(gift.category) && !hasSvga && seated.position) {
-        const flyId = `fly-${Date.now()}-${Math.random()}`;
-        setFlyingGifts((prev) => [
-          ...prev,
-          {
-            id: flyId,
-            icon: gift.icon,
-            image: gift.image,
-            targetPosition: seated.position,
-          },
-        ]);
+      console.log("[giftfly] send branch", {
+        category: gift.category,
+        hasSvga,
+        seatPosition: seated.position,
+        usesFlyingGift: !hasSvga && !!seated.position,
+      });
+      if (!hasSvga && seated.position) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            enqueueFlyingGift(gift, seated.position);
+          });
+        });
       } else {
         // Premium/special gifts: fire the full-screen effect optimistically so
         // there's zero wait for the server round-trip.
@@ -2275,7 +2862,6 @@ export function RoomScreen({ route, navigation }: Props) {
           seated.position ?? null,
         );
       }
-      startCombo(gift, recipient, seated.position, qty);
 
       const pending: PendingGiftFlush = {
         qty,
@@ -2290,7 +2876,7 @@ export function RoomScreen({ route, navigation }: Props) {
       }
       return runGiftSend(pending);
     },
-    [room, startCombo, triggerGiftAnimation, currentUser, runGiftSend],
+    [room, startCombo, triggerGiftAnimation, currentUser, runGiftSend, enqueueFlyingGift],
   );
 
   const handleCalcBadgePress = useCallback((recipientUserId: string) => {
@@ -2345,6 +2931,11 @@ export function RoomScreen({ route, navigation }: Props) {
 
   const handleLeave = useCallback(async () => {
     skipBeforeRemoveCleanupRef.current = true;
+    const sendMultiplier = flushSelfGiftNotices();
+    selfComboSendMultiplierRef.current = sendMultiplier;
+    flushSelfLuckyChat();
+    selfComboSendMultiplierRef.current = null;
+    clearComboTimer();
     clearRoomChat();
     if (mySeatedPosition !== null) {
       try {
@@ -2354,7 +2945,15 @@ export function RoomScreen({ route, navigation }: Props) {
       }
     }
     safeGoBack(navigation);
-  }, [roomId, mySeatedPosition, navigation, clearRoomChat]);
+  }, [
+    roomId,
+    mySeatedPosition,
+    navigation,
+    clearRoomChat,
+    flushSelfGiftNotices,
+    flushSelfLuckyChat,
+    clearComboTimer,
+  ]);
 
   const handleRandomMatch = useCallback(
     async (durationSecs: number) => {
@@ -2931,7 +3530,7 @@ export function RoomScreen({ route, navigation }: Props) {
   const coHostSeat = seatMap.get(2);
 
   return (
-    <View style={styles.screen}>
+    <View ref={screenRootRef} style={styles.screen} collapsable={false}>
       {/* ── Background: host live video OR theme background ── */}
       {showHostVideo ? (
         <AgoraVideoView
@@ -3099,6 +3698,9 @@ export function RoomScreen({ route, navigation }: Props) {
                 seatRef={(ref) => {
                   seatRefs.current[1] = ref;
                 }}
+                avatarTargetRef={(ref) => {
+                  seatAvatarRefs.current[1] = ref;
+                }}
                 calculatorPoints={seatScores[1]?.points}
                 onCalcBadgePress={
                   calculatorSession ? handleCalcBadgePress : undefined
@@ -3139,6 +3741,9 @@ export function RoomScreen({ route, navigation }: Props) {
                 }
                 seatRef={(ref) => {
                   seatRefs.current[2] = ref;
+                }}
+                avatarTargetRef={(ref) => {
+                  seatAvatarRefs.current[2] = ref;
                 }}
                 calculatorPoints={seatScores[2]?.points}
                 onCalcBadgePress={
@@ -3188,6 +3793,9 @@ export function RoomScreen({ route, navigation }: Props) {
                     onLongPress={() => handleSeatLongPress(fallback)}
                     seatRef={(ref) => {
                       seatRefs.current[pos] = ref;
+                    }}
+                    avatarTargetRef={(ref) => {
+                      seatAvatarRefs.current[pos] = ref;
                     }}
                     calculatorPoints={seatScores[pos]?.points}
                     onCalcBadgePress={
@@ -3260,6 +3868,24 @@ export function RoomScreen({ route, navigation }: Props) {
                   giftImageFallback={gn?.giftImageFallback}
                   recipientName={gn?.recipientName ?? ""}
                   qty={gn?.qty ?? 1}
+                  onPressSender={
+                    item.sender?.id
+                      ? () => setProfileUserId(item.sender.id)
+                      : undefined
+                  }
+                />
+              );
+            }
+            if (item.type === "lucky_win_notice") {
+              const lw = item.luckyWin;
+              return (
+                <LuckyWinNoticeRow
+                  sender={item.sender}
+                  giftName={lw?.giftName ?? "Lucky Gift"}
+                  giftIcon={lw?.giftIcon ?? "🍀"}
+                  giftImageFallback={lw?.giftImageFallback}
+                  rewardCoins={lw?.rewardCoins ?? 0}
+                  sendMultiplier={lw?.sendMultiplier ?? 1}
                   onPressSender={
                     item.sender?.id
                       ? () => setProfileUserId(item.sender.id)
@@ -3498,14 +4124,40 @@ export function RoomScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* ── Gift toast stack (left center, pass-through touches) ── */}
-      {giftToasts.length > 0 && (
+      {/* ── Gift toast (left) + lucky win banner (right), same row ── */}
+      {(giftToasts.length > 0 || luckyWinPopup) && (
         <View pointerEvents="box-none" style={styles.giftToastOverlay}>
           <View pointerEvents="none" style={styles.giftToastAnchor}>
-            <GiftToastStack items={giftToasts} onDismiss={dismissGiftToast} />
+            {giftToasts.length > 0 && (
+              <GiftToastStack
+                items={giftToasts}
+                holdDurationMs={COMBO_TIMEOUT}
+                onDismiss={dismissGiftToast}
+              />
+            )}
+            {luckyWinPopup && (
+              <LuckyWinPopup
+                item={luckyWinPopup}
+                onDismiss={() => setLuckyWinPopup(null)}
+              />
+            )}
           </View>
         </View>
       )}
+
+      {/* Gift-fly origin marker — hidden while combo button is mounted (same slot). */}
+      {!comboState ? (
+        <View
+          pointerEvents="none"
+          style={[styles.giftFlyOriginWrap, { bottom: insets.bottom + COMBO_BOTTOM_OFFSET }]}
+        >
+          <View
+            ref={giftFlyOriginFallbackRef}
+            collapsable={false}
+            style={styles.giftFlyOrigin}
+          />
+        </View>
+      ) : null}
 
       {/* ── Flying gift animations (basic gifts) ── */}
       {flyingGifts.map((fg) => (
@@ -3513,7 +4165,12 @@ export function RoomScreen({ route, navigation }: Props) {
           key={fg.id}
           icon={fg.icon}
           image={fg.image}
-          targetRef={seatRefs.current[fg.targetPosition] ?? null}
+          originX={fg.originX}
+          originY={fg.originY}
+          targetPosition={fg.targetPosition}
+          screenRootRef={screenRootRef}
+          seatAvatarRefs={seatAvatarRefs}
+          seatRefs={seatRefs}
           onComplete={() =>
             setFlyingGifts((prev) => prev.filter((g) => g.id !== fg.id))
           }
@@ -4095,6 +4752,7 @@ export function RoomScreen({ route, navigation }: Props) {
           onClose={() => setGiftPanelVisible(false)}
           onSend={handleSendGift}
           coinBalance={coinBalance}
+          roomId={room.id}
           seatedUsers={(room.seats ?? [])
             .filter((s) => !!s.user)
             .map((s) => ({
@@ -4602,65 +5260,16 @@ export function RoomScreen({ route, navigation }: Props) {
       ) : null}
 
       {/* ── Combo button ── */}
-      {comboState && (
-        <View style={[styles.comboWrap, { bottom: insets.bottom + 70 }]}>
-          {/* Only the circle button scales on each tap; the count badge is outside so it updates instantly */}
-          <Animated.View style={{ transform: [{ scale: comboScale }] }}>
-            <TouchableOpacity
-              style={styles.comboBtn}
-              activeOpacity={0.7}
-              onPress={handleComboTap}
-            >
-              {/* Progress ring */}
-              <Svg width={82} height={82} style={StyleSheet.absoluteFill}>
-                <Circle
-                  cx={41}
-                  cy={41}
-                  r={38}
-                  stroke="rgba(255,255,255,0.15)"
-                  strokeWidth={3}
-                  fill="none"
-                />
-                <AnimatedCircle
-                  cx={41}
-                  cy={41}
-                  r={38}
-                  stroke={Colors.gold}
-                  strokeWidth={3}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 38}`}
-                  strokeDashoffset={comboProgress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [2 * Math.PI * 38, 0],
-                  })}
-                  transform="rotate(-90 41 41)"
-                />
-              </Svg>
-              {/* Gift icon */}
-              {comboState.gift.image ? (
-                <Image
-                  source={{ uri: comboState.gift.image }}
-                  style={styles.comboGiftIcon}
-                  contentFit="contain"
-                  cachePolicy="memory-disk"
-                />
-              ) : (
-                <Ionicons name="gift" size={36} color={Colors.gold} />
-              )}
-            </TouchableOpacity>
-          </Animated.View>
-          {/* Combo label + count — outside the scale animation so the number updates immediately */}
-          <TouchableOpacity activeOpacity={0.7} onPress={handleComboTap}>
-            <View style={styles.comboLabelRow}>
-              <Text style={styles.comboText}>Combo</Text>
-              <View style={styles.comboBadge}>
-                <Text style={styles.comboBadgeText}>×{comboState.count}</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-      )}
+      {comboState ? (
+        <ComboTapButton
+          coinBalance={coinBalance}
+          comboScale={comboScale}
+          bottomInset={insets.bottom + COMBO_BOTTOM_OFFSET}
+          originRef={comboButtonOriginRef}
+          onPress={handleComboTap}
+          restartNonce={comboBtnRestartNonce}
+        />
+      ) : null}
 
       {/* ── Exit choice modal (Keep / Exit) ── */}
       <Modal
@@ -4832,124 +5441,346 @@ function AgoraVideoView({ uid, style }: { uid: number; style?: any }) {
 
 // ── Flying Gift Animation ──────────────────────────────────────────────────
 
+const FLYING_GIFT_SIZE = Math.min(SCREEN_WIDTH * 0.42, 140);
+const FLYING_GIFT_HALF = FLYING_GIFT_SIZE / 2;
+// Start at the gift-icon size shown inside the combo button (~40px) so the gift
+// visibly lifts off the button and grows as it rises into the center.
+const FLYING_GIFT_LAUNCH_SCALE = 40 / FLYING_GIFT_SIZE;
+const FLYING_GIFT_CENTER_SCALE = 1.42;
+const FLYING_GIFT_SEAT_SCALE = 0.16;
+const FLYING_GIFT_RISE_MS = 700;
+const FLYING_GIFT_FLYOUT_MS = 540;
+/** Keep gift invisible at combo origin so it never peeks through the SVGA button. */
+const FLYING_GIFT_ORIGIN_HIDE_MS = 180;
+
+const flyingGiftStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 40,
+  },
+  giftWrap: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+  },
+  giftImage: {
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+  },
+  emoji: {
+    fontSize: Math.round(FLYING_GIFT_SIZE * 0.72),
+    lineHeight: FLYING_GIFT_SIZE,
+    textAlign: "center",
+  },
+  fallback: {
+    width: FLYING_GIFT_SIZE,
+    height: FLYING_GIFT_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
+
+function measureFlyingGiftTarget(
+  avatarRef: View | null,
+  seatRef: View | null,
+  screenRootRef: View | null,
+  onTarget: (x: number, y: number) => void,
+) {
+  const ref = avatarRef ?? seatRef;
+  if (!ref) return;
+
+  const reportCenter = (x: number, y: number, w: number, h: number) => {
+    onTarget(x + w / 2, y + h / 2);
+  };
+
+  if (screenRootRef) {
+    (ref as View).measureLayout?.(
+      screenRootRef,
+      reportCenter,
+      () => {
+        (ref as View).measureInWindow?.(reportCenter);
+      },
+    );
+    return;
+  }
+
+  (ref as View).measureInWindow?.(reportCenter);
+}
+
+function windowPointToScreenRoot(
+  screenRoot: View,
+  windowX: number,
+  windowY: number,
+  onPoint: (x: number, y: number) => void,
+) {
+  screenRoot.measureInWindow((sx, sy) => {
+    onPoint(windowX - sx, windowY - sy);
+  });
+}
+
+function measureScreenRootCenter(
+  screenRoot: View,
+  onCenter: (x: number, y: number) => void,
+) {
+  screenRoot.measureInWindow((_sx, _sy, width, height) => {
+    onCenter(width / 2, height / 2);
+  });
+}
+
 const FlyingGift = React.memo(FlyingGiftInner);
 function FlyingGiftInner({
   icon,
   image,
-  targetRef,
+  originX,
+  originY,
+  targetPosition,
+  screenRootRef,
+  seatAvatarRefs,
+  seatRefs,
   onComplete,
 }: {
   icon: string;
   image: string | null;
-  targetRef: View | null;
+  originX: number;
+  originY: number;
+  targetPosition: number;
+  screenRootRef: React.RefObject<View | null>;
+  seatAvatarRefs: React.RefObject<Record<number, View | null>>;
+  seatRefs: React.RefObject<Record<number, View | null>>;
   onComplete: () => void;
 }) {
-  const phase = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [target, setTarget] = useState<{ x: number; y: number } | null>(null);
+  const posX = useRef(new Animated.Value(originX)).current;
+  const posY = useRef(new Animated.Value(originY)).current;
+  const zoomScale = useRef(new Animated.Value(FLYING_GIFT_LAUNCH_SCALE)).current;
+  const imgOpacity = useRef(new Animated.Value(0.95)).current;
+  const animRunId = useRef(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
-  useEffect(() => {
-    if (!targetRef) {
-      onCompleteRef.current();
-      return;
-    }
-    (targetRef as any).measureInWindow?.(
-      (x: number, y: number, w: number, h: number) => {
-        setTarget({ x: x + w / 2, y: y + h / 2 });
-      },
-    );
-  }, [targetRef]);
+  const translateX = useMemo(
+    () => Animated.subtract(posX, FLYING_GIFT_HALF),
+    [posX],
+  );
+  const translateY = useMemo(
+    () => Animated.subtract(posY, FLYING_GIFT_HALF),
+    [posY],
+  );
 
-  useEffect(() => {
-    if (!target) return;
-    // Phase 0→0.5: bottom → center (zoom in, ease out)
-    // Phase 0.5→0.5: brief hold at center
-    // Phase 0.5→1: center → seat (zoom out, ease in)
-    Animated.sequence([
-      // Fade in
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      // Phase 1: rise to center + scale up
-      Animated.timing(phase, {
-        toValue: 0.5,
-        duration: 450,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      // Brief hold at center
-      Animated.delay(120),
-      // Phase 2: fly to seat + scale down
-      Animated.timing(phase, {
-        toValue: 1,
-        duration: 400,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      // Fade out
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => onCompleteRef.current());
-  }, [target, phase, opacity]);
+  const imageSource = useMemo(
+    () => resolveDmGiftBubbleSource(icon, image),
+    [icon, image],
+  );
 
-  if (!target) return null;
+  useLayoutEffect(() => {
+    const runId = ++animRunId.current;
+    zoomScale.setValue(FLYING_GIFT_LAUNCH_SCALE);
+    imgOpacity.setValue(0);
 
-  const SIZE = 40;
-  const halfSize = SIZE / 2;
-  const startX = SCREEN_WIDTH / 2 - halfSize;
-  const startY = SCREEN_HEIGHT - 100;
-  const centerX = SCREEN_WIDTH / 2 - halfSize;
-  const centerY = SCREEN_HEIGHT / 2 - halfSize;
-  const endX = target.x - halfSize;
-  const endY = target.y - halfSize;
+    const finish = ({ finished }: { finished: boolean }) => {
+      if (finished && animRunId.current === runId) onCompleteRef.current();
+    };
 
-  const translateX = phase.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [startX, centerX, endX],
-  });
-  const translateY = phase.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [startY, centerY, endY],
-  });
-  const scale = phase.interpolate({
-    inputRange: [0, 0.25, 0.5, 0.75, 1],
-    outputRange: [0.4, 1.0, 1.5, 1.0, 0.5],
-  });
+    const riseEasing = Easing.inOut(Easing.cubic);
+    const flyOutEasing = Easing.bezier(0.33, 0, 0.2, 1);
 
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: SIZE,
-        height: SIZE,
-        zIndex: 10000,
-        elevation: 40,
-        opacity,
-        transform: [{ translateX }, { translateY }, { scale }],
-      }}
-    >
-      {image ? (
+    const runCenterThenSeatFlyout = (
+      startX: number,
+      startY: number,
+      centerX: number,
+      centerY: number,
+      avatarRef: View | null,
+      seatRef: View | null,
+      screenRoot: View | null,
+    ) => {
+      if (animRunId.current !== runId) return;
+
+      posX.setValue(startX);
+      posY.setValue(startY);
+
+      Animated.sequence([
+        Animated.delay(FLYING_GIFT_ORIGIN_HIDE_MS),
+        Animated.parallel([
+          Animated.timing(imgOpacity, {
+            toValue: 1,
+            duration: 120,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(posX, {
+            toValue: centerX,
+            duration: FLYING_GIFT_RISE_MS,
+            easing: riseEasing,
+            useNativeDriver: true,
+          }),
+          Animated.timing(posY, {
+            toValue: centerY,
+            duration: FLYING_GIFT_RISE_MS,
+            easing: riseEasing,
+            useNativeDriver: true,
+          }),
+          Animated.timing(zoomScale, {
+            toValue: FLYING_GIFT_CENTER_SCALE,
+            duration: FLYING_GIFT_RISE_MS,
+            easing: riseEasing,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.spring(zoomScale, {
+          toValue: 1.2,
+          friction: 6,
+          tension: 180,
+          useNativeDriver: true,
+        }),
+        Animated.delay(90),
+      ]).start(({ finished }) => {
+        if (!finished || animRunId.current !== runId) return;
+
+        requestAnimationFrame(() => {
+          if (animRunId.current !== runId) return;
+
+          measureFlyingGiftTarget(
+            avatarRef,
+            seatRef,
+            screenRoot,
+            (targetX, targetY) => {
+              if (animRunId.current !== runId) return;
+
+              Animated.parallel([
+                Animated.timing(posX, {
+                  toValue: targetX,
+                  duration: FLYING_GIFT_FLYOUT_MS,
+                  easing: flyOutEasing,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(posY, {
+                  toValue: targetY,
+                  duration: FLYING_GIFT_FLYOUT_MS,
+                  easing: flyOutEasing,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(zoomScale, {
+                  toValue: FLYING_GIFT_SEAT_SCALE,
+                  duration: FLYING_GIFT_FLYOUT_MS,
+                  easing: Easing.inOut(Easing.cubic),
+                  useNativeDriver: true,
+                }),
+                Animated.sequence([
+                  Animated.delay(360),
+                  Animated.timing(imgOpacity, {
+                    toValue: 0,
+                    duration: 220,
+                    useNativeDriver: true,
+                  }),
+                ]),
+              ]).start(finish);
+            },
+          );
+        });
+      });
+    };
+
+    requestAnimationFrame(() => {
+      if (animRunId.current !== runId) return;
+
+      const avatarRef = seatAvatarRefs.current[targetPosition] ?? null;
+      const seatRef = seatRefs.current[targetPosition] ?? null;
+      if (!avatarRef && !seatRef) {
+        onCompleteRef.current();
+        return;
+      }
+
+      const screenRoot = screenRootRef.current;
+      const beginFlyout = (startX: number, startY: number) => {
+        if (screenRoot) {
+          measureScreenRootCenter(screenRoot, (centerX, centerY) => {
+            runCenterThenSeatFlyout(
+              startX,
+              startY,
+              centerX,
+              centerY,
+              avatarRef,
+              seatRef,
+              screenRoot,
+            );
+          });
+          return;
+        }
+
+        runCenterThenSeatFlyout(
+          startX,
+          startY,
+          SCREEN_WIDTH / 2,
+          SCREEN_HEIGHT / 2,
+          avatarRef,
+          seatRef,
+          null,
+        );
+      };
+
+      if (screenRoot) {
+        windowPointToScreenRoot(screenRoot, originX, originY, beginFlyout);
+      } else {
+        beginFlyout(originX, originY);
+      }
+    });
+
+    return () => {
+      animRunId.current++;
+    };
+  }, [originX, originY, targetPosition, screenRootRef, seatAvatarRefs, seatRefs, posX, posY, zoomScale, imgOpacity]);
+
+  const giftVisual = (() => {
+    const imgStyle = flyingGiftStyles.giftImage;
+    if (imageSource.kind === "bundled") {
+      return (
         <Image
-          source={{ uri: image }}
-          style={{ width: SIZE, height: SIZE }}
+          source={imageSource.value}
+          style={imgStyle}
           contentFit="contain"
         />
-      ) : (
-        <View style={{ width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name="gift" size={28} color="#FFD84D" />
-        </View>
-      )}
-    </Animated.View>
+      );
+    }
+    if (imageSource.kind === "remote") {
+      return (
+        <Image
+          source={{ uri: imageSource.value }}
+          style={imgStyle}
+          contentFit="contain"
+          cachePolicy="disk"
+        />
+      );
+    }
+    if (imageSource.kind === "emoji") {
+      return <Text style={flyingGiftStyles.emoji}>{imageSource.value}</Text>;
+    }
+    return (
+      <View style={flyingGiftStyles.fallback}>
+        <Ionicons name="gift" size={56} color={Colors.gold} />
+      </View>
+    );
+  })();
+
+  return (
+    <View style={flyingGiftStyles.container} pointerEvents="none">
+      <Animated.View
+        style={[
+          flyingGiftStyles.giftWrap,
+          {
+            opacity: imgOpacity,
+            transform: [
+              { translateX },
+              { translateY },
+              { scale: zoomScale },
+            ],
+          },
+        ]}
+      >
+        {giftVisual}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -4988,6 +5819,7 @@ interface SeatItemProps {
   onPress: (event: import("react-native").GestureResponderEvent) => void;
   onLongPress?: () => void;
   seatRef?: (ref: View | null) => void;
+  avatarTargetRef?: (ref: View | null) => void;
 }
 
 const SeatItem = React.memo(function SeatItem({
@@ -5006,6 +5838,7 @@ const SeatItem = React.memo(function SeatItem({
   onPress,
   onLongPress,
   seatRef,
+  avatarTargetRef,
 }: SeatItemProps) {
   const isOccupied = seat.user !== null;
   const avatarInnerSize = size - 4;
@@ -5021,10 +5854,19 @@ const SeatItem = React.memo(function SeatItem({
   // (so the decorative ring lands around its border); the seat-circle ring + glow
   // hug that avatar instead of the bare seat circle so everything stays concentric.
   const frameSource = seat.user?.equippedFrame?.image ?? null;
+  const ringSource = seat.user?.equippedRing?.image ?? null;
   const seatCircleDiam = frameSource
     ? frameAvatarSizeFromHole(cellExtent, frameSource)
     : size;
   const seatInset = (cellExtent - seatCircleDiam) / 2;
+  const avatarOuterSize =
+    isOccupied && seat.user
+      ? frameSource
+        ? frameOuterSizeFromScale(avatarInnerSize, SEAT_AVATAR_FRAME_SCALE)
+        : ringSource
+          ? Math.round(avatarInnerSize * AVATAR_RING_SCALE)
+          : avatarInnerSize
+      : avatarInnerSize;
 
   return (
     <TouchableOpacity
@@ -5036,6 +5878,7 @@ const SeatItem = React.memo(function SeatItem({
       <View
         ref={seatRef}
         style={{
+          position: "relative",
           width: cellExtent,
           height: cellExtent,
           alignItems: "center",
@@ -5058,16 +5901,28 @@ const SeatItem = React.memo(function SeatItem({
                 cellHeight={cellExtent}
               />
             ) : null}
-            <UserAvatar
-              user={toAvatarUser(
-                seat.user.displayName,
-                seat.user.avatar,
-                seat.user,
-              )}
-              size={avatarInnerSize}
-              hideBorder
-              frameScale={SEAT_AVATAR_FRAME_SCALE}
-            />
+            <View
+              ref={avatarTargetRef}
+              collapsable={false}
+              pointerEvents="box-none"
+              style={{
+                width: avatarOuterSize,
+                height: avatarOuterSize,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <UserAvatar
+                user={toAvatarUser(
+                  seat.user.displayName,
+                  seat.user.avatar,
+                  seat.user,
+                )}
+                size={avatarInnerSize}
+                hideBorder
+                frameScale={SEAT_AVATAR_FRAME_SCALE}
+              />
+            </View>
             {isTopSupporter && (
               <View
                 style={[
@@ -5700,28 +6555,12 @@ function UserProfileOverlay({
                 />
               </View>
             ) : null}
-            {richLevel > 0 && (
-              <View style={pStyles.levelBadge}>
-                <Image
-                  source={
-                    RICH[Math.min(Math.max(richLevel, 1), 100)] ?? RICH[1]
-                  }
-                  style={pStyles.levelIcon}
-                  contentFit="contain"
-                />
-              </View>
-            )}
-            {charmLevel > 0 && (
-              <View style={pStyles.levelBadge}>
-                <Image
-                  source={
-                    CHARM[Math.min(Math.max(charmLevel, 0), 100)] ?? CHARM[0]
-                  }
-                  style={pStyles.levelIcon}
-                  contentFit="contain"
-                />
-              </View>
-            )}
+            {richLevel > 0 ? (
+              <RichLevelBadge level={richLevel} size={18} />
+            ) : null}
+            {charmLevel > 0 ? (
+              <CharmLevelBadge level={charmLevel} size={18} />
+            ) : null}
           </View>
           {profile?.tags && profile.tags.length > 0 && (
             <View style={pStyles.tagsRow}>
@@ -5942,15 +6781,6 @@ const pStyles = StyleSheet.create({
     height: 16,
     borderRadius: Radius.full,
     backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  levelBadge: {
-    alignItems: "center",
-    justifyContent: "center",
-    height: 16,
-  },
-  levelIcon: {
-    width: 40,
-    height: 18,
   },
   idCenter: {
     alignItems: "center",
@@ -6878,57 +7708,31 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: "25%",
-    height: 200,
+    bottom: GIFT_TOAST_ANCHOR_BOTTOM,
+    height: GIFT_TOAST_ANCHOR_HEIGHT,
     zIndex: 9999,
     elevation: 30,
+  },
+  giftFlyOriginWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 9996,
+    elevation: 26,
+  },
+  giftFlyOrigin: {
+    width: 82,
+    height: 82,
+    opacity: 0,
   },
   comboWrap: {
     position: "absolute",
     left: 0,
     right: 0,
     alignItems: "center",
-    zIndex: 9998,
-    elevation: 28,
-  },
-  comboBtn: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: "rgba(15,15,30,0.85)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: Colors.gold,
-  },
-  comboGiftIcon: {
-    width: 40,
-    height: 40,
-  },
-  comboLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: Spacing.xs,
-    gap: 4,
-  },
-  comboText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.gold,
-    textShadowColor: "rgba(0,0,0,0.8)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  comboBadge: {
-    backgroundColor: Colors.gold,
-    borderRadius: Radius.full,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  comboBadgeText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#000000",
+    zIndex: 10001,
+    elevation: 42,
   },
   chatList: {
     paddingHorizontal: Spacing.md,

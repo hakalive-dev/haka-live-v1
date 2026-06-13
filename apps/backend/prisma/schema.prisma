@@ -149,8 +149,9 @@ model User {
 
   // Moments
   moments        Moment[]        @relation("MomentAuthor")
-  momentLikes    MomentLike[]    @relation("MomentLikeUser")
-  momentComments MomentComment[] @relation("MomentCommentUser")
+  momentLikes         MomentLike[]         @relation("MomentLikeUser")
+  momentComments      MomentComment[]      @relation("MomentCommentUser")
+  momentCommentLikes  MomentCommentLike[]  @relation("MomentCommentLikeUser")
 
   // Store
   storeItems              UserStoreItem[]           @relation("UserStoreItems")
@@ -692,9 +693,10 @@ model GiftBonusTier {
 // instead of the normal beanValue; the reduced cut funds sender wins.
 model LuckyGiftSetting {
   id                     String   @id @default("singleton")
-  enabled                Boolean  @default(false)
-  winProbability         Decimal  @default(0.2) // 0 ≤ p ≤ 1, chance of a win per send
-  winMultiplier          Decimal  @default(3.0) // win payout = round(coinCost × multiplier)
+  enabled                Boolean  @default(true)
+  winProbability         Decimal  @default(0.98) // 0 ≤ p ≤ 1, chance of a win per send
+  winMultiplier          Decimal  @default(3.0) // legacy scalar fallback when tiers empty
+  winMultiplierTiers     Json     @default("[{\"multiplier\":2,\"rewardCoins\":20,\"weight\":50},{\"multiplier\":5,\"rewardCoins\":100,\"weight\":25},{\"multiplier\":10,\"rewardCoins\":500,\"weight\":15},{\"multiplier\":50,\"rewardCoins\":5000,\"weight\":7},{\"multiplier\":100,\"rewardCoins\":50000,\"weight\":2},{\"multiplier\":500,\"rewardCoins\":500000,\"weight\":1}]") // random payout tiers
   receiverBenefitPercent Decimal  @default(1.5) // 0 ≤ x ≤ 1.5 (% of gift value → host bean pool)
   dailyUserWinCapCoins   BigInt   @default(0) // 0 = no cap (enforcement deferred)
   updatedBy              String   @default("")
@@ -720,7 +722,7 @@ model LuckyGiftDraw {
   rewardCoins       Int             @default(0) // coins credited to sender; 0 on lose
   receiverBeans     Int             @default(0) // reduced host cut actually credited
   winProbability    Decimal // config snapshot at draw time
-  winMultiplier     Decimal // config snapshot at draw time
+  winMultiplier     Decimal // lucky display number drawn for this send (0 on lose)
   createdAt         DateTime        @default(now())
 
   @@index([userId, createdAt])
@@ -1162,7 +1164,7 @@ model Notification {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
-  type      String // new_follower | gift_received | room_invite | system | host_task_complete
+  type      String // new_follower | gift_received | room_invite | system | host_task_complete | moment_like | moment_comment | moment_share | moment_gift
   title     String
   body      String
   imageUrl  String   @default("")
@@ -1481,6 +1483,7 @@ model Moment {
   user          User     @relation("MomentAuthor", fields: [userId], references: [id], onDelete: Cascade)
   postType      String   @default("moment") // moment | video
   mediaUrl      String?
+  posterUrl     String?
   caption       String   @default("")
   hashtag       String   @default("")
   likesCount    Int      @default(0)
@@ -1523,8 +1526,23 @@ model MomentComment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  likes MomentCommentLike[]
+
   @@index([momentId, createdAt])
   @@map("moment_comments")
+}
+
+// ── MomentCommentLike ─────────────────────────────────────────────────────────
+model MomentCommentLike {
+  id        String        @id @default(uuid())
+  commentId String
+  comment   MomentComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation("MomentCommentLikeUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([commentId, userId])
+  @@map("moment_comment_likes")
 }
 
 // ── StoreItem ─────────────────────────────────────────────────────────────────

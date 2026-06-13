@@ -1,1 +1,0 @@
-import{t as e}from"./client-CozH2RlE.js";var t=t=>e.post(`/bd`,t),n=(t={})=>e.get(`/bd`,{params:t}),r=(t,n=`month`)=>e.get(`/bd/${t}`,{params:{period:n}}),i=(t,n)=>e.post(`/bd/transfer-agency`,{agencyId:t,toBdId:n}),a=t=>e.delete(`/bd/${t}`),o=t=>e.patch(`/bd/${t}/activate`,{});export{a,o as i,r as n,i as o,n as r,t};

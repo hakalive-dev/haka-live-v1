@@ -21,8 +21,14 @@ import Redis from 'ioredis';
 import { env } from './env';
 
 export function createBullMqConnection(): Redis {
-  return new Redis(env.REDIS_URL, {
+  const connection = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
   });
+  // Without an 'error' listener ioredis logs "missing 'error' handler" and an
+  // emitted error can surface as an unhandled exception. Keep it quiet + safe.
+  connection.on('error', (err) => {
+    console.error('BullMQ Redis error:', err.message);
+  });
+  return connection;
 }

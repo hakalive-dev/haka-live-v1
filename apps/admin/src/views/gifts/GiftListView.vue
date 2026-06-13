@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import * as giftsApi from '@/api/gifts'
+import GiftsSubnav from '@/components/gifts/GiftsSubnav.vue'
 import type { BulkImportResult } from '@/api/gifts'
 import StatusBadge from '@/components/common/StatusBadge.vue'
 import RowActionMenu from '@/components/common/RowActionMenu.vue'
@@ -20,7 +22,15 @@ function isRemoteUrl(value: string | null | undefined): boolean {
 }
 
 const gifts = ref<any[]>([])
+const categoryFilter = ref('')
 const loading = ref(true)
+
+const filteredGifts = computed(() => {
+  if (!categoryFilter.value) return gifts.value
+  return gifts.value.filter(
+    (gift) => normalizeGiftFormCategory(gift.category) === categoryFilter.value,
+  )
+})
 const showForm = ref(false)
 const editingGift = ref<any>(null)
 const form = ref({ name: '', coinCost: 0, beanValue: 0, category: 'bag', svgaAsset: '' })
@@ -189,8 +199,38 @@ onMounted(fetchGifts)
 
 <template>
   <div class="page">
+    <GiftsSubnav />
+
+    <div
+      v-if="auth.hasPermission('gift.manage')"
+      class="lucky-banner"
+    >
+      <div>
+        <p class="lucky-banner-title">Lucky gift win probability &amp; payouts</p>
+        <p class="lucky-banner-sub">
+          Configure win chance, multiplier, and host bean cut for all gifts in the Lucky category.
+        </p>
+      </div>
+      <RouterLink to="/gifts/lucky-gifts" class="btn btn-primary btn-sm">
+        Open Lucky Gift Settings
+      </RouterLink>
+    </div>
+
     <div class="toolbar">
-      <h2 class="page-subtitle">Gift Catalogue</h2>
+      <div class="toolbar-left">
+        <h2 class="page-subtitle">Gift Catalogue</h2>
+        <select v-model="categoryFilter" class="filter-select">
+          <option value="">All Categories</option>
+          <option
+            v-for="opt in GIFT_CATEGORY_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
+        </select>
+        <span class="stat-pill">{{ filteredGifts.length }} of {{ gifts.length }}</span>
+      </div>
       <div class="toolbar-actions">
         <button
           v-if="auth.hasPermission('gift.manage')"
@@ -213,6 +253,9 @@ onMounted(fetchGifts)
 
     <div class="table-card">
       <div v-if="loading" class="loading">Loading gifts...</div>
+      <div v-else-if="filteredGifts.length === 0" class="loading">
+        {{ categoryFilter ? 'No gifts in this category.' : 'No gifts found.' }}
+      </div>
       <table v-else class="data-table">
         <thead>
           <tr>
@@ -226,7 +269,7 @@ onMounted(fetchGifts)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="gift in gifts" :key="gift.id">
+          <tr v-for="gift in filteredGifts" :key="gift.id">
             <td class="cell-gift">
               <img v-if="isRemoteUrl(gift.image)" :src="gift.image" class="gift-thumb" alt="" />
               <span v-else-if="gift.image" class="gift-thumb-placeholder" title="Bundled or relative image path">IMG</span>
@@ -382,8 +425,36 @@ onMounted(fetchGifts)
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 16px; }
-.toolbar { display: flex; align-items: center; justify-content: space-between; }
+.lucky-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--card-border));
+  background: color-mix(in srgb, var(--primary) 8%, var(--card-bg));
+}
+.lucky-banner-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.lucky-banner-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.toolbar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .toolbar-actions { display: flex; gap: 8px; align-items: center; }
+.filter-select { height: 36px; padding: 0 10px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 13px; background: var(--card-bg); color: var(--text-primary); outline: none; cursor: pointer; }
+.stat-pill { font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 4px 10px; background: var(--content-bg); border: 1px solid var(--card-border); border-radius: 999px; white-space: nowrap; }
 .bulk-hint { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.5; }
 .bulk-hint code { font-size: 12px; background: var(--content-bg); padding: 2px 6px; border-radius: 4px; }
 .btn-template { margin-bottom: 12px; }

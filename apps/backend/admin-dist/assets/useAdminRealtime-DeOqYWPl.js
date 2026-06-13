@@ -1,0 +1,1 @@
+import{C as e,w as t}from"./_plugin-vue_export-helper-BkqjI1HN.js";import{r as n,t as r}from"./adminSocket-COAZzcFg.js";function i(i,a){let o=[];e(()=>{r(),o=[n(`resource:${i}`,e=>{a(e)})]}),t(()=>{o.forEach(e=>e()),o=[]})}export{i as t};

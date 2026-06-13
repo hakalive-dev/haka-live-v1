@@ -212,10 +212,10 @@ export function SocialScreen({ route, navigation }: Props) {
         </Text>
         <View style={styles.levelPillRow}>
           {(item.richLevel ?? 0) > 0 ? (
-            <RichLevelBadge level={item.richLevel as number} size={20} />
+            <RichLevelBadge level={item.richLevel as number} size={16} />
           ) : null}
           {(item.charmLevel ?? 0) > 0 ? (
-            <CharmLevelBadge level={item.charmLevel as number} size={20} />
+            <CharmLevelBadge level={item.charmLevel as number} size={16} />
           ) : null}
         </View>
       </View>

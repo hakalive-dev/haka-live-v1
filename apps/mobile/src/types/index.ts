@@ -346,6 +346,16 @@ export interface Gift {
   order: number;
 }
 
+export interface LuckyDrawOutcome {
+  drawId: string;
+  isWin: boolean;
+  /** Multiplier drawn for this send (0 on lose). */
+  winMultiplier?: number;
+  rewardCoins: number;
+  coinCost: number;
+  senderCoinBalance?: number;
+}
+
 export interface GiftTransaction {
   id: string;
   gift: Gift;
@@ -356,6 +366,7 @@ export interface GiftTransaction {
   beanValue: number;
   qty: number;
   createdAt: string;
+  luckyDraw?: LuckyDrawOutcome | null;
 }
 
 export interface SendGiftPayload {
@@ -374,7 +385,7 @@ export interface ChatMessage {
   content: string | null;
   mediaUrl?: string | null;
   createdAt: string;
-  type?: "text" | "quick" | "gift_notice" | "system" | "image";
+  type?: "text" | "quick" | "gift_notice" | "lucky_win_notice" | "system" | "image";
   kind?: "system";
   giftNotice?: {
     giftName: string;
@@ -383,6 +394,16 @@ export interface ChatMessage {
     qty: number;
     /** Used when giftIcon is empty (legacy catalogue). */
     giftImageFallback?: string | null;
+  };
+  luckyWin?: {
+    giftName: string;
+    giftIcon: string;
+    rewardCoins: number;
+    giftImageFallback?: string | null;
+    /** Wins rolled into one chat line after a combo session (default 1). */
+    winCount?: number;
+    /** Total gifts sent in the combo session that produced the win(s). */
+    sendMultiplier?: number;
   };
 }
 
@@ -1237,6 +1258,8 @@ export interface MomentAuthor {
   avatar: string | null;
   country: string;
   gender?: string;
+  date_of_birth?: string | null;
+  age?: number | null;
   rich_level: number;
   charm_level: number;
   equippedFrame?: EquippedCosmetic | null;
@@ -1249,6 +1272,7 @@ export interface MomentPost {
   user: MomentAuthor;
   post_type: "moment" | "video";
   media_url: string | null;
+  poster_url?: string | null;
   caption: string;
   hashtag: string;
   likes_count: number;
@@ -1271,6 +1295,7 @@ export interface MomentComment {
   user: MomentAuthor;
   text: string;
   likes_count: number;
+  is_liked: boolean;
   created_at: string;
 }
 

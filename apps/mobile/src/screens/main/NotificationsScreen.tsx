@@ -33,11 +33,21 @@ import type { RootStackParamList } from '@navigation/types';
 function iconForType(type: string): React.ComponentProps<typeof Ionicons>['name'] {
   switch (type) {
     case 'gift':
+    case 'moment_gift':
       return 'gift-outline';
+    case 'moment_like':
+      return 'heart-outline';
+    case 'moment_comment':
+      return 'chatbubble-outline';
+    case 'moment_share':
+      return 'arrow-redo-outline';
     case 'follow':
       return 'person-add-outline';
     case 'room':
+    case 'video_call':
       return 'videocam-outline';
+    case 'voice_call':
+      return 'call-outline';
     case 'chat':
     case 'dm':
       return 'chatbubble-outline';
@@ -85,8 +95,13 @@ function openNotificationTarget(
     return;
   }
 
-  if (type === 'video_call' && data.callerId) {
-    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone');
+  if ((type === 'video_call' || type === 'voice_call') && data.callerId) {
+    const callType = data.callType === 'voice' || type === 'voice_call' ? 'voice' : 'video';
+    promptIncomingVideoCallFromPush(
+      data.callerId,
+      data.callerDisplayName ?? 'Someone',
+      callType,
+    );
     return;
   }
 
@@ -96,6 +111,19 @@ function openNotificationTarget(
     data.open === 'payroll'
   ) {
     navigation.navigate('Payroll');
+    return;
+  }
+
+  if (
+    type === 'moment_like' ||
+    type === 'moment_comment' ||
+    type === 'moment_share' ||
+    type === 'moment_gift' ||
+    data.open === 'actor_profile'
+  ) {
+    if (data.actorId) {
+      navigation.navigate('PublicProfile', { userId: data.actorId });
+    }
   }
 }
 

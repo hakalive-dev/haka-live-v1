@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   Alert,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -14,7 +15,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { useQueryClient } from '@tanstack/react-query';
+
 import { momentsApi } from '@api/moments';
+import { queryKeys } from '@api/queryKeys';
 import { Colors, Spacing, Radius } from '@/theme';
 import { KeyboardAwareScroll } from '@components/keyboard';
 import type { RootStackParamList } from '@navigation/types';
@@ -26,6 +30,7 @@ export function CreateMomentScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [postType, setPostType] = useState<'moment' | 'video'>(
     route.params?.postType ?? 'moment',
@@ -36,25 +41,68 @@ export function CreateMomentScreen() {
   const [hashtag, setHashtag] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const pickMedia = useCallback(async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow access to your media library.');
-      return;
-    }
+  const mediaPickerTypes = postType === 'video'
+    ? (['videos'] as const)
+    : (['images'] as const);
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: postType === 'video' ? 'videos' : 'images',
-      allowsEditing: true,
-      quality: 0.85,
-    });
+  const applyPickedAsset = useCallback((asset: ImagePicker.ImagePickerAsset) => {
+    setMediaUri(asset.uri);
+    setMediaType(asset.type === 'video' ? 'video' : 'image');
+  }, []);
 
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      setMediaUri(asset.uri);
-      setMediaType(asset.type === 'video' ? 'video' : 'image');
+  const launchMedia = useCallback(async (source: 'camera' | 'library') => {
+    try {
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(
+            'Permission required',
+            postType === 'video'
+              ? 'Please allow camera access to record a video.'
+              : 'Please allow camera access to take a photo.',
+          );
+          return;
+        }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission required', 'Please allow access to your media library.');
+          return;
+        }
+      }
+
+      const pickerOptions = {
+        mediaTypes: mediaPickerTypes,
+        allowsEditing: true,
+        quality: 0.85,
+        ...(postType === 'video' && source === 'camera' ? { videoMaxDuration: 60 } : {}),
+        ...(Platform.OS === 'ios' && source === 'library'
+          ? { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.OVER_FULL_SCREEN }
+          : {}),
+      };
+
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync(pickerOptions)
+        : await ImagePicker.launchImageLibraryAsync(pickerOptions);
+
+      if (!result.canceled && result.assets.length > 0) {
+        applyPickedAsset(result.assets[0]);
+      }
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to open camera or library');
     }
-  }, [postType]);
+  }, [applyPickedAsset, mediaPickerTypes, postType]);
+
+  const showMediaSourcePicker = useCallback(() => {
+    const cameraLabel = postType === 'video' ? 'Record Video' : 'Take Photo';
+    const libraryLabel = postType === 'video' ? 'Choose Video' : 'Choose from Library';
+
+    Alert.alert('Add media', undefined, [
+      { text: cameraLabel, onPress: () => launchMedia('camera') },
+      { text: libraryLabel, onPress: () => launchMedia('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [launchMedia, postType]);
 
   const handleSubmit = useCallback(async () => {
     if (!mediaUri) {
@@ -80,6 +128,8 @@ export function CreateMomentScreen() {
       } as any);
 
       await momentsApi.create(formData);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.discover.moments() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.discover.videos() });
       Alert.alert('Posted!', 'Your moment has been shared.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -118,7 +168,7 @@ export function CreateMomentScreen() {
             <TouchableOpacity
               key={t}
               style={[styles.typeBtn, postType === t && styles.typeBtnActive]}
-              onPress={() => { setPostType(t); setMediaUri(null); }}
+              onPress={() => { setPostType(t); setMediaUri(null); setMediaType(null); }}
             >
               <Ionicons
                 name={t === 'moment' ? 'image-outline' : 'videocam-outline'}
@@ -132,27 +182,54 @@ export function CreateMomentScreen() {
           ))}
         </View>
 
-        {/* Media picker */}
-        <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia} activeOpacity={0.8}>
-          {mediaUri ? (
-            <Image
-              source={{ uri: mediaUri }}
-              style={styles.mediaPreview}
-              contentFit="cover"
-            />
-          ) : (
-            <View style={styles.mediaPlaceholder}>
-              <Ionicons
-                name={postType === 'video' ? 'videocam-outline' : 'image-outline'}
-                size={48}
-                color={Colors.textTertiary}
+        {/* Media picker — camera or library */}
+        <View style={styles.mediaPicker}>
+          <TouchableOpacity
+            style={styles.mediaPreviewTap}
+            onPress={showMediaSourcePicker}
+            activeOpacity={0.85}
+          >
+            {mediaUri ? (
+              <Image
+                source={{ uri: mediaUri }}
+                style={styles.mediaPreview}
+                contentFit="cover"
               />
-              <Text style={styles.mediaPlaceholderText}>
-                Tap to select {postType === 'video' ? 'a video' : 'a photo'}
+            ) : (
+              <View style={styles.mediaPlaceholder}>
+                <Ionicons
+                  name={postType === 'video' ? 'videocam-outline' : 'image-outline'}
+                  size={48}
+                  color={Colors.textTertiary}
+                />
+                <Text style={styles.mediaPlaceholderText}>
+                  {postType === 'video' ? 'Record or choose a video' : 'Take or choose a photo'}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.mediaSourceRow}>
+            <TouchableOpacity
+              style={styles.mediaSourceBtn}
+              onPress={() => launchMedia('camera')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="camera-outline" size={22} color={Colors.primary} />
+              <Text style={styles.mediaSourceBtnText}>
+                {postType === 'video' ? 'Record' : 'Camera'}
               </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mediaSourceBtn}
+              onPress={() => launchMedia('library')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="images-outline" size={22} color={Colors.primary} />
+              <Text style={styles.mediaSourceBtnText}>Gallery</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Caption */}
         <View style={styles.inputGroup}>
@@ -266,6 +343,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderStyle: 'dashed',
   },
+  mediaPreviewTap: {
+    width: '100%',
+  },
   mediaPreview: {
     width: '100%',
     height: 280,
@@ -275,10 +355,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
   },
   mediaPlaceholderText: {
     fontSize: 14,
     color: Colors.textTertiary,
+    textAlign: 'center',
+  },
+  mediaSourceRow: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  mediaSourceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.md,
+  },
+  mediaSourceBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 
   inputGroup: {

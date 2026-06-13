@@ -77,6 +77,12 @@ const schema = z.object({
   /** FCM topic for broadcast team announcements (mobile must subscribe to the same name) */
   FCM_TEAM_ANNOUNCEMENTS_TOPIC: z.string().default('haka_team_announcements'),
 
+  /**
+   * When `true`, run the idempotent Haka Team welcome-DM backfill on API boot
+   * (inbox only — no push). Set on staging for one deploy cycle, then remove.
+   */
+  RUN_WELCOME_DM_BACKFILL: z.enum(['true', 'false']).default('false'),
+
   // Payment method encryption (32-byte hex; required in production for withdrawal bind)
   PAYMENT_ENCRYPTION_KEY: z.string().length(64).optional(),
 

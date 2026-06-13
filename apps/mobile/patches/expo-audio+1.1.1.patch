@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-audio/android/build.gradle b/node_modules/expo-audio/android/build.gradle
+index 5b4fc52..a0ef284 100644
+--- a/node_modules/expo-audio/android/build.gradle
++++ b/node_modules/expo-audio/android/build.gradle
+@@ -25,7 +25,7 @@ repositories {
+ dependencies {
+   implementation 'androidx.appcompat:appcompat:1.7.1'
+ 
+-  def androidxMedia3Version = "1.8.0"
++  def androidxMedia3Version = "1.9.0"
+   implementation "androidx.media3:media3-session:$androidxMedia3Version"
+   implementation "androidx.media3:media3-ui:$androidxMedia3Version"
+   implementation "androidx.media3:media3-exoplayer:$androidxMedia3Version"

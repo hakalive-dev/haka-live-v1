@@ -1,0 +1,1 @@
+import{t as e}from"./client-BO7AMZ3Q.js";function t(){return e.get(`/roles`)}function n(){return e.get(`/roles/custom`)}function r(t){return e.post(`/roles`,t)}function i(t,n){return e.patch(`/roles/${t}`,n)}function a(t){return e.delete(`/roles/${t}`)}export{i as a,n as i,a as n,t as r,r as t};

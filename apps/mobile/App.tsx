@@ -23,6 +23,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/components/Toast';
 import { PurchaseSuccessProvider } from './src/components/PurchaseSuccessModal';
 import { SeatInvitePromptProvider } from './src/components/SeatInvitePrompt';
+import { IncomingCallProvider } from './src/components/IncomingCallOverlay';
 import { KeyboardSetup } from './src/components/keyboard';
 import { preloadSvgaAssets } from './src/screens/room/SVGAGiftEffect';
 import { API_BASE_URL, pingBackend } from './src/api/client';
@@ -54,9 +55,11 @@ function App() {
                 <ToastProvider>
                   <PurchaseSuccessProvider>
                     <SeatInvitePromptProvider>
-                      <ConnectivityProvider>
-                        <RootNavigator />
-                      </ConnectivityProvider>
+                      <IncomingCallProvider>
+                        <ConnectivityProvider>
+                          <RootNavigator />
+                        </ConnectivityProvider>
+                      </IncomingCallProvider>
                     </SeatInvitePromptProvider>
                   </PurchaseSuccessProvider>
                 </ToastProvider>

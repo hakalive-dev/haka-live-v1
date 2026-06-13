@@ -165,6 +165,7 @@ export type RootStackParamList = {
   VideoCall: {
     userId: string;
     displayName: string;
+    callType?: 'voice' | 'video';
     channelId: string;
     agoraToken: string;
     appId: string;

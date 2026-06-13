@@ -44,10 +44,115 @@ function patchVisionCameraLib() {
   }
 }
 
+function patchExpoMedia3Version(buildGradlePath) {
+  if (!fs.existsSync(buildGradlePath)) return;
+  const original = fs.readFileSync(buildGradlePath, 'utf8');
+  const patched = original.replace(
+    /def androidxMedia3Version = "1\.8\.0"/g,
+    'def androidxMedia3Version = "1.9.0"',
+  );
+  if (patched !== original) fs.writeFileSync(buildGradlePath, patched, 'utf8');
+}
+
+/**
+ * vision-camera pulls camera-video → media3 1.9.0, but expo-video 3.0.x ships a
+ * forked DefaultLoadControl from media3 1.8 (no-arg getAllocator). Rebuild against
+ * 1.9 and use the PlayerId overload to avoid AbstractMethodError at playback.
+ * Primary fix: patches/expo-video+3.0.16.patch (applied via patch-package in postinstall).
+ * This function is a fallback if patch-package did not run.
+ */
+function patchExpoVideoLoadControl() {
+  const buildGradle = path.join(
+    process.cwd(),
+    'node_modules',
+    'expo-video',
+    'android',
+    'build.gradle',
+  );
+  patchExpoMedia3Version(buildGradle);
+
+  const loadControl = path.join(
+    process.cwd(),
+    'node_modules',
+    'expo-video',
+    'android',
+    'src',
+    'main',
+    'java',
+    'expo',
+    'modules',
+    'video',
+    'player',
+    'DefaultLoadControl.java',
+  );
+  if (!fs.existsSync(loadControl)) return;
+
+  const original = fs.readFileSync(loadControl, 'utf8');
+  const patched = original.replace(
+    '@Override\n  public Allocator getAllocator() {\n    return allocator;\n  }',
+    '@Override\n  public Allocator getAllocator(PlayerId playerId) {\n    return allocator;\n  }',
+  );
+  if (patched !== original) fs.writeFileSync(loadControl, patched, 'utf8');
+}
+
+function patchVideoPlayerLoadControlKotlin() {
+  const kotlinPath = path.join(
+    process.cwd(),
+    'node_modules',
+    'expo-video',
+    'android',
+    'src',
+    'main',
+    'java',
+    'expo',
+    'modules',
+    'video',
+    'player',
+    'VideoPlayerLoadControl.kt',
+  );
+  if (!fs.existsSync(kotlinPath)) return;
+
+  const original = fs.readFileSync(kotlinPath, 'utf8');
+  if (original.includes('override fun getAllocator(playerId: PlayerId)')) return;
+
+  let patched = original;
+  if (!patched.includes('import androidx.media3.exoplayer.analytics.PlayerId')) {
+    patched = patched.replace(
+      "import androidx.media3.common.util.Util\n",
+      "import androidx.media3.common.util.Util\nimport androidx.media3.exoplayer.analytics.PlayerId\nimport androidx.media3.exoplayer.upstream.Allocator\n",
+    );
+  }
+  patched = patched.replace(
+    'class VideoPlayerLoadControl : DefaultLoadControl() {\n  private var targetBufferMs',
+    'class VideoPlayerLoadControl : DefaultLoadControl() {\n  override fun getAllocator(playerId: PlayerId): Allocator =\n    super.getAllocator(playerId)\n\n  private var targetBufferMs',
+  );
+  if (patched !== original) fs.writeFileSync(kotlinPath, patched, 'utf8');
+}
+
+function patchExpoAudioMedia3() {
+  const buildGradle = path.join(
+    process.cwd(),
+    'node_modules',
+    'expo-audio',
+    'android',
+    'build.gradle',
+  );
+  patchExpoMedia3Version(buildGradle);
+}
+
 try {
   patchVisionCameraLib();
 } catch (err) {
   // eslint-disable-next-line no-console
   console.warn('[postinstall] patchVisionCameraLib failed:', err);
+}
+
+try {
+  patchExpoVideoLoadControl();
+  patchVideoPlayerLoadControlKotlin();
+  patchExpoAudioMedia3();
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.warn('[postinstall] patchExpoMedia3 failed:', err);
 }
 
