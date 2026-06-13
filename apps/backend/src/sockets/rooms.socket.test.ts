@@ -129,6 +129,7 @@ import { redis } from '../config/redis';
 import { authMiddleware } from './auth';
 import { registerRoomHandlers } from './rooms.socket';
 import { userActiveRoomKey } from '../modules/rooms/user-active-room';
+import { FULL_LEAVE_DEBOUNCE_MS } from '../modules/rooms/room-seat-grace';
 
 const mockRoom = prisma.room as unknown as {
   findUnique: jest.Mock;
@@ -805,9 +806,9 @@ describe('disconnect / multi-socket leave (seat retention)', () => {
 
     mockRoomSeat.updateMany.mockClear();
     client.close();
-    await sleep(2600);
+    await sleep(FULL_LEAVE_DEBOUNCE_MS + 200);
     expect(mockRoomSeat.updateMany).not.toHaveBeenCalled();
-  }, 10000);
+  }, 15000);
 
   it('does not clear seats when the same user still has another socket in the room', async () => {
     mockRoom.findUnique.mockResolvedValue(LIVE_ROOM_FOR_JOIN);
@@ -854,11 +855,11 @@ describe('disconnect / multi-socket leave (seat retention)', () => {
     await sleep(400);
     expect(mockRoomSeat.updateMany).not.toHaveBeenCalled();
 
-    await sleep(2200);
+    await sleep(FULL_LEAVE_DEBOUNCE_MS + 200);
     expect(mockRoomSeat.updateMany).toHaveBeenCalled();
 
     await sleep(100);
-  }, 15000);
+  }, 25000);
 
   it('cancels debounced full leave when the user room:joins again before the window', async () => {
     mockRoom.findUnique.mockResolvedValue(LIVE_ROOM_FOR_JOIN);
@@ -896,15 +897,15 @@ describe('disconnect / multi-socket leave (seat retention)', () => {
       second.emit('room:join', { roomId: ROOM_ID }, () => r());
     });
 
-    await sleep(2500);
+    await sleep(FULL_LEAVE_DEBOUNCE_MS + 200);
     expect(mockRoomSeat.updateMany).not.toHaveBeenCalled();
 
     second.close();
-    await sleep(2500);
+    await sleep(FULL_LEAVE_DEBOUNCE_MS + 200);
     expect(mockRoomSeat.updateMany).toHaveBeenCalled();
 
     await sleep(100);
-  }, 20000);
+  }, 35000);
 });
 
 // ── seat:take / seat:leave ────────────────────────────────────────────────────

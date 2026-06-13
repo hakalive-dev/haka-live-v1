@@ -1,24 +1,25 @@
 import client from './client'
 
 export interface LuckyMultiplierTier {
-  multiplier: number
-  rewardCoins: number
+  payoutPercent: number
   weight: number
 }
 
 export interface LuckySettingDTO {
   enabled: boolean
   winProbability: number
-  /** Weighted average display multiplier across tiers. */
+  /** Weighted average payout % across tiers (on win). */
   winMultiplier: number
-  /** Weighted average coin reward across tiers. */
+  /** Weighted average payout % across tiers. */
+  averagePayoutPercent: number
+  /** Average coin reward at reference stake (100 coins). */
   averageRewardCoins: number
   winMultiplierTiers: LuckyMultiplierTier[]
   receiverBenefitPercent: number
   dailyUserWinCapCoins: string
   updatedBy: string
   updatedAt: string
-  /** Expected sender return: winProbability × avg reward / reference stake */
+  /** Expected sender return: winProbability × avg payout % / 100 */
   expectedReturn: number
   /** Sender TRP + host receiver % (keep below 1.0 for house edge). */
   totalPayoutRatio: number
@@ -78,23 +79,33 @@ export function getLuckySetting(): Promise<LuckySettingDTO> {
   return client.get('/lucky-gifts/setting') as Promise<LuckySettingDTO>
 }
 
-export function updateLuckySetting(data: LuckySettingUpdate): Promise<LuckySettingDTO> {
-  return client.patch('/lucky-gifts/setting', data) as Promise<LuckySettingDTO>
-}
-
-export function getLuckyStats(): Promise<LuckyStatsDTO> {
-  return client.get('/lucky-gifts/stats') as Promise<LuckyStatsDTO>
+export function updateLuckySetting(body: LuckySettingUpdate): Promise<LuckySettingDTO> {
+  return client.patch('/lucky-gifts/setting', body) as Promise<LuckySettingDTO>
 }
 
 export function listLuckyDraws(params: {
   page?: number
   limit?: number
+  userId?: string
+  giftId?: string
+  roomId?: string
   isWin?: boolean
-} = {}): Promise<LuckyDrawsPage> {
-  const q: Record<string, string | number> = {
-    page: params.page ?? 1,
-    limit: params.limit ?? 25,
-  }
-  if (params.isWin !== undefined) q.isWin = String(params.isWin)
-  return client.get('/lucky-gifts/draws', { params: q }) as Promise<LuckyDrawsPage>
+  from?: string
+  to?: string
+}): Promise<LuckyDrawsPage> {
+  const q = new URLSearchParams()
+  if (params.page != null) q.set('page', String(params.page))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.userId) q.set('userId', params.userId)
+  if (params.giftId) q.set('giftId', params.giftId)
+  if (params.roomId) q.set('roomId', params.roomId)
+  if (params.isWin != null) q.set('isWin', params.isWin ? 'true' : 'false')
+  if (params.from) q.set('from', params.from)
+  if (params.to) q.set('to', params.to)
+  const qs = q.toString()
+  return client.get(`/lucky-gifts/draws${qs ? `?${qs}` : ''}`) as Promise<LuckyDrawsPage>
+}
+
+export function getLuckyStats(): Promise<LuckyStatsDTO> {
+  return client.get('/lucky-gifts/stats') as Promise<LuckyStatsDTO>
 }

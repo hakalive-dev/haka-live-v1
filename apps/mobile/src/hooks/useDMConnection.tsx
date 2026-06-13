@@ -14,7 +14,10 @@ import { useSelector } from 'react-redux';
 import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 
 import { queryKeys } from '@api/queryKeys';
-import type { ChatInboxData } from '@hooks/queries/useChatInboxQuery';
+import {
+  emptyChatInboxData,
+  type ChatInboxData,
+} from '@hooks/queries/useChatInboxQuery';
 import { logDiagnostic } from '../diagnostics/releaseDiagnostics';
 import { getFreshSocketToken, getSocketBaseUrl } from '../utils/socketAuth';
 import type { RootState } from '../store';
@@ -57,13 +60,24 @@ function patchConversationList(
   msg: DirectMessage,
   otherUser: DMConversation['otherUser'],
   allowNew: boolean,
+  direction: 'inbound' | 'outbound',
+  currentUserId: string,
 ): DMConversation[] {
   const idx = list.findIndex((c) => c.otherUser.id === peerId);
+  const unreadCount =
+    direction === 'outbound'
+      ? 0
+      : msg.recipient.id === currentUserId
+        ? (idx >= 0 ? list[idx].unreadCount + 1 : 1)
+        : idx >= 0
+          ? list[idx].unreadCount
+          : 0;
+
   if (idx >= 0) {
     const updated: DMConversation = {
       ...list[idx],
       lastMessage: msg,
-      unreadCount: 0,
+      unreadCount,
     };
     const rest = list.filter((_, i) => i !== idx);
     return sortConversationsByLastMessage([updated, ...rest]);
@@ -72,11 +86,43 @@ function patchConversationList(
   const newRow: DMConversation = {
     otherUser,
     lastMessage: msg,
-    unreadCount: 0,
+    unreadCount,
     isFollowing: false,
     isFamiliar: false,
   };
   return sortConversationsByLastMessage([newRow, ...list]);
+}
+
+function patchInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+  direction: 'inbound' | 'outbound',
+) {
+  const peerId =
+    msg.sender.id === currentUserId ? msg.recipient.id : msg.sender.id;
+  const otherUser =
+    msg.sender.id === currentUserId ? msg.recipient : msg.sender;
+
+  queryClient.setQueryData<ChatInboxData>(queryKeys.chat.inbox(), (old) => {
+    const base = old ?? emptyChatInboxData();
+    const patchList = (list: DMConversation[], allowNew: boolean) =>
+      patchConversationList(
+        list,
+        peerId,
+        msg,
+        otherUser,
+        allowNew,
+        direction,
+        currentUserId,
+      );
+
+    return {
+      ...base,
+      conversations: patchList(base.conversations, true),
+      friendConversations: patchList(base.friendConversations, false),
+    };
+  });
 }
 
 /** Optimistically update inbox preview when the current user sends a DM. */
@@ -85,31 +131,17 @@ export function applyOutboundDmToInboxCache(
   msg: DirectMessage,
   currentUserId: string,
 ) {
-  const peerId =
-    msg.sender.id === currentUserId ? msg.recipient.id : msg.sender.id;
-  const otherUser =
-    msg.sender.id === currentUserId ? msg.recipient : msg.sender;
+  patchInboxCache(queryClient, msg, currentUserId, 'outbound');
+}
 
-  queryClient.setQueryData<ChatInboxData>(queryKeys.chat.inbox(), (old) => {
-    if (!old) return old;
-    return {
-      ...old,
-      conversations: patchConversationList(
-        old.conversations,
-        peerId,
-        msg,
-        otherUser,
-        true,
-      ),
-      friendConversations: patchConversationList(
-        old.friendConversations,
-        peerId,
-        msg,
-        otherUser,
-        false,
-      ),
-    };
-  });
+/** Optimistically update inbox preview when the current user receives a DM. */
+export function applyInboundDmToInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  if (msg.recipient?.id !== currentUserId) return;
+  patchInboxCache(queryClient, msg, currentUserId, 'inbound');
 }
 
 export function onOutboundDmSent(
@@ -169,7 +201,13 @@ export function DMConnectionProvider({
     client.on('new_dm', (data: Record<string, unknown>) => {
       setDmEvent({ event: 'new_dm', data });
       const msg = data as unknown as DirectMessage;
-      if (msg.recipient?.id === currentUserIdRef.current) {
+      const uid = currentUserIdRef.current;
+      if (!uid) return;
+      if (msg.recipient?.id === uid) {
+        applyInboundDmToInboxCache(queryClient, msg, uid);
+        invalidateChatUnreadQueries(queryClient);
+      } else if (msg.sender?.id === uid) {
+        applyOutboundDmToInboxCache(queryClient, msg, uid);
         invalidateChatUnreadQueries(queryClient);
       }
     });

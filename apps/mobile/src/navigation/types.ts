@@ -154,6 +154,7 @@ export type RootStackParamList = {
   Store: StoreScreenParams;
   StoreModal: StoreScreenParams;
   Ranking: { initialTab?: "state" | "agent" | "game" | "creator" };
+  StateQueen: { stateCode: string; stateName: string; countryCode?: string };
   CreateRoom: undefined;
   InviteCreator: undefined;
   InviteFriends: undefined;

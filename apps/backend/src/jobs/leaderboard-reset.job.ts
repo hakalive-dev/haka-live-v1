@@ -5,6 +5,11 @@ import {
   regionalEarnerKeyPrefix,
   type Period,
 } from '../modules/leaderboard/leaderboard.service';
+import {
+  settleStateRankingRewards,
+  listStateRankingEnabledCountries,
+} from '../modules/leaderboard/state-ranking.service';
+import { dailyDateKey } from '../modules/leaderboard/state-ranking-keys';
 import { withSchedulerLock } from '../utils/distributed-lock';
 
 /**
@@ -46,9 +51,39 @@ async function deleteKeysMatching(pattern: string): Promise<number> {
   return deleted;
 }
 
+async function settleAndClearStateRankings(settlingDateKey: string): Promise<void> {
+  const periodDate = new Date(`${settlingDateKey}T00:00:00.000Z`);
+  for (const countryCode of listStateRankingEnabledCountries()) {
+    try {
+      const n = await settleStateRankingRewards(countryCode, periodDate, settlingDateKey);
+      if (n > 0) {
+        console.log(`🏆 state ranking settlement [${countryCode}] — credited ${n} host(s) for ${settlingDateKey}`);
+      }
+    } catch (err: any) {
+      console.error(`❌ state ranking settlement [${countryCode}] failed:`, err?.message ?? err);
+    }
+  }
+  const hostsDeleted = await deleteKeysMatching(
+    `leaderboard:state:hosts:daily:*:*:${settlingDateKey}`,
+  );
+  const totalsDeleted = await deleteKeysMatching(
+    `leaderboard:state:totals:daily:*:${settlingDateKey}`,
+  );
+  console.log(
+    `🔄 state ranking keys cleared for ${settlingDateKey} — ${hostsDeleted} host shard(s), ${totalsDeleted} total key(s)`,
+  );
+}
+
 async function resetKeys(keys: string[], label: string, regionalPeriod?: Period): Promise<void> {
   if (keys.length === 0) return;
   try {
+    if (label === 'daily') {
+      const yesterday = new Date();
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      const settlingDateKey = dailyDateKey(yesterday);
+      await settleAndClearStateRankings(settlingDateKey);
+    }
+
     const count = await redis.del(...keys);
     let regional = 0;
     if (regionalPeriod) {
@@ -91,3 +126,5 @@ export function stopLeaderboardResetJobs(): void {
   for (const t of tasks) t.stop();
   tasks = [];
 }
+
+export { settleAndClearStateRankings, deleteKeysMatching };

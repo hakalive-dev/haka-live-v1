@@ -108,6 +108,8 @@ export function useRoomConnection({
   const agoraGenRef = useRef(0);
   const agoraTeardownRef = useRef<Promise<void>>(Promise.resolve());
   const ws         = useRef<SocketIOClient | null>(null);
+  const roomPasswordRef = useRef(roomPassword);
+  roomPasswordRef.current = roomPassword;
   const onWsRef    = useRef(onWsEvent);
   onWsRef.current  = onWsEvent;
   const localUidRef = useRef(0);
@@ -504,9 +506,10 @@ export function useRoomConnection({
     const socket = ws.current;
     if (!socket?.connected || !enabled || !roomId) return;
     const joinPayload: Record<string, unknown> = { roomId };
-    if (roomPassword) joinPayload.password = roomPassword;
+    const password = roomPasswordRef.current;
+    if (password) joinPayload.password = password;
     socket.emit('room:join', joinPayload, handleRoomJoinAck);
-  }, [roomId, enabled, roomPassword, handleRoomJoinAck]);
+  }, [roomId, enabled, handleRoomJoinAck]);
 
   const connectWs = useCallback(async () => {
     if (!enabled) return;
@@ -523,8 +526,9 @@ export function useRoomConnection({
       reconnectionDelayMax: 5000,
       // No attempt cap: Agora publishes independently for hours (24h RTC token),
       // so a socket that gives up leaves a ghost publisher — seat cleared
-      // server-side after 2s, voice still audible, and no rejoin ever reconciles
-      // it. Infinite retries guarantee the seats.snapshot resync on recovery.
+      // server-side after debounce (8s, aligned with reconnectionDelayMax), voice
+      // still audible, and no rejoin ever reconciles it. Infinite retries guarantee
+      // the seats.snapshot resync on recovery.
     });
     ws.current = socket;
 
@@ -575,9 +579,11 @@ export function useRoomConnection({
     });
   }, [enabled, emitRoomJoin]);
 
-  const disconnectWs = useCallback(() => {
+  const disconnectWs = useCallback((opts?: { explicitLeave?: boolean }) => {
     if (ws.current) {
-      try { ws.current.emit('room:leave', { roomId }); } catch {}
+      if (opts?.explicitLeave) {
+        try { ws.current.emit('room:leave', { roomId }); } catch {}
+      }
       // Drop every handler before disconnect so any in-flight events from the
       // server don't fire callbacks that close over stale React state.
       try { ws.current.removeAllListeners(); } catch {}
@@ -766,12 +772,21 @@ export function useRoomConnection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, roomId, publishVideo, subscribeVideo]);
 
-  // WebSocket lifecycle — depends on connectWs so password changes trigger a reconnect.
+  // WebSocket lifecycle — reconnect when room switches or realtime is disabled/enabled.
   useEffect(() => {
     if (!enabled) return;
     connectWs();
+    // Intentional exit uses disconnectWs({ explicitLeave: true }) from stopSession.
+    // Effect teardown only drops the socket; server debounces full leave so brief
+    // reconnects (same room / password rotation) do not clear mic seats immediately.
     return () => disconnectWs();
   }, [enabled, roomId, connectWs, disconnectWs]);
+
+  // Password supplied after lock gate — re-join on the existing socket (no full reconnect).
+  useEffect(() => {
+    if (!enabled || !roomPasswordRef.current) return;
+    emitRoomJoin();
+  }, [enabled, roomPassword, emitRoomJoin]);
 
   // Re-join when returning from Keep (socket still connected; connect handler does not re-fire).
   useEffect(() => {
@@ -800,5 +815,6 @@ export function useRoomConnection({
     engine: engineRef.current,
     isExpoGo: IS_EXPO_GO,
     ws: ws.current,
+    disconnectWs,
   };
 }

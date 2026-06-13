@@ -103,6 +103,7 @@ const allSections: NavSection[] = [
       { label: 'Master Wallet',       to: '/master-wallet',             permission: 'payment.view' },
       { label: 'Bean Revenue',        to: '/gifts/platform-revenue',    permission: 'gift.manage' },
       { label: 'Commission Config',   to: '/gifts/commission-config',   permission: 'gift.manage' },
+      { label: 'State Ranking',       to: '/gifts/state-ranking',       permission: 'gift.manage' },
       { label: 'Lucky Gift Settings', to: '/gifts/lucky-gifts',         permission: 'gift.manage' },
       { label: 'Regions',             to: '/regions',                   permission: 'region.manage' },
     ],

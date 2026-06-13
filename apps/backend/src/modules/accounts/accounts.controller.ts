@@ -40,6 +40,7 @@ const onboardingSchema = z.object({
   country: z.string().min(2).max(80),
   /** Optional; used for city-level regional earner leaderboard badge */
   city: z.string().min(1).max(80).optional(),
+  state: z.string().min(1).max(8).optional(),
   gender: genderEnum.optional(),
   dateOfBirth: z.string().datetime().nullable().optional(),
 });
@@ -50,6 +51,7 @@ const profileSchema = z.object({
   avatar: z.string().url().optional(),
   country: z.string().min(2).max(80).optional(),
   city: z.string().max(80).optional(),
+  state: z.string().max(8).optional(),
   gender: genderEnum.optional(),
   dateOfBirth: z.string().datetime().nullable().optional(),
   preferredWithdrawalCountryCode: z

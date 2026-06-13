@@ -753,6 +753,14 @@ export function RootNavigator() {
                   )}
                 />
                 <Root.Screen
+                  name="StateQueen"
+                  getComponent={lazyScreen(
+                    () =>
+                      require("@screens/ranking/StateQueenScreen")
+                        .StateQueenScreen,
+                  )}
+                />
+                <Root.Screen
                   name="CreateRoom"
                   getComponent={lazyScreen(
                     () =>

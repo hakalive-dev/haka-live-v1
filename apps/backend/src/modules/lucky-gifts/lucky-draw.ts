@@ -2,10 +2,8 @@
  * Lucky Gifts draw engine — pure and deterministic under an injected RNG.
  *
  * A Lucky Gift (Gift.category === 'lucky') is a probability-based game:
- *   win  → sender is credited a random rewardCoins amount from weighted tiers
+ *   win  → sender is credited round(coinCost × payoutPercent / 100) from weighted tiers
  *   lose → no sender reward
- * Each tier also carries a random winMultiplier (display / announcement only —
- * it is NOT multiplied by the stake).
  * In both outcomes the host's bean pool is
  * round(coinCost × receiverBenefitPercent / 100).
  *
@@ -13,24 +11,27 @@
  */
 
 export interface LuckyPayoutTier {
-  /** Random lucky number shown on win (not × stake). */
-  multiplier: number;
-  /** Absolute coins credited to the sender on win. */
-  rewardCoins: number;
+  /** % of stake returned to the sender on win. */
+  payoutPercent: number;
   weight: number;
+  /** @deprecated legacy display field — ignored when payoutPercent is set. */
+  multiplier?: number;
+  /** @deprecated legacy fixed coins — parsed into payoutPercent when missing. */
+  rewardCoins?: number;
 }
 
 /** @deprecated alias — tiers are payout rows, not stake multipliers. */
 export type LuckyMultiplierTier = LuckyPayoutTier;
 
-/** Default payout tiers — random coin prizes + independent display multipliers. */
+/** Default payout tiers — house-favored weights on stake-relative returns. */
 export const DEFAULT_WIN_MULTIPLIER_TIERS: LuckyPayoutTier[] = [
-  { multiplier: 2, rewardCoins: 20, weight: 50 },
-  { multiplier: 5, rewardCoins: 100, weight: 25 },
-  { multiplier: 10, rewardCoins: 500, weight: 15 },
-  { multiplier: 50, rewardCoins: 5_000, weight: 7 },
-  { multiplier: 100, rewardCoins: 50_000, weight: 2 },
-  { multiplier: 500, rewardCoins: 500_000, weight: 1 },
+  { payoutPercent: 40, weight: 30 },
+  { payoutPercent: 88, weight: 25 },
+  { payoutPercent: 95, weight: 20 },
+  { payoutPercent: 105, weight: 12 },
+  { payoutPercent: 220, weight: 6 },
+  { payoutPercent: 350, weight: 3 },
+  { payoutPercent: 520, weight: 1 },
 ];
 
 /** Reference stake for admin TRP / house-edge previews (100-coin example). */
@@ -49,7 +50,7 @@ export interface LuckyDrawConfig {
 
 export interface LuckyDrawResult {
   isWin: boolean;
-  /** Lucky number drawn for this send (0 on lose) — display only. */
+  /** Lucky payout % drawn for this send (0 on lose) — display / logs. */
   winMultiplier: number;
   /** Coins credited to the sender (0 on lose). */
   rewardCoins: number;
@@ -57,40 +58,68 @@ export interface LuckyDrawResult {
   receiverBeans: number;
 }
 
+function tierPayoutPercent(tier: LuckyPayoutTier): number {
+  if (Number.isFinite(tier.payoutPercent) && tier.payoutPercent > 0) {
+    return tier.payoutPercent;
+  }
+  if (tier.rewardCoins != null && Number.isFinite(tier.rewardCoins) && tier.rewardCoins > 0) {
+    return tier.rewardCoins;
+  }
+  if (tier.multiplier != null && Number.isFinite(tier.multiplier) && tier.multiplier > 0) {
+    return tier.multiplier;
+  }
+  return NaN;
+}
+
 export function normalizeWinMultiplierTiers(
   tiers: LuckyPayoutTier[] | null | undefined,
   fallbackMultiplier = 3,
-  fallbackRewardCoins?: number,
+  fallbackPayoutPercent?: number,
 ): LuckyPayoutTier[] {
-  const valid = (tiers ?? []).filter(
-    (t) =>
-      Number.isFinite(t.multiplier) &&
-      t.multiplier > 0 &&
-      Number.isFinite(t.rewardCoins) &&
-      t.rewardCoins > 0 &&
-      Number.isFinite(t.weight) &&
-      t.weight > 0,
-  );
+  const valid = (tiers ?? [])
+    .map((t) => {
+      const payoutPercent = tierPayoutPercent(t);
+      if (
+        !Number.isFinite(payoutPercent) ||
+        payoutPercent <= 0 ||
+        !Number.isFinite(t.weight) ||
+        t.weight <= 0
+      ) {
+        return null;
+      }
+      return { payoutPercent, weight: t.weight };
+    })
+    .filter((t): t is LuckyPayoutTier => t != null);
   if (valid.length > 0) return valid;
   const fallbackMult =
     Number.isFinite(fallbackMultiplier) && fallbackMultiplier > 0 ? fallbackMultiplier : 3;
-  const fallbackReward =
-    fallbackRewardCoins != null && Number.isFinite(fallbackRewardCoins) && fallbackRewardCoins > 0
-      ? fallbackRewardCoins
+  const fallbackPercent =
+    fallbackPayoutPercent != null &&
+    Number.isFinite(fallbackPayoutPercent) &&
+    fallbackPayoutPercent > 0
+      ? fallbackPayoutPercent
       : fallbackMult;
-  return [{ multiplier: fallbackMult, rewardCoins: fallbackReward, weight: 1 }];
+  return [{ payoutPercent: fallbackPercent, weight: 1 }];
 }
 
+/** Weighted average payout % across tiers (on win). */
+export function averagePayoutPercent(tiers: LuckyPayoutTier[]): number {
+  const valid = normalizeWinMultiplierTiers(tiers);
+  const totalWeight = valid.reduce((sum, tier) => sum + tier.weight, 0);
+  return valid.reduce((sum, tier) => sum + tier.payoutPercent * tier.weight, 0) / totalWeight;
+}
+
+/** @deprecated use averagePayoutPercent — kept for admin DTO compat. */
 export function averageWinMultiplier(tiers: LuckyPayoutTier[]): number {
-  const valid = normalizeWinMultiplierTiers(tiers);
-  const totalWeight = valid.reduce((sum, tier) => sum + tier.weight, 0);
-  return valid.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight;
+  return averagePayoutPercent(tiers);
 }
 
-export function averageRewardCoins(tiers: LuckyPayoutTier[]): number {
-  const valid = normalizeWinMultiplierTiers(tiers);
-  const totalWeight = valid.reduce((sum, tier) => sum + tier.weight, 0);
-  return valid.reduce((sum, tier) => sum + tier.rewardCoins * tier.weight, 0) / totalWeight;
+/** Average coin reward at a reference stake (admin preview). */
+export function averageRewardCoins(
+  tiers: LuckyPayoutTier[],
+  referenceStake = LUCKY_TRP_REFERENCE_STAKE,
+): number {
+  return Math.round((averagePayoutPercent(tiers) * referenceStake) / 100);
 }
 
 /** Pick a payout tier by weight. */
@@ -113,7 +142,11 @@ export function pickWinMultiplier(
   tiers: LuckyPayoutTier[],
   rng: () => number = Math.random,
 ): number {
-  return pickWinTier(tiers, rng).multiplier;
+  return pickWinTier(tiers, rng).payoutPercent;
+}
+
+export function rewardCoinsForTier(tier: LuckyPayoutTier, coinCost: number): number {
+  return Math.round((coinCost * tier.payoutPercent) / 100);
 }
 
 export function runLuckyDraw(
@@ -134,8 +167,8 @@ export function runLuckyDraw(
   const tier = pickWinTier(tiers, rng);
   return {
     isWin: true,
-    winMultiplier: tier.multiplier,
-    rewardCoins: Math.round(tier.rewardCoins),
+    winMultiplier: tier.payoutPercent,
+    rewardCoins: rewardCoinsForTier(tier, coinCost),
     receiverBeans: luckyReceiverBeans(config, coinCost),
   };
 }
@@ -151,19 +184,14 @@ export function luckyReceiverBeans(
 /** Expected sender return ratio (TRP) — must stay < 1.0 for a house edge. */
 export function expectedReturn(
   config: Pick<LuckyDrawConfig, 'winProbability' | 'winMultiplierTiers' | 'winMultiplier'>,
-  referenceStake = LUCKY_TRP_REFERENCE_STAKE,
 ): number {
   const tiers = normalizeWinMultiplierTiers(config.winMultiplierTiers, config.winMultiplier);
-  if (referenceStake <= 0) return 0;
-  return (config.winProbability * averageRewardCoins(tiers)) / referenceStake;
+  return (config.winProbability * averagePayoutPercent(tiers)) / 100;
 }
 
 /** Total payout ratio incl. the receiver cut — surfaced to admin. */
-export function totalPayoutRatio(
-  config: LuckyDrawConfig,
-  referenceStake = LUCKY_TRP_REFERENCE_STAKE,
-): number {
-  return expectedReturn(config, referenceStake) + config.receiverBenefitPercent / 100;
+export function totalPayoutRatio(config: LuckyDrawConfig): number {
+  return expectedReturn(config) + config.receiverBenefitPercent / 100;
 }
 
 export function parseWinMultiplierTiersJson(value: unknown): LuckyPayoutTier[] {
@@ -171,26 +199,26 @@ export function parseWinMultiplierTiersJson(value: unknown): LuckyPayoutTier[] {
   return value
     .map((row) => {
       if (!row || typeof row !== 'object') return null;
-      const multiplier = Number((row as LuckyPayoutTier).multiplier);
-      const weight = Number((row as LuckyPayoutTier).weight);
-      const rewardRaw = (row as LuckyPayoutTier).rewardCoins;
-      const rewardCoins =
-        rewardRaw != null && Number.isFinite(Number(rewardRaw))
-          ? Number(rewardRaw)
-          : Number.isFinite(multiplier)
-            ? multiplier
-            : NaN;
-      if (
-        !Number.isFinite(multiplier) ||
-        multiplier <= 0 ||
-        !Number.isFinite(rewardCoins) ||
-        rewardCoins <= 0 ||
-        !Number.isFinite(weight) ||
-        weight <= 0
-      ) {
+      const raw = row as Record<string, unknown>;
+      const weight = Number(raw.weight);
+      const payoutRaw = raw.payoutPercent;
+      let payoutPercent =
+        payoutRaw != null && Number.isFinite(Number(payoutRaw)) ? Number(payoutRaw) : NaN;
+      if (!Number.isFinite(payoutPercent) || payoutPercent <= 0) {
+        const rewardRaw = raw.rewardCoins;
+        if (rewardRaw != null && Number.isFinite(Number(rewardRaw))) {
+          payoutPercent = Number(rewardRaw);
+        } else {
+          const multiplier = Number(raw.multiplier);
+          if (Number.isFinite(multiplier) && multiplier > 0) {
+            payoutPercent = multiplier;
+          }
+        }
+      }
+      if (!Number.isFinite(payoutPercent) || payoutPercent <= 0 || !Number.isFinite(weight) || weight <= 0) {
         return null;
       }
-      return { multiplier, rewardCoins, weight };
+      return { payoutPercent, weight };
     })
     .filter((row): row is LuckyPayoutTier => row !== null);
 }

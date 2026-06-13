@@ -29,6 +29,8 @@ model User {
   preferredWithdrawalCountryCode String    @default("")
   /// Display city for regional leaderboards (e.g. Delhi). Empty = not ranked by city shard.
   city                           String    @default("")
+  /// ISO subdivision code for state ranking (e.g. MH). Must match country config when set.
+  state                          String    @default("")
   gender                         String    @default("")
   dateOfBirth                    DateTime?
   locationLat                    Float?
@@ -212,6 +214,7 @@ model User {
   payrollLedgerEntries PayrollLedgerEntry[] @relation("PayrollLedgerAgent")
 
   musicTracks UserMusicTrack[] @relation("UserMusicLibrary")
+  stateRankingRewards StateRankingReward[] @relation("StateRankingRewards")
 
   @@index([agentId])
   @@map("users")
@@ -696,7 +699,7 @@ model LuckyGiftSetting {
   enabled                Boolean  @default(true)
   winProbability         Decimal  @default(0.98) // 0 ≤ p ≤ 1, chance of a win per send
   winMultiplier          Decimal  @default(3.0) // legacy scalar fallback when tiers empty
-  winMultiplierTiers     Json     @default("[{\"multiplier\":2,\"rewardCoins\":20,\"weight\":50},{\"multiplier\":5,\"rewardCoins\":100,\"weight\":25},{\"multiplier\":10,\"rewardCoins\":500,\"weight\":15},{\"multiplier\":50,\"rewardCoins\":5000,\"weight\":7},{\"multiplier\":100,\"rewardCoins\":50000,\"weight\":2},{\"multiplier\":500,\"rewardCoins\":500000,\"weight\":1}]") // random payout tiers
+  winMultiplierTiers     Json     @default("[{\"payoutPercent\":40,\"weight\":30},{\"payoutPercent\":88,\"weight\":25},{\"payoutPercent\":95,\"weight\":20},{\"payoutPercent\":105,\"weight\":12},{\"payoutPercent\":220,\"weight\":6},{\"payoutPercent\":350,\"weight\":3},{\"payoutPercent\":520,\"weight\":1}]") // stake-relative payout tiers (% of coinCost)
   receiverBenefitPercent Decimal  @default(1.5) // 0 ≤ x ≤ 1.5 (% of gift value → host bean pool)
   dailyUserWinCapCoins   BigInt   @default(0) // 0 = no cap (enforcement deferred)
   updatedBy              String   @default("")
@@ -2461,4 +2464,38 @@ model UserMusicTrack {
 
   @@index([userId])
   @@map("user_music_tracks")
+}
+
+// ── State Ranking ─────────────────────────────────────────────────────────────
+model StateRankingReward {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation("StateRankingRewards", fields: [userId], references: [id], onDelete: Cascade)
+  countryCode     String
+  stateCode       String
+  periodDate      DateTime
+  stateRank       Int
+  hostRankInState Int
+  giftScore       Int
+  poolTotal       Int
+  rewardAmount    Int
+  walletTxId      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, periodDate, countryCode, stateCode])
+  @@index([periodDate, countryCode, stateCode])
+  @@map("state_ranking_rewards")
+}
+
+model StateRankingConfig {
+  id                      String   @id @default("singleton")
+  enabled                 Boolean  @default(true)
+  topHostsPerState        Int      @default(4)
+  hostSplitPercentages    Json     @default("[65,20,10,5]")
+  stateRankTiers          Json     @default("[]")
+  requireFaceVerification Boolean  @default(true)
+  updatedAt               DateTime @updatedAt
+
+  @@map("state_ranking_config")
 }

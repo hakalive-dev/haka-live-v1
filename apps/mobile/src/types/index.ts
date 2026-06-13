@@ -35,6 +35,7 @@ export interface User extends UserEquippedCosmetics {
   avatar: string;
   bio: string;
   country: string;
+  state?: string;
   city?: string;
   gender?: string;
   dateOfBirth?: string | null;
@@ -58,6 +59,8 @@ export interface User extends UserEquippedCosmetics {
   hasPassword?: boolean;
   /** True when a Google identity is linked via Supabase Auth (auto-linked at login). */
   googleLinked?: boolean;
+  /** Super admin may browse state rankings for any country. */
+  canInspectStateRankings?: boolean;
   /** Active payroll profile; user may still be role `agent`. */
   isPayrollAgent?: boolean;
 }
@@ -79,6 +82,7 @@ export interface OnboardingData {
   username: string;
   displayName: string;
   country: string;
+  state?: string;
   city?: string;
   gender?: string;
   dateOfBirth?: string | null;

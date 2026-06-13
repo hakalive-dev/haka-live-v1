@@ -24,20 +24,22 @@ import { Colors, Spacing, Radius } from '@/theme';
 import { RankingSkeleton } from '@components/Skeleton';
 import type { LeaderboardUserEntry } from '@/types';
 import type { RootStackParamList, RootStackScreenProps } from '@navigation/types';
+import { StateStarTab } from './StateStarTab';
 
 type Props = RootStackScreenProps<'Ranking'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type MainTab = 'agent' | 'game' | 'creator';
+type MainTab = 'state' | 'agent' | 'game' | 'creator';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const MAIN_TABS: { key: MainTab; label: string }[] = [
+  { key: 'state',   label: 'State' },
   { key: 'agent',   label: 'Agent' },
   { key: 'game',    label: 'Game' },
-  { key: 'creator', label: 'Creator' },
+  { key: 'creator', label: 'Activity' },
 ];
 
 const PERIOD_TABS: { key: LeaderboardWindow; label: string }[] = [
@@ -51,24 +53,28 @@ const CREATOR_EMPTY_MESSAGE = 'No rankings yet';
 const AGENT_EMPTY_MESSAGE = 'No rankings yet';
 
 const TAB_BG_COLORS: Record<MainTab, string> = {
+  state:   '#1A0A28',
   agent:   '#000000',
   game:    '#47014A',
   creator: '#13249A',
 };
 
 const BANNER_GRADIENTS: Record<MainTab, [string, string, string]> = {
+  state:   ['#1A0028', '#4A1F6B', '#9D7FFF'],
   agent:   ['#0D0028', '#4A0F6B', '#B03FF0'],
   game:    ['#001028', '#0F2E6B', '#3F7AF0'],
   creator: ['#280010', '#6B0F3A', '#F03F80'],
 };
 
 const BANNER_ICONS: Record<MainTab, keyof typeof Ionicons.glyphMap> = {
+  state:   'location',
   agent:   'briefcase',
   game:    'trophy',
   creator: 'pulse',
 };
 
 const BANNER_IMAGES: Record<MainTab, ReturnType<typeof require>> = {
+  state:   require('../../../assets/ranking/state.png'),
   agent:   require('../../../assets/ranking/agent.png'),
   game:    require('../../../assets/ranking/game.png'),
   creator: require('../../../assets/ranking/creator.png'),
@@ -82,9 +88,12 @@ export function RankingScreen({ route }: Props) {
 
   const initialTabParam = route.params?.initialTab;
   const initialTab: MainTab =
-    initialTabParam === 'game' || initialTabParam === 'creator' || initialTabParam === 'agent'
+    initialTabParam === 'state' ||
+    initialTabParam === 'game' ||
+    initialTabParam === 'creator' ||
+    initialTabParam === 'agent'
       ? initialTabParam
-      : 'agent';
+      : 'state';
   const [mainTab, setMainTab] = useState<MainTab>(initialTab);
   const [period, setPeriod] = useState<LeaderboardWindow>('daily');
   const [dayCountdown, setDayCountdown] = useState('');
@@ -93,12 +102,15 @@ export function RankingScreen({ route }: Props) {
   // Cached per (mainTab, period) so switching tabs/periods paints the last
   // result instantly and refreshes in the background; auto-refreshes every 60s.
   const rankingQuery = useQuery({
-    queryKey: queryKeys.ranking.list({ mainTab, period }),
-    queryFn: () =>
-      mainTab === 'agent'
-        ? leaderboardApi.getAgentCoinsRank()
-        : leaderboardApi.getByCategory('creator_hosts', period),
-    enabled: mainTab !== 'game',
+    queryKey: queryKeys.ranking.list({
+      mainTab,
+      period,
+    }),
+    queryFn: () => {
+      if (mainTab === 'agent') return leaderboardApi.getAgentCoinsRank();
+      return leaderboardApi.getByCategory('creator_hosts', period);
+    },
+    enabled: mainTab !== 'game' && mainTab !== 'state',
     staleTime: 60_000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
@@ -172,6 +184,10 @@ export function RankingScreen({ route }: Props) {
       : mainTab === 'creator'
         ? CREATOR_EMPTY_MESSAGE
         : AGENT_EMPTY_MESSAGE;
+
+  if (mainTab === 'state') {
+    return <StateStarTab navigation={navigation} onTabChange={handleMainTabChange} />;
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: TAB_BG_COLORS[mainTab] }]}>

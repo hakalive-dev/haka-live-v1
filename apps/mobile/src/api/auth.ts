@@ -109,7 +109,9 @@ export const authApi = {
   },
 
   updateProfile: async (
-    data: Partial<Pick<User, 'displayName' | 'bio' | 'avatar' | 'country' | 'city' | 'gender'>> & { dateOfBirth?: string | null },
+    data: Partial<Pick<User, 'displayName' | 'bio' | 'avatar' | 'country' | 'city' | 'gender' | 'state'>> & {
+      dateOfBirth?: string | null;
+    },
   ): Promise<User> => {
     if (useMock) return mockAuth.me;
     const res = await apiClient.patch('/auth/profile', data);

@@ -56,6 +56,7 @@ export type SafeUser = {
   country: string;
   preferredWithdrawalCountryCode: string;
   city: string;
+  state: string;
   gender: string;
   dateOfBirth: Date | null;
   age: number | null;
@@ -78,7 +79,8 @@ export type SafeUser = {
   updatedAt: Date;
   tags: TagSummary[];
   /** True when user has an active PayrollAgentProfile (may still be role `agent`). */
-  isPayrollAgent: boolean;
+  /** True when user may browse state rankings across countries (super admin). */
+  canInspectStateRankings: boolean;
 } & EquippedCosmetics;
 
 export type DeviceEntry = {
@@ -123,6 +125,7 @@ function toSafeUser(
   country: string;
   preferredWithdrawalCountryCode?: string;
   city?: string;
+  state?: string;
   gender: string;
   dateOfBirth: Date | null;
   hakaId: string | null;
@@ -148,6 +151,7 @@ function toSafeUser(
   updatedAt: Date;
   },
   tags: TagSummary[] = [],
+  extras: { canInspectStateRankings?: boolean } = {},
 ): SafeUser {
   // Clear expired special IDs
   const now = new Date();
@@ -166,6 +170,7 @@ function toSafeUser(
     country: user.country,
     preferredWithdrawalCountryCode: user.preferredWithdrawalCountryCode ?? '',
     city: user.city ?? '',
+    state: user.state ?? '',
     gender: user.gender,
     dateOfBirth: user.dateOfBirth,
     age: computeAge(user.dateOfBirth),
@@ -190,6 +195,7 @@ function toSafeUser(
     updatedAt: user.updatedAt,
     tags,
     isPayrollAgent: user.payrollAgentProfile?.status === 'active',
+    canInspectStateRankings: extras.canInspectStateRankings ?? false,
   };
 }
 
@@ -642,7 +648,11 @@ export async function getMe(userId: string): Promise<SafeUser> {
   }
 
   const tags: TagSummary[] = mapSortedUserTags(user.tags);
-  return toSafeUser(user, tags);
+  const { canInspectAllStateRankings } = await import(
+    '../leaderboard/state-ranking.service'
+  );
+  const canInspectStateRankings = await canInspectAllStateRankings(userId);
+  return toSafeUser(user, tags, { canInspectStateRankings });
 }
 
 /**
@@ -657,6 +667,7 @@ export async function completeOnboarding(
     displayName: string;
     country: string;
     city?: string;
+    state?: string;
     gender?: string;
     dateOfBirth?: Date;
   },
@@ -664,6 +675,15 @@ export async function completeOnboarding(
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError('User not found', 404);
   if (user.onboardingComplete) throw new AppError('Onboarding already completed', 400);
+
+  if (data.state?.trim()) {
+    const { isValidStateForCountry, normalizeCountryCode } = await import(
+      '../leaderboard/state-ranking.constants'
+    );
+    if (!isValidStateForCountry(normalizeCountryCode(data.country), data.state)) {
+      throw new AppError('Invalid state for selected country', 400);
+    }
+  }
 
   // Check username uniqueness
   const taken = await prisma.user.findUnique({ where: { username: data.username } });
@@ -678,6 +698,7 @@ export async function completeOnboarding(
       displayName: data.displayName,
       country: data.country,
       ...(data.city !== undefined ? { city: data.city } : {}),
+      ...(data.state !== undefined ? { state: data.state.trim().toUpperCase() } : {}),
       ...(data.gender !== undefined ? { gender: data.gender } : {}),
       ...(data.dateOfBirth !== undefined ? { dateOfBirth: data.dateOfBirth } : {}),
       hakaId,
@@ -706,6 +727,7 @@ export async function updateProfile(
     avatar?: string;
     country?: string;
     city?: string;
+    state?: string;
     gender?: string;
     dateOfBirth?: Date | null;
     preferredWithdrawalCountryCode?: string;
@@ -713,7 +735,7 @@ export async function updateProfile(
 ): Promise<SafeUser> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { onboardingComplete: true, hakaId: true, country: true, gender: true },
+    select: { onboardingComplete: true, hakaId: true, country: true, gender: true, state: true },
   });
   if (!user) throw new AppError('User not found', 404);
 
@@ -733,6 +755,23 @@ export async function updateProfile(
         400,
       );
     }
+    if (data.state !== undefined && data.state !== user.state) {
+      throw new AppError(
+        'State cannot be changed after your Haka ID is created. Contact support if you need help.',
+        400,
+      );
+    }
+  }
+
+  if (data.state !== undefined && data.state.trim()) {
+    const country = data.country ?? user.country;
+    const { isValidStateForCountry, normalizeCountryCode } = await import(
+      '../leaderboard/state-ranking.constants'
+    );
+    if (!isValidStateForCountry(normalizeCountryCode(country), data.state)) {
+      throw new AppError('Invalid state for selected country', 400);
+    }
+    data.state = data.state.trim().toUpperCase();
   }
 
   const updated = await prisma.user.update({

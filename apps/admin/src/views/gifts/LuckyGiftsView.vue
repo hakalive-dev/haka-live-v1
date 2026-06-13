@@ -13,14 +13,15 @@ const setting = ref<api.LuckySettingDTO | null>(null)
 const stats = ref<api.LuckyStatsDTO | null>(null)
 
 const enabled = ref(true)
-const winProbabilityPct = ref('20')
-const winMultiplierTiers = ref<Array<{ multiplier: string; rewardCoins: string; weight: string }>>([
-  { multiplier: '2', rewardCoins: '20', weight: '50' },
-  { multiplier: '5', rewardCoins: '100', weight: '25' },
-  { multiplier: '10', rewardCoins: '500', weight: '15' },
-  { multiplier: '50', rewardCoins: '5000', weight: '7' },
-  { multiplier: '100', rewardCoins: '50000', weight: '2' },
-  { multiplier: '500', rewardCoins: '500000', weight: '1' },
+const winProbabilityPct = ref('98')
+const winMultiplierTiers = ref<Array<{ payoutPercent: string; weight: string }>>([
+  { payoutPercent: '40', weight: '30' },
+  { payoutPercent: '88', weight: '25' },
+  { payoutPercent: '95', weight: '20' },
+  { payoutPercent: '105', weight: '12' },
+  { payoutPercent: '220', weight: '6' },
+  { payoutPercent: '350', weight: '3' },
+  { payoutPercent: '520', weight: '1' },
 ])
 const receiverBenefitPercent = ref('1.5')
 const dailyUserWinCapCoins = ref('0')
@@ -29,39 +30,30 @@ const previewWinProb = computed(() => parseFloat(winProbabilityPct.value) / 100)
 const previewTiers = computed(() =>
   winMultiplierTiers.value
     .map((tier) => ({
-      multiplier: parseFloat(tier.multiplier),
-      rewardCoins: parseFloat(tier.rewardCoins),
+      payoutPercent: parseFloat(tier.payoutPercent),
       weight: parseFloat(tier.weight),
     }))
     .filter(
       (tier) =>
-        Number.isFinite(tier.multiplier) &&
-        tier.multiplier > 0 &&
-        Number.isFinite(tier.rewardCoins) &&
-        tier.rewardCoins > 0 &&
+        Number.isFinite(tier.payoutPercent) &&
+        tier.payoutPercent > 0 &&
         Number.isFinite(tier.weight) &&
         tier.weight > 0,
     ),
 )
-const previewMultiplier = computed(() => {
+const previewAveragePayout = computed(() => {
   const tiers = previewTiers.value
   if (tiers.length === 0) return NaN
   const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0)
-  return tiers.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight
-})
-const previewAverageReward = computed(() => {
-  const tiers = previewTiers.value
-  if (tiers.length === 0) return NaN
-  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0)
-  return tiers.reduce((sum, tier) => sum + tier.rewardCoins * tier.weight, 0) / totalWeight
+  return tiers.reduce((sum, tier) => sum + tier.payoutPercent * tier.weight, 0) / totalWeight
 })
 const previewReceiverPct = computed(() => parseFloat(receiverBenefitPercent.value))
 
 const previewTrp = computed(() => {
   const p = previewWinProb.value
-  const avgReward = previewAverageReward.value
-  if (!Number.isFinite(p) || !Number.isFinite(avgReward)) return null
-  return (p * avgReward) / exampleStake
+  const avgPayout = previewAveragePayout.value
+  if (!Number.isFinite(p) || !Number.isFinite(avgPayout)) return null
+  return (p * avgPayout) / 100
 })
 
 const previewTotalPayout = computed(() => {
@@ -75,9 +67,9 @@ const trpTooHigh = computed(() => previewTrp.value != null && previewTrp.value >
 
 const exampleStake = 100
 const exampleWinPayout = computed(() => {
-  const avg = previewAverageReward.value
+  const avg = previewAveragePayout.value
   if (!Number.isFinite(avg)) return '—'
-  return Math.round(avg).toLocaleString()
+  return Math.round((exampleStake * avg) / 100).toLocaleString()
 })
 
 const exampleHostBeans = computed(() => {
@@ -112,10 +104,9 @@ function applySettingToForm(s: api.LuckySettingDTO) {
   winProbabilityPct.value = (s.winProbability * 100).toFixed(2).replace(/\.?0+$/, '')
   winMultiplierTiers.value = (s.winMultiplierTiers.length > 0
     ? s.winMultiplierTiers
-    : [{ multiplier: s.winMultiplier, rewardCoins: s.averageRewardCoins, weight: 1 }]
+    : [{ payoutPercent: s.averagePayoutPercent ?? s.winMultiplier, weight: 1 }]
   ).map((tier) => ({
-    multiplier: String(tier.multiplier),
-    rewardCoins: String(tier.rewardCoins),
+    payoutPercent: String(tier.payoutPercent),
     weight: String(tier.weight),
   }))
   receiverBenefitPercent.value = String(s.receiverBenefitPercent)
@@ -123,7 +114,7 @@ function applySettingToForm(s: api.LuckySettingDTO) {
 }
 
 function addMultiplierTier() {
-  winMultiplierTiers.value.push({ multiplier: '5', rewardCoins: '100', weight: '1' })
+  winMultiplierTiers.value.push({ payoutPercent: '105', weight: '1' })
 }
 
 function removeMultiplierTier(index: number) {
@@ -177,14 +168,14 @@ async function saveSetting() {
   const winProbability = parseFloat(winProbabilityPct.value) / 100
   const tiers = previewTiers.value
   const receiverPct = parseFloat(receiverBenefitPercent.value)
-  const averageReward = previewAverageReward.value
+  const averagePayout = previewAveragePayout.value
 
   if (!Number.isFinite(winProbability) || winProbability < 0 || winProbability > 1) {
     saveError.value = 'Win probability must be between 0% and 100%.'
     return
   }
-  if (tiers.length === 0 || !Number.isFinite(averageReward) || averageReward <= 0) {
-    saveError.value = 'Add at least one payout tier with multiplier, reward coins, and weight > 0.'
+  if (tiers.length === 0 || !Number.isFinite(averagePayout) || averagePayout <= 0) {
+    saveError.value = 'Add at least one payout tier with payout % and weight > 0.'
     return
   }
   if (!Number.isFinite(receiverPct) || receiverPct < 0 || receiverPct > 1.5) {
@@ -195,8 +186,8 @@ async function saveSetting() {
     saveError.value = 'Daily win cap must be a whole number (0 = no cap).'
     return
   }
-  if ((winProbability * averageReward) / exampleStake >= 1) {
-    saveError.value = 'TRP (win % × avg reward / stake) must stay below 100% for a house edge.'
+  if ((winProbability * averagePayout) / 100 >= 1) {
+    saveError.value = 'TRP (win % × avg payout %) must stay below 100% for a house edge.'
     return
   }
 
@@ -287,11 +278,10 @@ onMounted(() => void refreshAll())
               <span class="field-hint">Chance per send that the sender wins coins back.</span>
             </div>
             <div class="form-field form-field-wide">
-              <label class="form-label">Win payout tiers (random per win)</label>
+              <label class="form-label">Win payout tiers (% of stake, random per win)</label>
               <div class="tier-table">
                 <div class="tier-head">
-                  <span>Lucky multiplier (display)</span>
-                  <span>Reward coins</span>
+                  <span>Payout % of stake</span>
                   <span>Weight</span>
                   <span />
                 </div>
@@ -301,20 +291,12 @@ onMounted(() => void refreshAll())
                   class="tier-row"
                 >
                   <input
-                    v-model="tier.multiplier"
+                    v-model="tier.payoutPercent"
                     class="form-input"
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="e.g. 10"
-                  />
-                  <input
-                    v-model="tier.rewardCoins"
-                    class="form-input"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="e.g. 500"
+                    placeholder="e.g. 105"
                   />
                   <input
                     v-model="tier.weight"
@@ -339,10 +321,10 @@ onMounted(() => void refreshAll())
                   Add tier
                 </button>
                 <span class="field-hint">
-                  On win, one tier is picked by weight. Avg reward:
-                  {{ Number.isFinite(previewAverageReward) ? Math.round(previewAverageReward).toLocaleString() : '—' }}
-                  coins · Avg lucky multiplier:
-                  {{ Number.isFinite(previewMultiplier) ? previewMultiplier.toFixed(2) : '—' }}×
+                  On win, one tier is picked by weight. Avg payout:
+                  {{ Number.isFinite(previewAveragePayout) ? previewAveragePayout.toFixed(1) + '%' : '—' }}
+                  · Example on {{ exampleStake }} coins:
+                  {{ exampleWinPayout }} coins
                 </span>
               </div>
             </div>
@@ -375,7 +357,7 @@ onMounted(() => void refreshAll())
             <div class="metric">
               <span class="metric-label">TRP (sender expected return)</span>
               <span class="metric-value">{{ fmtPct(previewTrp) }}</span>
-              <span class="metric-formula">win % × avg reward / stake</span>
+              <span class="metric-formula">win % × avg payout % / 100</span>
             </div>
             <div class="metric">
               <span class="metric-label">Total payout ratio</span>
@@ -385,7 +367,7 @@ onMounted(() => void refreshAll())
             <div class="metric">
               <span class="metric-label">Example ({{ exampleStake }} coin stake)</span>
               <span class="metric-value dim-sm">
-                Win → 🪙 {{ exampleWinPayout }} avg · Lucky mult → {{ Number.isFinite(previewMultiplier) ? previewMultiplier.toFixed(2) : '—' }}× · Host → 🫘 {{ exampleHostBeans }}
+                Win → 🪙 {{ exampleWinPayout }} avg ({{ Number.isFinite(previewAveragePayout) ? previewAveragePayout.toFixed(1) : '—' }}%) · Host → 🫘 {{ exampleHostBeans }}
               </span>
             </div>
           </div>
@@ -461,7 +443,7 @@ onMounted(() => void refreshAll())
               <th>Gift</th>
               <th class="num">Stake</th>
               <th>Outcome</th>
-              <th class="num">Multiplier</th>
+              <th class="num">Payout %</th>
               <th class="num">Reward</th>
               <th class="num">Host beans</th>
               <th class="mono">User</th>
@@ -477,7 +459,7 @@ onMounted(() => void refreshAll())
                   {{ d.isWin ? 'Win' : 'Lose' }}
                 </span>
               </td>
-              <td class="num">{{ d.isWin ? `${d.winMultiplier}×` : '—' }}</td>
+              <td class="num">{{ d.isWin ? `${d.winMultiplier}%` : '—' }}</td>
               <td class="num coins">{{ d.isWin ? `🪙 ${fmtCoins(d.rewardCoins)}` : '—' }}</td>
               <td class="num">🫘 {{ fmtCoins(d.receiverBeans) }}</td>
               <td class="mono dim">{{ d.userId.slice(0, 8) }}…</td>
@@ -601,7 +583,7 @@ onMounted(() => void refreshAll())
 .tier-head,
 .tier-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto;
   gap: 8px;
   align-items: center;
 }

@@ -13,10 +13,11 @@ const BANNER_HEIGHT = 52;
 const ROW_TOP = (TOAST_HEIGHT - BANNER_HEIGHT) / 2;
 /** Flat ribbon band — coin row sits on the lower red banner (~22% from bottom). */
 const RIBBON_BOTTOM_OFFSET = BANNER_HEIGHT * 0.22;
-const HOLD_MS = 2400;
+const DEFAULT_HOLD_MS = 2400;
 const FLY_IN_MS = 480;
 const ENTER_OFFSET_Y = -48;
 const EXIT_OFFSET_Y = -16;
+const EXIT_MS = 300;
 
 const LUCKY_WIN_BANNER = require('../../../assets/lucky-gifts/lucky_win_banner.png');
 const COIN_ICON = require('../../../assets/coin.png');
@@ -31,14 +32,21 @@ export interface LuckyWinPopupItem {
 interface Props {
   item: LuckyWinPopupItem | null;
   onDismiss: () => void;
+  holdDurationMs?: number;
 }
 
 export const LuckyWinPopup = React.memo(LuckyWinPopupInner);
 
-function LuckyWinPopupInner({ item, onDismiss }: Props) {
+function LuckyWinPopupInner({
+  item,
+  onDismiss,
+  holdDurationMs = DEFAULT_HOLD_MS,
+}: Props) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(ENTER_OFFSET_Y)).current;
   const amountScale = useRef(new Animated.Value(1)).current;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
   useEffect(() => {
     if (!item) return;
@@ -73,6 +81,13 @@ function LuckyWinPopupInner({ item, onDismiss }: Props) {
 
   useEffect(() => {
     if (!item) return;
+    let dismissed = false;
+    const dismiss = () => {
+      if (dismissed) return;
+      dismissed = true;
+      onDismissRef.current();
+    };
+
     const timer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(opacity, {
@@ -83,16 +98,19 @@ function LuckyWinPopupInner({ item, onDismiss }: Props) {
         }),
         Animated.timing(translateY, {
           toValue: EXIT_OFFSET_Y,
-          duration: 300,
+          duration: EXIT_MS,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
-      ]).start(({ finished }) => {
-        if (finished) onDismiss();
-      });
-    }, HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [item?.id, item?.bump, opacity, translateY, onDismiss]);
+      ]).start(() => dismiss());
+      // Fallback if the exit animation is interrupted.
+      setTimeout(dismiss, EXIT_MS + 80);
+    }, holdDurationMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [item?.id, item?.bump, holdDurationMs, opacity, translateY]);
 
   if (!item) return null;
 

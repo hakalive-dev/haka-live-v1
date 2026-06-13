@@ -36,13 +36,13 @@ async function setLuckySetting(input: {
   enabled: boolean;
   winProbability?: number;
   winMultiplier?: number;
-  winMultiplierTiers?: Array<{ multiplier: number; weight: number }>;
+  winMultiplierTiers?: Array<{ payoutPercent: number; weight: number }>;
   receiverBenefitPercent?: number;
 }) {
   const tiers =
     input.winMultiplierTiers ??
     (input.winMultiplier != null
-      ? [{ multiplier: input.winMultiplier, rewardCoins: input.winMultiplier, weight: 1 }]
+      ? [{ payoutPercent: input.winMultiplier * 100, weight: 1 }]
       : undefined);
   await prisma.luckyGiftSetting.upsert({
     where: { id: "singleton" },
@@ -108,7 +108,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplierTiers: [{ multiplier: 3, rewardCoins: 300, weight: 1 }],
+      winMultiplierTiers: [{ payoutPercent: 300, weight: 1 }],
       receiverBenefitPercent: 1.5,
     });
     const gift = await createGift("lucky");
@@ -117,7 +117,7 @@ describe("Lucky Gifts send flow", () => {
     expect(res.status).toBe(201);
     expect(res.body.data.luckyDraw).toMatchObject({
       isWin: true,
-      rewardCoins: 300, // 100 × 3
+      rewardCoins: 300, // 100 × 300%
       coinCost: 100,
     });
 
@@ -221,7 +221,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+      winMultiplierTiers: [{ payoutPercent: 200, weight: 1 }],
     });
     const gift = await createGift("lucky");
     await sendGift(senderId, gift.id, hostId);
@@ -244,7 +244,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+      winMultiplierTiers: [{ payoutPercent: 200, weight: 1 }],
     });
     const gift = await createGift("lucky");
     const room = await createRoom(hostId);
@@ -275,7 +275,7 @@ describe("Lucky Gifts send flow", () => {
     await setLuckySetting({
       enabled: true,
       winProbability: 1,
-      winMultiplierTiers: [{ multiplier: 2, rewardCoins: 200, weight: 1 }],
+      winMultiplierTiers: [{ payoutPercent: 200, weight: 1 }],
     });
     const gift = await createGift("lucky");
     const room = await createRoom(hostId);

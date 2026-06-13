@@ -10,6 +10,13 @@ export type GiftSideEffectsJobData = {
   skipEarnerLeaderboard: boolean;
   /** Coins won on the lucky draw (0 = no win / not a lucky gift). Optional for in-flight jobs from older deploys. */
   luckyRewardCoins?: number;
+  hostStateSnapshot?: {
+    role: string;
+    gender: string;
+    faceVerificationStatus: string;
+    country: string;
+    state: string;
+  };
 };
 
 export async function enqueueGiftSideEffects(
@@ -48,6 +55,17 @@ export async function processGiftSideEffects(
     void updateEarnerScore(data.hostUserId, data.totalBeanValue).catch(
       () => undefined,
     );
+  }
+
+  if (data.hostStateSnapshot) {
+    const { updateStateHostScore } = await import(
+      '../modules/leaderboard/state-ranking.service'
+    );
+    void updateStateHostScore(
+      data.hostUserId,
+      data.totalCoinCost,
+      data.hostStateSnapshot,
+    ).catch(() => undefined);
   }
 
   if ((data.luckyRewardCoins ?? 0) > 0) {

@@ -543,6 +543,7 @@ export function RoomScreen({ route, navigation }: Props) {
     null,
   );
   const luckyWinPopupBumpRef = useRef(0);
+  const dismissLuckyWinPopup = useCallback(() => setLuckyWinPopup(null), []);
   const dismissGiftToast = useCallback((id: string) => {
     setGiftToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -1224,16 +1225,16 @@ export function RoomScreen({ route, navigation }: Props) {
         if (oldest) shownLuckyDrawIdsRef.current.delete(oldest);
       }
 
-      // Immediate feedback — sound, win banner, balance — not deferred.
+      // Win banner: visible to everyone in the room; sound is self-only.
       if (giftEffectsEnabledRef.current) {
-        playLuckyWinRef.current();
+        luckyWinPopupBumpRef.current += 1;
+        setLuckyWinPopup({
+          id: payload.drawId,
+          rewardCoins: payload.rewardCoins,
+          bump: luckyWinPopupBumpRef.current,
+        });
         if (isSelf) {
-          luckyWinPopupBumpRef.current += 1;
-          setLuckyWinPopup({
-            id: payload.drawId,
-            rewardCoins: payload.rewardCoins,
-            bump: luckyWinPopupBumpRef.current,
-          });
+          playLuckyWinRef.current();
         }
       }
 
@@ -1409,6 +1410,15 @@ export function RoomScreen({ route, navigation }: Props) {
         }
       } else if (event === "user.left" || event === "user_left") {
         const uid = data.id ?? data.userId;
+        // Ignore stale self-leave during reconnect — server debounce may broadcast
+        // user.left before the client finishes room:join on the same socket.
+        if (
+          uid &&
+          uid === currentUser?.id &&
+          roomSession.connection.wsConnected
+        ) {
+          return;
+        }
         if (uid) {
           setViewers((prev) => prev.filter((v) => v.id !== uid));
           setRoom((prev) => {
@@ -2609,6 +2619,7 @@ export function RoomScreen({ route, navigation }: Props) {
     comboScale.stopAnimation();
     comboScale.setValue(0);
     setComboState(null);
+    setLuckyWinPopup(null);
   }, [flushPendingCombo, flushSelfGiftNotices, flushSelfLuckyChat, clearComboTimer, comboScale]);
 
   // Keep the ref current so flushPendingCombo's error path can call dismissCombo.
@@ -2792,6 +2803,7 @@ export function RoomScreen({ route, navigation }: Props) {
         flushSelfLuckyChat();
         selfComboSendMultiplierRef.current = null;
       }
+      setLuckyWinPopup(null);
     };
   }, [flushSelfGiftNotices, flushSelfLuckyChat]);
 
@@ -4138,7 +4150,8 @@ export function RoomScreen({ route, navigation }: Props) {
             {luckyWinPopup && (
               <LuckyWinPopup
                 item={luckyWinPopup}
-                onDismiss={() => setLuckyWinPopup(null)}
+                holdDurationMs={COMBO_TIMEOUT}
+                onDismiss={dismissLuckyWinPopup}
               />
             )}
           </View>
