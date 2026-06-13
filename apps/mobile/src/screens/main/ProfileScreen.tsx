@@ -33,7 +33,6 @@ import { useUserLevelQuery } from '@hooks/queries/useLevelQueries';
 import { authApi } from '@api/auth';
 import { TokenStorage } from '@/storage';
 import { CharmLevelBadge } from '@components/CharmLevelBadge';
-import { RichLevelBadge } from '@components/RichLevelBadge';
 import { apiClient, formatApiError } from '@api/client';
 import { bannersApi, type Banner } from '@api/banners';
 import { settingsApi } from '@api/settings';
@@ -475,14 +474,6 @@ export function ProfileScreen() {
                 )}
               </View>
             )}
-            {(levelInfo?.richLevel ?? 0) > 0 ? (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate('Level', {})}
-              >
-                <RichLevelBadge level={levelInfo?.richLevel ?? 0} size={18} />
-              </TouchableOpacity>
-            ) : null}
             {(levelInfo?.charmLevel ?? 0) > 0 ? (
               <TouchableOpacity
                 activeOpacity={0.8}
