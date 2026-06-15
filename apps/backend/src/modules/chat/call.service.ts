@@ -13,7 +13,7 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middleware/error.middleware';
 import { getIO } from '../../sockets';
-import { CALL_EVENTS } from '../../shared-types';
+import { CALL_EVENTS, type CallType } from '../../shared-types';
 import { generateRtcToken, getOrAssignUid } from '../rooms/agora.service';
 import {
   userAcceptsCalls,
@@ -157,12 +157,13 @@ async function ringTimeoutFired(callId: string) {
 export async function startCall(
   callerId: string,
   calleeId: string,
+  callType: CallType = 'video',
 ): Promise<{ callId: string; status: 'ringing' | 'busy' }> {
   assertCannotReplyToSystemDm(calleeId);
   await assertCanSignalCall(callerId, calleeId);
 
   if (!(await userAcceptsCalls(calleeId))) {
-    throw new AppError('This user has disabled video calls', 403);
+    throw new AppError('This user has disabled calls', 403);
   }
 
   if (await findLiveCallForUser(callerId)) {
@@ -192,6 +193,7 @@ export async function startCall(
     callId: call.id,
     callerId,
     callerDisplayName: name,
+    callType,
     channelId: channel,
     agoraToken: token,
     appId,
@@ -199,8 +201,10 @@ export async function startCall(
     expiresAt: String(expiresAt),
   });
 
-  void sendIncomingCallPush(calleeId, 'Incoming video call', `${name} is calling`, {
-    type: 'video_call',
+  const modeLabel = callType === 'voice' ? 'voice' : 'video';
+  void sendIncomingCallPush(calleeId, `Incoming ${modeLabel} call`, `${name} is calling`, {
+    type: callType === 'voice' ? 'voice_call' : 'video_call',
+    callType,
     callId: call.id,
     callerId,
     callerDisplayName: name,

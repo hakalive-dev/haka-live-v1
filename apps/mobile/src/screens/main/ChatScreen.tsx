@@ -24,13 +24,11 @@ import { UserAvatar } from "@components/UserAvatar";
 import { useDMConnection } from "@hooks/useDMConnection";
 import type {
   DMConversation,
-  RoomUser,
   TeamAnnouncementPayload,
 } from "@/types";
 import type { RootStackParamList } from "@navigation/types";
 import { HAKA_LOGO_MARK } from "@/constants/app-logo";
 import {
-  HAKA_TEAM_USER_ID,
   isHakaTeamUserId,
   HAKA_OFFICIAL_BADGE,
 } from "@/constants/haka-team";
@@ -95,28 +93,6 @@ function formatConversationPreview(
   return lastMessage.content || "No messages yet";
 }
 
-/** Ensures Haka Team appears even if the API omits it (e.g. stale deploy). Real API also injects this row. */
-function ensureHakaTeamInInbox(convos: DMConversation[]): DMConversation[] {
-  const has = convos.some((c) => c.otherUser?.id === HAKA_TEAM_USER_ID);
-  if (has) return convos;
-  const otherUser: RoomUser = {
-    id: HAKA_TEAM_USER_ID,
-    username: null,
-    displayName: "Haka Team",
-    avatar: "",
-    hakaId: null,
-    profileHidden: true,
-  };
-  const row: DMConversation = {
-    otherUser,
-    lastMessage: null,
-    unreadCount: 0,
-    isFollowing: false,
-    isFamiliar: false,
-  };
-  return [row, ...convos];
-}
-
 const HEADER_TABS = ["Inbox", "Friends"] as const;
 type HeaderTab = (typeof HEADER_TABS)[number];
 
@@ -150,23 +126,9 @@ export function ChatScreen() {
   const { teamAnnouncementRevision } = useDMConnection();
   const [headerTab, setHeaderTab] = useState<HeaderTab>("Inbox");
   const [filterTab, setFilterTab] = useState<FilterTab>("All");
-  const [conversations, setConversations] = useState<DMConversation[]>([]);
-  const [friendConversations, setFriendConversations] = useState<
-    DMConversation[]
-  >([]);
-  const [onlineFriends, setOnlineFriends] = useState<
-    Array<{
-      id: string;
-      displayName: string;
-      avatar: string | null;
-      isOnline: boolean;
-      equippedFrame?: import("@/types").EquippedCosmetic | null;
-    }>
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [teamAnnouncement, setTeamAnnouncement] =
     useState<TeamAnnouncementPayload | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const inboxQuery = useChatInboxQuery();
   useRefetchOnFocusIfStale(
@@ -175,26 +137,16 @@ export function ChatScreen() {
     !inboxQuery.isLoading,
   );
 
-  useEffect(() => {
-    if (!inboxQuery.data) return;
-    setConversations(inboxQuery.data.conversations);
-    setFriendConversations(inboxQuery.data.friendConversations);
-    setOnlineFriends(inboxQuery.data.onlineFriends);
-    setTeamAnnouncement(inboxQuery.data.teamAnnouncement);
-    setError(null);
-    setLoading(false);
-  }, [inboxQuery.data]);
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    void inboxQuery.refetch().finally(() => setRefreshing(false));
+  }, [inboxQuery]);
 
   useEffect(() => {
-    if (inboxQuery.isError) {
-      setError(
-        inboxQuery.error instanceof Error
-          ? inboxQuery.error.message
-          : "Failed to load messages",
-      );
-      setLoading(false);
+    if (inboxQuery.data?.teamAnnouncement !== undefined) {
+      setTeamAnnouncement(inboxQuery.data.teamAnnouncement);
     }
-  }, [inboxQuery.isError, inboxQuery.error]);
+  }, [inboxQuery.data?.teamAnnouncement]);
 
   useEffect(() => {
     if (teamAnnouncementRevision === 0) return;
@@ -203,6 +155,17 @@ export function ChatScreen() {
       .then((r) => setTeamAnnouncement(r.announcement))
       .catch(() => {});
   }, [teamAnnouncementRevision]);
+
+  const loading = inboxQuery.isPending && !inboxQuery.data;
+  const error =
+    inboxQuery.isError
+      ? inboxQuery.error instanceof Error
+        ? inboxQuery.error.message
+        : "Failed to load messages"
+      : null;
+  const conversations = inboxQuery.data?.conversations ?? [];
+  const friendConversations = inboxQuery.data?.friendConversations ?? [];
+  const onlineFriends = inboxQuery.data?.onlineFriends ?? [];
 
   // Friends tab uses its own server-filtered list; Inbox uses all conversations
   const activeConversations =
@@ -264,6 +227,8 @@ export function ChatScreen() {
         <FlatList
           data={filteredConversations}
           keyExtractor={(item, index) => `${item.otherUser.id}-${index}`}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,

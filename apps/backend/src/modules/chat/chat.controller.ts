@@ -7,6 +7,7 @@ import { deriveCallChannelName } from './call-channel';
 import { ok, created } from '../../utils/response';
 import { getIO } from '../../sockets';
 import { AppError } from '../../middleware/error.middleware';
+import { MAX_GIFT_SEND_QTY } from '../../shared-types/gifts';
 import { assertNoRiskBlock } from '../../utils/risk-control';
 import { assertCannotReplyToSystemDm } from './haka-team-guard';
 import * as teamAnnouncementService from './team-announcement.service';
@@ -31,7 +32,14 @@ const sendDMSchema = z.object({
 
 const sendGiftDMSchema = z.object({
   giftId: z.string().uuid(),
-  qty: z.coerce.number().int().min(1).max(999).default(1),
+  qty: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_GIFT_SEND_QTY, {
+      message: `Quantity must be between 1 and ${MAX_GIFT_SEND_QTY}`,
+    })
+    .default(1),
 });
 
 const paginationSchema = z.object({
@@ -294,10 +302,11 @@ export async function getCallToken(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 }
 
-/** POST /chat/conversations/:userId/call-invite — ring + socket signal for 1:1 video */
+/** POST /chat/conversations/:userId/call-invite — ring + socket signal for 1:1 voice/video */
 export async function postCallInvite(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await callService.startCall(req.user!.id, req.params.userId);
+    const callType = req.body?.callType === 'voice' ? 'voice' : 'video';
+    const result = await callService.startCall(req.user!.id, req.params.userId, callType);
     ok(
       res,
       { signaled: result.status === 'ringing', ...result },

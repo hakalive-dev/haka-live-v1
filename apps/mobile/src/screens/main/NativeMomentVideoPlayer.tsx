@@ -1,21 +1,36 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
+import { StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 /** Dev-client / production only — not loaded in Expo Go. */
 export function NativeMomentVideoPlayer({
   uri,
   isActive,
+  muted = false,
+  paused = false,
 }: {
   uri: string;
   isActive: boolean;
+  muted?: boolean;
+  paused?: boolean;
+  onTogglePause?: () => void;
 }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
-    p.muted = false;
+    p.muted = muted;
   });
-  const [paused, setPaused] = useState(false);
+  const lastUri = useRef(uri);
+
+  useEffect(() => {
+    if (uri && uri !== lastUri.current) {
+      lastUri.current = uri;
+      void player.replaceAsync(uri);
+    }
+  }, [uri, player]);
+
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
 
   useEffect(() => {
     if (isActive && !paused) {
@@ -25,32 +40,12 @@ export function NativeMomentVideoPlayer({
     }
   }, [isActive, paused, player]);
 
-  const togglePause = useCallback(() => {
-    setPaused((v) => !v);
-  }, []);
-
   return (
-    <Pressable style={StyleSheet.absoluteFillObject} onPress={togglePause}>
-      <VideoView
-        player={player}
-        style={StyleSheet.absoluteFillObject}
-        contentFit="cover"
-        nativeControls={false}
-      />
-      {paused ? (
-        <View style={styles.pauseOverlay}>
-          <Ionicons name="play-circle" size={72} color="rgba(255,255,255,0.9)" />
-        </View>
-      ) : null}
-    </Pressable>
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFillObject}
+      contentFit="cover"
+      nativeControls={false}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  pauseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-});

@@ -10,6 +10,8 @@ router.get('/',              ctrl.getCatalogue);
 router.get('/history',       ctrl.getSentHistory);
 router.get('/lucky/history', ctrl.getLuckyHistory);
 router.get('/lucky/room/:roomId/winners', ctrl.getRoomLuckyWinners);
+router.get('/lucky/room/:roomId/rankings', ctrl.getRoomLuckyRankings);
+router.get('/lucky/room/:roomId/history', ctrl.getRoomLuckyHistory);
 router.get('/received/:userId', ctrl.getReceived);
 router.post('/send',         ctrl.sendGift);
 

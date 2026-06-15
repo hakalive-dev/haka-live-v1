@@ -23,6 +23,8 @@ import { Image } from 'expo-image';
 import { UserAvatar } from '@components/UserAvatar';
 
 import { giftsApi } from '@api/gifts';
+import { LuckyGiftBanner } from './LuckyGiftBanner';
+import { LuckyGiftRankingOverlay } from './LuckyGiftRankingOverlay';
 import { formatApiError } from '@api/client';
 import {
   getGiftsForTab,
@@ -64,6 +66,15 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const QTY_PRESETS = [1, 10, 20, 50] as const;
 
+const GRID_COLUMNS = 4;
+const GRID_VISIBLE_ROWS = 3;
+/** Matches giftItem thumb + label + cost + vertical padding. */
+const GIFT_CELL_HEIGHT = 82;
+const GRID_VIEWPORT_HEIGHT =
+  GRID_VISIBLE_ROWS * GIFT_CELL_HEIGHT +
+  (GRID_VISIBLE_ROWS - 1) * Spacing.sm +
+  Spacing.md;
+
 /** Selected gift thumb — one half-cycle each way (reverse repeat = no loop seam). */
 const SELECTED_GIFT_PULSE_SCALE_MAX = 1.16;
 const SELECTED_GIFT_PULSE_HALF_MS = 440;
@@ -79,9 +90,11 @@ interface Props {
   initialRecipientId?: string | null;
   /** Hide the mic "send-to-all" circle (e.g. DM gifting). */
   hideMic?: boolean;
+  /** When set, enables the Lucky tab banner + room-scoped ranking overlay. */
+  roomId?: string | null;
 }
 
-export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, initialRecipientId, hideMic }: Props) {
+export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, initialRecipientId, hideMic, roomId }: Props) {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(300)).current;
 
@@ -92,6 +105,7 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
   const [qty, setQty] = useState<number>(1);
   const [selectedRecipientId, setSelectedRecipientId] = useState<string | null>(null);
   const [sendToAll, setSendToAll] = useState(false);
+  const [rankingOverlayVisible, setRankingOverlayVisible] = useState(false);
 
   // Reset/seed recipient selection whenever the panel opens.
   useEffect(() => {
@@ -157,6 +171,12 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
 
   useEffect(() => { setSelectedGiftId(null); }, [activeTab]);
 
+  useEffect(() => {
+    if (!visible || activeTab !== 'lucky') {
+      setRankingOverlayVisible(false);
+    }
+  }, [visible, activeTab]);
+
   const handleSend = useCallback(
     async () => {
       if (!selectedGift) return;
@@ -172,6 +192,8 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
     [coinBalance, onSend, onClose, qty, selectedRecipient, selectedGift, sendToAll, seatedUsers],
   );
 
+  const showLuckyBanner = activeTab === 'lucky' && !!roomId;
+
   return (
     <Modal
       visible={visible}
@@ -183,11 +205,19 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
 
       <Animated.View
         style={[
-          styles.panel,
-          { paddingBottom: insets.bottom + Spacing.md },
+          styles.sheetRoot,
+          {
+            paddingBottom: insets.bottom + Spacing.md,
+            maxHeight: showLuckyBanner ? '68%' : '60%',
+          },
           { transform: [{ translateY: slideAnim }] },
         ]}
       >
+        {showLuckyBanner ? (
+          <LuckyGiftBanner onPressRanking={() => setRankingOverlayVisible(true)} />
+        ) : null}
+
+        <View style={styles.panel}>
         {/* Recipient avatars row + mic circle */}
         <View style={styles.topRow}>
           <FlatList
@@ -258,12 +288,14 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
           ))}
         </View>
 
-        {/* Gift grid */}
+        {/* Gift grid — fixed 3×4 viewport; extra gifts scroll inside */}
         <View style={styles.gridWrap}>
           {loading ? (
-            <StoreGridSkeleton />
+            <View style={styles.gridStateBox}>
+              <StoreGridSkeleton />
+            </View>
           ) : loadError && catalogue.length === 0 ? (
-            <View style={styles.emptyBox}>
+            <View style={styles.gridStateBox}>
               <Text style={styles.emptyText}>{loadError}</Text>
               <TouchableOpacity
                 style={styles.retryBtn}
@@ -277,8 +309,10 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
             <FlatList
               data={filtered}
               keyExtractor={(item) => item.id}
-              numColumns={4}
+              numColumns={GRID_COLUMNS}
+              style={styles.gridList}
               showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
               contentContainerStyle={styles.grid}
               columnWrapperStyle={styles.gridRow}
               renderItem={({ item }) => {
@@ -332,7 +366,7 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
                 );
               }}
               ListEmptyComponent={
-                <View style={styles.emptyBox}>
+                <View style={styles.gridEmptyFill}>
                   <Text style={styles.emptyText}>No gifts in this category</Text>
                 </View>
               }
@@ -371,7 +405,17 @@ export function GiftPanel({ visible, onClose, onSend, coinBalance, seatedUsers, 
             </TouchableOpacity>
           </View>
         </View>
+
+        </View>
       </Animated.View>
+
+      {roomId ? (
+        <LuckyGiftRankingOverlay
+          visible={rankingOverlayVisible}
+          roomId={roomId}
+          onClose={() => setRankingOverlayVisible(false)}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -449,13 +493,18 @@ const PANEL_BG = '#1A1530';
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'transparent' },
+  sheetRoot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   panel: {
     backgroundColor: PANEL_BG,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: Spacing.md,
-    maxHeight: '60%',
-    minHeight: '50%',
+    position: 'relative',
   },
 
   // Top: avatars + mic circle (pill container)
@@ -535,16 +584,35 @@ const styles = StyleSheet.create({
   },
   tabTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
-  // Grid
-  gridWrap: { flex: 1 },
+  // Grid — height locked to 3 visible rows regardless of item count
+  gridWrap: {
+    height: GRID_VIEWPORT_HEIGHT,
+  },
+  gridList: {
+    flex: 1,
+  },
   grid: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
+    flexGrow: 1,
   },
   gridRow: { gap: Spacing.sm },
+  gridStateBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  gridEmptyFill: {
+    minHeight: GRID_VIEWPORT_HEIGHT - Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
   giftItem: {
     flex: 1,
+    minHeight: GIFT_CELL_HEIGHT,
     alignItems: 'center',
     backgroundColor: 'transparent',
     borderRadius: Radius.md,
@@ -580,7 +648,6 @@ const styles = StyleSheet.create({
   coinCircleImg: { width: 22, height: 22 },
   giftCostText: { color: Colors.coin, fontSize: 10, fontWeight: '600' },
   giftCostDisabled: { color: 'rgba(255,255,255,0.4)' },
-  emptyBox: { height: 80, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
   retryBtn: {
     marginTop: Spacing.sm,

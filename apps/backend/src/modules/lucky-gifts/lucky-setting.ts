@@ -1,9 +1,15 @@
 import { prisma } from '../../config/prisma';
+import {
+  DEFAULT_WIN_MULTIPLIER_TIERS,
+  parseWinMultiplierTiersJson,
+  type LuckyMultiplierTier,
+} from './lucky-draw';
 
 export interface LuckySetting {
   enabled: boolean;
   winProbability: number;
   winMultiplier: number;
+  winMultiplierTiers: LuckyMultiplierTier[];
   receiverBenefitPercent: number;
   dailyUserWinCapCoins: bigint;
   updatedBy: string;
@@ -24,15 +30,20 @@ function rowToSetting(row: {
   enabled: boolean;
   winProbability: unknown;
   winMultiplier: unknown;
+  winMultiplierTiers: unknown;
   receiverBenefitPercent: unknown;
   dailyUserWinCapCoins: bigint;
   updatedBy: string;
   updatedAt: Date;
 }): LuckySetting {
+  const winMultiplier = Number(row.winMultiplier);
+  const parsedTiers = parseWinMultiplierTiersJson(row.winMultiplierTiers);
   return {
     enabled: row.enabled,
     winProbability: Number(row.winProbability),
-    winMultiplier: Number(row.winMultiplier),
+    winMultiplier,
+    winMultiplierTiers:
+      parsedTiers.length > 0 ? parsedTiers : DEFAULT_WIN_MULTIPLIER_TIERS,
     receiverBenefitPercent: Number(row.receiverBenefitPercent),
     dailyUserWinCapCoins: row.dailyUserWinCapCoins,
     updatedBy: row.updatedBy,

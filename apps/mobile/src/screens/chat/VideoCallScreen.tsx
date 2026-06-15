@@ -55,12 +55,22 @@ function formatDuration(secs: number): string {
 // ── Main screen ──────────────────────────────────────────────────────────────
 
 export function VideoCallScreen({ route, navigation }: Props) {
-  const { userId, displayName, channelId, agoraToken, appId, uid, incoming } = route.params;
+  const {
+    userId,
+    displayName,
+    channelId,
+    agoraToken,
+    appId,
+    uid,
+    incoming,
+    callType = 'video',
+  } = route.params;
   const insets = useSafeAreaInsets();
+  const isVoiceCall = callType === 'voice';
 
   const [connected, setConnected]     = useState(false);
   const [micEnabled, setMicEnabled]   = useState(true);
-  const [camEnabled, setCamEnabled]   = useState(true);
+  const [camEnabled, setCamEnabled]   = useState(!isVoiceCall);
   const [speakerOn, setSpeakerOn]     = useState(true);
   const [remoteUid, setRemoteUid]     = useState<number | null>(null);
   const [duration, setDuration]       = useState(0);
@@ -90,12 +100,12 @@ export function VideoCallScreen({ route, navigation }: Props) {
       if (status !== 'granted') {
         Alert.alert(
           'Microphone required',
-          'Allow microphone access to use video calls.',
+          `Allow microphone access to use ${isVoiceCall ? 'voice' : 'video'} calls.`,
         );
         setConnecting(false);
         return;
       }
-      if (Platform.OS === 'android') {
+      if (!isVoiceCall && Platform.OS === 'android') {
         const camGranted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.CAMERA,
         );
@@ -153,22 +163,24 @@ export function VideoCallScreen({ route, navigation }: Props) {
       });
 
       engine.enableAudio();
-      engine.enableVideo();
-      engine.startPreview();
+      if (!isVoiceCall) {
+        engine.enableVideo();
+        engine.startPreview();
+      }
 
       await engine.joinChannel(agoraToken, channelId, uid, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
         publishMicrophoneTrack: true,
-        publishCameraTrack: true,
+        publishCameraTrack: !isVoiceCall,
         autoSubscribeAudio: true,
-        autoSubscribeVideo: true,
+        autoSubscribeVideo: !isVoiceCall,
       });
       engine.setEnableSpeakerphone(true);
     } catch (err) {
       console.warn('[VideoCall] connect failed:', err);
       setConnecting(false);
     }
-  }, [appId, agoraToken, channelId, uid, fadeAnim]);
+  }, [appId, agoraToken, channelId, isVoiceCall, uid, fadeAnim]);
 
   const disconnectAgora = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -262,11 +274,11 @@ export function VideoCallScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      {/* Remote video — fullscreen background */}
-      {!IS_EXPO_GO && remoteUid ? (
+      {/* Remote video — fullscreen background (video calls only) */}
+      {!isVoiceCall && !IS_EXPO_GO && remoteUid ? (
         <AgoraView uid={remoteUid} style={StyleSheet.absoluteFill} />
       ) : (
-        <View style={styles.noVideoBackground} />
+        <View style={isVoiceCall ? styles.voiceBackground : styles.noVideoBackground} />
       )}
 
       {/* Overlay gradient */}
@@ -298,14 +310,14 @@ export function VideoCallScreen({ route, navigation }: Props) {
       </View>
 
       {/* Local preview (picture-in-picture) */}
-      {!IS_EXPO_GO && camEnabled && (
+      {!isVoiceCall && !IS_EXPO_GO && camEnabled && (
         <View style={[styles.localPip, { top: insets.top + 80 }]}>
           <AgoraView uid={0} style={StyleSheet.absoluteFill} />
         </View>
       )}
 
-      {/* No-video placeholder for remote */}
-      {(!remoteUid || IS_EXPO_GO) && !connecting && (
+      {/* Avatar placeholder for voice calls or before remote video connects */}
+      {(isVoiceCall || !remoteUid || IS_EXPO_GO) && !connecting && (
         <View style={styles.noRemoteWrap}>
           <View style={styles.noRemoteAvatar}>
             <Text style={styles.noRemoteInitial}>{displayName[0]?.toUpperCase() ?? '?'}</Text>
@@ -347,13 +359,17 @@ export function VideoCallScreen({ route, navigation }: Props) {
           <Text style={styles.ctrlLabel}>Speaker</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.ctrlBtn, !camEnabled && styles.ctrlBtnOff]}
-          onPress={handleToggleCam}
-        >
-          <Ionicons name={camEnabled ? 'videocam' : 'videocam-off'} size={22} color="#FFF" />
-          <Text style={styles.ctrlLabel}>{camEnabled ? 'Camera' : 'No cam'}</Text>
-        </TouchableOpacity>
+        {isVoiceCall ? (
+          <View style={styles.ctrlBtnPlaceholder} />
+        ) : (
+          <TouchableOpacity
+            style={[styles.ctrlBtn, !camEnabled && styles.ctrlBtnOff]}
+            onPress={handleToggleCam}
+          >
+            <Ionicons name={camEnabled ? 'videocam' : 'videocam-off'} size={22} color="#FFF" />
+            <Text style={styles.ctrlLabel}>{camEnabled ? 'Camera' : 'No cam'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -367,6 +383,14 @@ const styles = StyleSheet.create({
   noVideoBackground: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#F5F5F7',
+  },
+  voiceBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: Colors.surface,
+  },
+  ctrlBtnPlaceholder: {
+    width: 64,
+    height: 64,
   },
 
   // Gradient overlays (pure Views with opacity — avoids expo-linear-gradient dep here)

@@ -138,14 +138,29 @@ describe('startCall', () => {
     );
   });
 
-  it('rejects when callee disabled video calls', async () => {
+  it('rejects when callee disabled calls', async () => {
     (userAcceptsCalls as jest.Mock).mockResolvedValue(false);
 
     await expect(startCall(CALLER, CALLEE)).rejects.toMatchObject({
-      message: 'This user has disabled video calls',
+      message: 'This user has disabled calls',
       statusCode: 403,
     });
     expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  it('emits callType voice in payload and push', async () => {
+    await startCall(CALLER, CALLEE, 'voice');
+
+    expect(mockEmit).toHaveBeenCalledWith(
+      CALL_EVENTS.INCOMING,
+      expect.objectContaining({ callType: 'voice' }),
+    );
+    expect(sendIncomingCallPush).toHaveBeenCalledWith(
+      CALLEE,
+      'Incoming voice call',
+      expect.any(String),
+      expect.objectContaining({ type: 'voice_call', callType: 'voice' }),
+    );
   });
 
   it('returns busy (no ring) and logs a missed call when callee is already on a call', async () => {

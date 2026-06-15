@@ -1,14 +1,26 @@
 import { z } from 'zod';
 
+const multiplierTierSchema = z.object({
+  payoutPercent: z.number().min(0),
+  weight: z.number().min(0),
+});
+
 export const luckySettingUpdateSchema = z
   .object({
     enabled: z.boolean().optional(),
     winProbability: z.number().min(0).max(1).optional(),
     winMultiplier: z.number().min(0).optional(),
+    winMultiplierTiers: z.array(multiplierTierSchema).min(1).optional(),
     receiverBenefitPercent: z.number().min(0).max(1.5).optional(),
     dailyUserWinCapCoins: z.string().regex(/^\d+$/).optional(),
   })
-  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
+  .refine(
+    (v) =>
+      v.winMultiplierTiers === undefined ||
+      v.winMultiplierTiers.some((tier) => tier.weight > 0 && tier.payoutPercent > 0),
+    { message: 'At least one payout tier must have payoutPercent and weight > 0' },
+  );
 
 export type LuckySettingUpdateInput = z.infer<typeof luckySettingUpdateSchema>;
 

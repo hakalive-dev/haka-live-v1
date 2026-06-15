@@ -154,6 +154,7 @@ export type RootStackParamList = {
   Store: StoreScreenParams;
   StoreModal: StoreScreenParams;
   Ranking: { initialTab?: "state" | "agent" | "game" | "creator" };
+  StateQueen: { stateCode: string; stateName: string; countryCode?: string };
   CreateRoom: undefined;
   InviteCreator: undefined;
   InviteFriends: undefined;
@@ -165,6 +166,7 @@ export type RootStackParamList = {
   VideoCall: {
     userId: string;
     displayName: string;
+    callType?: 'voice' | 'video';
     channelId: string;
     agoraToken: string;
     appId: string;
@@ -177,6 +179,7 @@ export type RootStackParamList = {
     callerId: string;
     callerDisplayName: string;
     callId?: string;
+    callType?: 'voice' | 'video';
     channelId?: string;
     agoraToken?: string;
     appId?: string;

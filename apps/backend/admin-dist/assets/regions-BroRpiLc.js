@@ -1,0 +1,1 @@
+import{t as e}from"./client-BO7AMZ3Q.js";var t=()=>e.get(`/regions`),n=(t,n)=>e.post(`/regions`,{code:t,name:n}),r=(t,n)=>e.patch(`/regions/${t}`,n),i=t=>e.delete(`/regions/${t}`);export{r as i,i as n,t as r,n as t};

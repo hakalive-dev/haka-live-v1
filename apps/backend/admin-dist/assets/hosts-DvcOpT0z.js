@@ -1,1 +1,0 @@
-import{t as e}from"./client-CozH2RlE.js";var t=(t={})=>e.get(`/hosts`,{params:t}),n=t=>e.get(`/hosts/${t}/ownership`),r=(t,n,r)=>e.post(`/hosts/${t}/transfer-agency`,{toAgentOwnerId:n,reason:r}),i=(t={})=>e.get(`/hosts/multi-agency-abuse`,{params:t});export{r as i,t as n,i as r,n as t};

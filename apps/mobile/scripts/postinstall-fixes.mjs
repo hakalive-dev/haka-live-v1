@@ -100,6 +100,40 @@ function patchExpoVideoLoadControl() {
   if (patched !== original) fs.writeFileSync(loadControl, patched, 'utf8');
 }
 
+function patchVideoPlayerLoadControlKotlin() {
+  const kotlinPath = path.join(
+    process.cwd(),
+    'node_modules',
+    'expo-video',
+    'android',
+    'src',
+    'main',
+    'java',
+    'expo',
+    'modules',
+    'video',
+    'player',
+    'VideoPlayerLoadControl.kt',
+  );
+  if (!fs.existsSync(kotlinPath)) return;
+
+  const original = fs.readFileSync(kotlinPath, 'utf8');
+  if (original.includes('override fun getAllocator(playerId: PlayerId)')) return;
+
+  let patched = original;
+  if (!patched.includes('import androidx.media3.exoplayer.analytics.PlayerId')) {
+    patched = patched.replace(
+      "import androidx.media3.common.util.Util\n",
+      "import androidx.media3.common.util.Util\nimport androidx.media3.exoplayer.analytics.PlayerId\nimport androidx.media3.exoplayer.upstream.Allocator\n",
+    );
+  }
+  patched = patched.replace(
+    'class VideoPlayerLoadControl : DefaultLoadControl() {\n  private var targetBufferMs',
+    'class VideoPlayerLoadControl : DefaultLoadControl() {\n  override fun getAllocator(playerId: PlayerId): Allocator =\n    super.getAllocator(playerId)\n\n  private var targetBufferMs',
+  );
+  if (patched !== original) fs.writeFileSync(kotlinPath, patched, 'utf8');
+}
+
 function patchExpoAudioMedia3() {
   const buildGradle = path.join(
     process.cwd(),
@@ -120,6 +154,7 @@ try {
 
 try {
   patchExpoVideoLoadControl();
+  patchVideoPlayerLoadControlKotlin();
   patchExpoAudioMedia3();
 } catch (err) {
   // eslint-disable-next-line no-console

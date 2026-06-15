@@ -55,7 +55,7 @@ import {
   promptIncomingVideoCallFromSocket,
   dismissIncomingCallIfActive,
 } from "../utils/incomingVideoCall";
-import { leaveVideoCallIfActive } from "../utils/videoCall";
+import { leaveCallIfActive } from "../utils/call";
 import { cancelIncomingCallNotification } from "../services/callNotifications";
 import { CALL_EVENTS } from "@haka-live/shared-types/events";
 import { queryClient } from "../api/queryClient";
@@ -360,6 +360,7 @@ export function useUserSocket(enabled: boolean) {
           callId?: string;
           callerId: string;
           callerDisplayName: string;
+          callType?: "voice" | "video";
           channelId: string;
           agoraToken: string;
           appId: string;
@@ -371,6 +372,7 @@ export function useUserSocket(enabled: boolean) {
             callId: payload.callId,
             callerId: payload.callerId,
             callerDisplayName: payload.callerDisplayName ?? "Someone",
+            callType: payload.callType === "voice" ? "voice" : "video",
             channelId: payload.channelId,
             agoraToken: payload.agoraToken,
             appId: payload.appId,
@@ -382,7 +384,7 @@ export function useUserSocket(enabled: boolean) {
       // The peer settled the call (declined/ended/cancelled/missed) — close whichever
       // call UI is up and drop any ringing notification.
       const onCallPeerSignal = (payload: { peerId?: string; callId?: string }) => {
-        leaveVideoCallIfActive(payload?.peerId);
+        leaveCallIfActive(payload?.peerId);
         dismissIncomingCallIfActive(payload?.peerId);
         void cancelIncomingCallNotification(payload?.callId);
       };

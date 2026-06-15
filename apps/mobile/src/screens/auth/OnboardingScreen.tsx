@@ -27,6 +27,8 @@ import {
 import { TokenStorage } from '../../storage';
 import { AppDispatch } from '../../store';
 import { AuthStackParamList } from '@navigation/types';
+import { INDIA_STATES } from '@haka-live/shared-types/state-rankings';
+import { StatePickerField, StatePickerModal } from '@components/StatePicker';
 
 type Nav = NativeStackNavigationProp<AuthStackParamList>;
 
@@ -137,6 +139,7 @@ export function OnboardingScreen() {
   // Form state
   const [displayName, setDisplayName] = useState('');
   const [country, setCountry]         = useState('');
+  const [stateCode, setStateCode]     = useState('');
   const [city, setCity]               = useState('');
   const [gender, setGender]           = useState('');
   const [dob, setDob]                 = useState<Date | null>(null);
@@ -144,6 +147,7 @@ export function OnboardingScreen() {
 
   // Modal visibility
   const [showCountry, setShowCountry] = useState(false);
+  const [showState, setShowState]     = useState(false);
   const [showGender, setShowGender]   = useState(false);
   const [showCal, setShowCal]         = useState(false);
 
@@ -161,6 +165,9 @@ export function OnboardingScreen() {
         : COUNTRIES,
     [countrySearch],
   );
+
+  const showIndiaStatePicker = country === 'India';
+  const stateDisplayName = INDIA_STATES.find((s) => s.code === stateCode)?.name ?? '';
 
   // Submission
   const [loading, setLoading] = useState(false);
@@ -208,6 +215,7 @@ export function OnboardingScreen() {
         username:    deriveUsername(displayName.trim()),
         displayName: displayName.trim(),
         country,
+        ...(stateCode.trim() && showIndiaStatePicker ? { state: stateCode.trim() } : {}),
         ...(city.trim().length >= 1 ? { city: city.trim() } : {}),
         gender,
         dateOfBirth: dob ? new Date(dobApi + 'T00:00:00.000Z').toISOString() : null,
@@ -335,6 +343,26 @@ export function OnboardingScreen() {
             </TouchableOpacity>
             {errors.country ? <Text style={styles.fieldError}>{errors.country}</Text> : null}
           </View>
+
+          {showIndiaStatePicker ? (
+            <View style={styles.field}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>State</Text>
+                <Text style={styles.immutable}>Not to be alter once set</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.inputRow}
+                onPress={() => setShowState(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="map-outline" size={18} color="rgba(255,255,255,0.6)" style={styles.inputIcon} />
+                <Text style={[styles.inputText, !stateDisplayName && styles.inputPlaceholder]}>
+                  {stateDisplayName || 'Select state (optional)'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.5)" style={styles.inputChevron} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {/* City (optional) — regional leaderboard shard */}
           <View style={styles.field}>
@@ -471,6 +499,7 @@ export function OnboardingScreen() {
                 style={[styles.countryItem, country === item.name && styles.countryItemSelected]}
                 onPress={() => {
                   setCountry(item.name);
+                  if (item.name !== 'India') setStateCode('');
                   setCountrySearch('');
                   setShowCountry(false);
                   setErrors(e => ({ ...e, country: '' }));
@@ -488,6 +517,15 @@ export function OnboardingScreen() {
           />
         </View>
       </Modal>
+
+      <StatePickerModal
+        visible={showState}
+        states={INDIA_STATES}
+        selectedCode={stateCode}
+        onSelect={(code) => setStateCode(code)}
+        onClose={() => setShowState(false)}
+        title="Select your state"
+      />
 
       {/* ── Gender Picker Modal ── */}
       <Modal visible={showGender} animationType="slide" transparent>

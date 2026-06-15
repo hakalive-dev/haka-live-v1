@@ -41,7 +41,7 @@ import {
   syncCoinSellerProfileRatesFromTier,
   type TierRates,
 } from "../payments/coinSeller.service";
-import { isLuckyGiftCategory } from "../../shared-types/gifts";
+import { isLuckyGiftCategory, MAX_GIFT_SEND_QTY } from "../../shared-types/gifts";
 import { getLuckySetting } from "../lucky-gifts/lucky-setting";
 import { runLuckyDraw, luckyReceiverBeans } from "../lucky-gifts/lucky-draw";
 import {
@@ -372,8 +372,11 @@ export async function sendGift(input: GiftSendInput) {
 
   await assertNoRiskBlock(senderId, "freezeCoins", "disableGifts");
 
-  if (!Number.isInteger(qty) || qty < 1 || qty > 999) {
-    throw new AppError("qty must be an integer between 1 and 999", 400);
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_GIFT_SEND_QTY) {
+    throw new AppError(
+      `qty must be an integer between 1 and ${MAX_GIFT_SEND_QTY}`,
+      400,
+    );
   }
 
   const gift = await prisma.gift.findUnique({ where: { id: giftId } });
@@ -587,12 +590,13 @@ export async function sendGift(input: GiftSendInput) {
           rewardCoins: draw.rewardCoins,
           receiverBeans: distributedHostBeans,
           winProbability: luckySetting.winProbability,
-          winMultiplier: luckySetting.winMultiplier,
+          winMultiplier: draw.winMultiplier,
         },
       });
       luckyOutcome = {
         drawId: drawRow.id,
         isWin: draw.isWin,
+        winMultiplier: draw.winMultiplier,
         rewardCoins: draw.rewardCoins,
         coinCost: totalCoinCost,
         senderCoinBalance: senderBalanceAfterDraw,
@@ -618,6 +622,7 @@ export async function sendGift(input: GiftSendInput) {
       giftId: gift.id,
       giftName: gift.name,
       giftIcon: gift.icon,
+      giftImage: gift.image ?? "",
       outcome: result.luckyOutcome,
     });
   }
@@ -676,6 +681,25 @@ export async function sendGift(input: GiftSendInput) {
   }
 
   const luckyRewardCoins = result.luckyOutcome?.rewardCoins ?? 0;
+  const hostStateRow = await prisma.user.findUnique({
+    where: { id: ctx.hostUser.id },
+    select: {
+      role: true,
+      gender: true,
+      faceVerificationStatus: true,
+      country: true,
+      state: true,
+    },
+  });
+  const hostStateSnapshot = hostStateRow
+    ? {
+        role: hostStateRow.role,
+        gender: hostStateRow.gender,
+        faceVerificationStatus: hostStateRow.faceVerificationStatus,
+        country: hostStateRow.country,
+        state: hostStateRow.state,
+      }
+    : undefined;
   const { enqueueGiftSideEffects } =
     await import("../../queues/gift-side-effects");
   void enqueueGiftSideEffects({
@@ -687,6 +711,7 @@ export async function sendGift(input: GiftSendInput) {
     recipientId: input.recipientId ?? null,
     skipEarnerLeaderboard,
     luckyRewardCoins,
+    hostStateSnapshot,
   }).catch(() => {
     void updateRichScore(senderId, totalCoinCost).catch(() => undefined);
     void updateCharmScore(ctx.hostUser.id, totalBeanValue).catch(
@@ -696,6 +721,11 @@ export async function sendGift(input: GiftSendInput) {
     if (!skipEarnerLeaderboard) {
       void updateEarnerScore(ctx.hostUser.id, totalBeanValue).catch(
         () => undefined,
+      );
+    }
+    if (hostStateSnapshot) {
+      void import("../leaderboard/state-ranking.service").then((m) =>
+        m.updateStateHostScore(ctx.hostUser.id, totalCoinCost, hostStateSnapshot),
       );
     }
     if (luckyRewardCoins > 0) {

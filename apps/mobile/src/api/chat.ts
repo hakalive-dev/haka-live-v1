@@ -158,12 +158,13 @@ export const chatApi = {
     return res.data;
   },
 
-  /** POST — notify callee (socket + push) for 1:1 video. `status: 'busy'` means no ring happened. */
+  /** POST — notify callee (socket + push) for 1:1 voice/video. `status: 'busy'` means no ring happened. */
   postCallInvite: async (
     userId: string,
+    callType: 'voice' | 'video' = 'video',
   ): Promise<{ signaled: boolean; callId?: string; status?: 'ringing' | 'busy' }> => {
     if (useMock) return { signaled: true, status: 'ringing' };
-    const res = await apiClient.post(`/chat/conversations/${userId}/call-invite`);
+    const res = await apiClient.post(`/chat/conversations/${userId}/call-invite`, { callType });
     return res.data;
   },
 

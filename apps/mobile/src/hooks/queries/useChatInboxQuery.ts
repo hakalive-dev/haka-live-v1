@@ -33,6 +33,16 @@ export type ChatInboxData = {
   teamAnnouncement: TeamAnnouncementPayload | null;
 };
 
+/** Minimal inbox cache used when optimistically patching before the first fetch completes. */
+export function emptyChatInboxData(): ChatInboxData {
+  return {
+    conversations: ensureHakaTeamInInbox([]),
+    friendConversations: [],
+    onlineFriends: [],
+    teamAnnouncement: null,
+  };
+}
+
 export function useChatInboxQuery() {
   return useQuery({
     queryKey: queryKeys.chat.inbox(),

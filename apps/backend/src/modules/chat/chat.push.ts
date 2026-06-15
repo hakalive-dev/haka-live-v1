@@ -141,4 +141,4 @@ export async function notifyRoomChatRecipients(opts: {
   }
 }
 
-// 1:1 video call signaling lives in call.service.ts (state machine + ring timeouts).
+// 1:1 voice/video call signaling lives in call.service.ts (state machine + ring timeouts).

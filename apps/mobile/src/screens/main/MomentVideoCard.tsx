@@ -1,26 +1,16 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
+  Animated,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { WebView } from 'react-native-webview';
 
 import { momentsApi } from '@api/moments';
-
-// expo-video crashes in Expo Go (Media3 mismatch) — use WebView there; native player in APK/dev builds.
-const IS_EXPO_GO =
-  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-const NativeMomentVideoPlayer = IS_EXPO_GO
-  ? null
-  : require('./NativeMomentVideoPlayer').NativeMomentVideoPlayer as React.ComponentType<{
-      uri: string;
-      isActive: boolean;
-    }>;
+import { isPlayableVideoUrl } from '@/utils/videoUrl';
 
 export type MomentVideoPost = {
   id: string;
@@ -42,107 +32,53 @@ export type MomentVideoPost = {
   default_liked: boolean;
 };
 
-function isPlayableVideoUrl(url: string): boolean {
-  return /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) || url.includes('/moments/videos/');
-}
-
 function fmtCount(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-/** HTML5 video inside WebView — works in Expo Go without native expo-video. */
-function WebViewVideoPlayer({ uri, isActive }: { uri: string; isActive: boolean }) {
-  const html = useMemo(() => {
-    const safeUri = escapeHtml(uri);
-    const playCmd = isActive ? 'v.play().catch(function(){});' : 'v.pause();';
-    return `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>
-  * { margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-  video { width: 100%; height: 100%; object-fit: cover; background: #000; }
-</style>
-</head>
-<body>
-  <video id="v" src="${safeUri}" playsinline webkit-playsinline loop muted></video>
-  <script>
-    var v = document.getElementById('v');
-    v.muted = false;
-    ${playCmd}
-  </script>
-</body>
-</html>`;
-  }, [uri, isActive]);
-
-  return (
-    <WebView
-      source={{ html }}
-      style={StyleSheet.absoluteFillObject}
-      scrollEnabled={false}
-      allowsInlineMediaPlayback
-      mediaPlaybackRequiresUserAction={false}
-      javaScriptEnabled
-      domStorageEnabled
-      originWhitelist={['*']}
-    />
-  );
-}
-
-function VideoBackground({
-  uri,
-  poster,
-  isActive,
-}: {
-  uri: string;
-  poster: string | null;
-  isActive: boolean;
-}) {
-  if (!isPlayableVideoUrl(uri)) {
-    return (
-      <Image
-        source={{ uri: poster ?? uri }}
-        style={StyleSheet.absoluteFillObject}
-        contentFit="cover"
-      />
-    );
-  }
-
-  if (IS_EXPO_GO) {
-    return <WebViewVideoPlayer uri={uri} isActive={isActive} />;
-  }
-
-  return <NativeMomentVideoPlayer uri={uri} isActive={isActive} />;
-}
+const DOUBLE_TAP_MS = 300;
 
 export const MomentVideoCard = React.memo(function MomentVideoCard({
   post,
   height,
   isActive,
+  showPoster,
   onComment,
   onShare,
   onGift,
+  onProfilePress,
+  onFollowPress,
+  isFollowing,
+  onDoubleTapLike,
+  onTogglePause,
 }: {
   post: MomentVideoPost;
   height: number;
   isActive: boolean;
+  /** When false, the shared VideoFeedPlayer behind the list is visible. */
+  showPoster: boolean;
   onComment: () => void;
   onShare: () => void;
   onGift: () => void;
+  onProfilePress: () => void;
+  onFollowPress: () => void;
+  isFollowing: boolean;
+  onDoubleTapLike: () => void;
+  onTogglePause: () => void;
 }) {
   const [liked, setLiked] = useState(post.default_liked);
   const [likeCount, setLikeCount] = useState(post.likes);
+  const lastTapRef = useRef(0);
+  const heartScale = useRef(new Animated.Value(0)).current;
+
+  const animateHeart = useCallback(() => {
+    heartScale.setValue(0);
+    Animated.sequence([
+      Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, friction: 4 }),
+      Animated.timing(heartScale, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start();
+  }, [heartScale]);
 
   const handleLike = useCallback(async () => {
     const nextLiked = !liked;
@@ -156,25 +92,74 @@ export const MomentVideoCard = React.memo(function MomentVideoCard({
     }
   }, [liked, post.id]);
 
+  const handleCardPress = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+      lastTapRef.current = 0;
+      if (!liked) {
+        setLiked(true);
+        setLikeCount((c) => c + 1);
+        onDoubleTapLike();
+      }
+      animateHeart();
+      return;
+    }
+    lastTapRef.current = now;
+    setTimeout(() => {
+      if (Date.now() - lastTapRef.current >= DOUBLE_TAP_MS && isActive) {
+        onTogglePause();
+      }
+    }, DOUBLE_TAP_MS);
+  }, [liked, onDoubleTapLike, animateHeart, isActive, onTogglePause]);
+
+  const posterUri =
+    post.poster_url ??
+    (!isPlayableVideoUrl(post.video_url) ? post.video_url : null);
+
   const genderColor = post.user.gender === 'female' ? '#F9467D' : '#4DA6FF';
 
   return (
-    <View style={[styles.videoCard, { height }]}>
-      <VideoBackground
-        uri={post.video_url}
-        poster={post.poster_url}
-        isActive={isActive}
-      />
+    <TouchableOpacity
+      activeOpacity={1}
+      style={[styles.videoCard, { height }]}
+      onPress={handleCardPress}
+    >
+      {showPoster && posterUri ? (
+        <Image
+          source={{ uri: posterUri }}
+          style={StyleSheet.absoluteFillObject}
+          contentFit="cover"
+        />
+      ) : null}
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.heartBurst,
+          {
+            opacity: heartScale,
+            transform: [{ scale: heartScale.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.2] }) }],
+          },
+        ]}
+      >
+        <Ionicons name="heart" size={96} color="#FF383C" />
+      </Animated.View>
 
       <View style={styles.videoActions}>
-        <View style={styles.videoAvatarWrap}>
+        <TouchableOpacity style={styles.videoAvatarWrap} onPress={onProfilePress}>
           <View style={styles.videoAvatar}>
-            <Text style={styles.videoAvatarInitial}>{post.user.displayName[0]}</Text>
+            {post.user.avatar ? (
+              <Image source={{ uri: post.user.avatar }} style={styles.videoAvatarImg} contentFit="cover" />
+            ) : (
+              <Text style={styles.videoAvatarInitial}>{post.user.displayName[0]}</Text>
+            )}
           </View>
-          <View style={styles.videoFollowBtn}>
-            <Ionicons name="add" size={10} color="#FFFFFF" />
-          </View>
-        </View>
+          {!isFollowing ? (
+            <TouchableOpacity style={styles.videoFollowBtn} onPress={onFollowPress}>
+              <Ionicons name="add" size={10} color="#FFFFFF" />
+            </TouchableOpacity>
+          ) : null}
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.videoActionItem} onPress={onGift}>
           <Ionicons name="gift" size={24} color="#FFFFFF" />
@@ -201,7 +186,7 @@ export const MomentVideoCard = React.memo(function MomentVideoCard({
         </TouchableOpacity>
       </View>
 
-      <View style={styles.videoBottomInfo}>
+      <TouchableOpacity style={styles.videoBottomInfo} onPress={onProfilePress} activeOpacity={0.85}>
         <View style={styles.videoNameRow}>
           <Text style={styles.videoDisplayName}>{post.user.displayName}</Text>
           <Text style={styles.videoFlag}>{post.user.country_flag}</Text>
@@ -215,16 +200,21 @@ export const MomentVideoCard = React.memo(function MomentVideoCard({
           </View>
         </View>
         <Text style={styles.videoDescription} numberOfLines={3}>{post.description}</Text>
-      </View>
-    </View>
+      </TouchableOpacity>
+    </TouchableOpacity>
   );
 });
 
 const styles = StyleSheet.create({
   videoCard: {
     width: '100%',
-    backgroundColor: '#000000',
+    backgroundColor: 'transparent',
     overflow: 'hidden',
+  },
+  heartBurst: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   videoActions: {
     position: 'absolute',
@@ -232,6 +222,7 @@ const styles = StyleSheet.create({
     bottom: 120,
     alignItems: 'center',
     gap: 18,
+    zIndex: 2,
   },
   videoAvatarWrap: {
     alignItems: 'center',
@@ -246,6 +237,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  videoAvatarImg: {
+    width: '100%',
+    height: '100%',
   },
   videoAvatarInitial: {
     fontSize: 18,
@@ -276,6 +272,7 @@ const styles = StyleSheet.create({
     left: 12,
     right: 80,
     bottom: 24,
+    zIndex: 2,
   },
   videoNameRow: {
     flexDirection: 'row',

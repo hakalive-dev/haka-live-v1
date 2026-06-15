@@ -26,7 +26,7 @@ describe('qty multiplier', () => {
     expect((await getWalletBalance(host.id)).beans).toBe(Math.floor(rose.beanValue * 5 * 0.70));
   });
 
-  it.each([0, -1, 1000, 1.5])('rejects qty=%s', async (qty) => {
+  it.each([0, -1, 10_000, 1.5])('rejects qty=%s', async (qty) => {
     const sender = await createTestUser({ coinBalance: 10_000 });
     const host   = await createTestUser();
     const rose = await prisma.gift.findFirstOrThrow({ where: { name: 'Rose' } });

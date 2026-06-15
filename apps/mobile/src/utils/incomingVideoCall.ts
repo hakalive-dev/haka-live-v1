@@ -1,3 +1,4 @@
+import type { CallType } from '@haka-live/shared-types/events';
 import { navigationRef } from '../navigation/navigationRef';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -5,6 +6,7 @@ export type CallIncomingSocketPayload = {
   callId?: string;
   callerId: string;
   callerDisplayName: string;
+  callType?: CallType;
   channelId: string;
   agoraToken: string;
   appId: string;
@@ -29,6 +31,7 @@ export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPay
     callId: payload.callId,
     callerId: payload.callerId,
     callerDisplayName: payload.callerDisplayName,
+    callType: payload.callType === 'voice' ? 'voice' : 'video',
     channelId: payload.channelId,
     agoraToken: payload.agoraToken,
     appId: payload.appId,
@@ -40,13 +43,14 @@ export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPay
 export function promptIncomingVideoCallFromPush(
   callerId: string,
   callerDisplayName: string,
-  opts?: { callId?: string; autoAnswer?: boolean },
+  opts?: { callId?: string; autoAnswer?: boolean; callType?: CallType },
 ): void {
   presentIncomingCall({
     callerId,
     callerDisplayName,
     callId: opts?.callId,
     autoAnswer: opts?.autoAnswer,
+    callType: opts?.callType === 'voice' ? 'voice' : 'video',
   });
 }
 

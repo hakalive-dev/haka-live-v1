@@ -27,6 +27,7 @@ export function IncomingCallScreen({ route, navigation }: Props) {
     callerId,
     callerDisplayName,
     callId,
+    callType = 'video',
     channelId,
     agoraToken,
     appId,
@@ -34,6 +35,7 @@ export function IncomingCallScreen({ route, navigation }: Props) {
     autoAnswer,
   } = route.params;
   const insets = useSafeAreaInsets();
+  const callLabel = callType === 'voice' ? 'voice' : 'video';
 
   const [answering, setAnswering] = useState(false);
   const settledRef = useRef(false);
@@ -74,6 +76,7 @@ export function IncomingCallScreen({ route, navigation }: Props) {
       navigation.replace('VideoCall', {
         userId: callerId,
         displayName: callerDisplayName,
+        callType,
         channelId: call.channelId!,
         agoraToken: call.agoraToken!,
         appId: call.appId!,
@@ -87,10 +90,10 @@ export function IncomingCallScreen({ route, navigation }: Props) {
         void chatApi.postCallEnd(callerId).catch(() => {});
       }
       // Otherwise most likely 410: the caller hung up / the call timed out.
-      Alert.alert('Video call', 'This call has already ended.');
+      Alert.alert(`${callType === 'voice' ? 'Voice' : 'Video'} call`, 'This call has already ended.');
       if (navigation.canGoBack()) navigation.goBack();
     }
-  }, [callerId, callerDisplayName, channelId, agoraToken, appId, uid, navigation]);
+  }, [callerId, callerDisplayName, callType, channelId, agoraToken, appId, uid, navigation]);
 
   const handleDecline = useCallback(() => {
     if (settledRef.current) return;
@@ -107,7 +110,7 @@ export function IncomingCallScreen({ route, navigation }: Props) {
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.xxl }]}>
-        <Text style={styles.incomingLabel}>Incoming video call</Text>
+        <Text style={styles.incomingLabel}>Incoming {callLabel} call</Text>
       </View>
 
       <View style={styles.callerWrap}>

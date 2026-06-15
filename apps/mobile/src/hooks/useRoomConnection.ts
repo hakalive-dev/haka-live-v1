@@ -22,9 +22,8 @@ import Constants from 'expo-constants';
 import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
 import { roomsApi } from '@api/rooms';
-import { refreshSession } from '@api/client';
 import { logDiagnostic } from '../diagnostics/releaseDiagnostics';
-import { TokenStorage } from '../storage';
+import { getFreshSocketToken, getSocketBaseUrl } from '../utils/socketAuth';
 import { useToast } from '@components/Toast';
 import {
   type SeatInvitationPayload,
@@ -47,41 +46,6 @@ function isVolumeSpeakerActive(speaker: { volume?: number; vad?: number }): bool
   // A clear voice level is required: vad is only reported reliably for the local
   // publisher, so the volume floor is the signal we trust for every speaker.
   return (speaker.volume ?? 0) >= SPEAK_VOLUME_THRESHOLD;
-}
-
-// Access tokens expire after ~15 min. REST recovers via the 401→refresh
-// interceptor, but the socket handshake sends a static `auth.token`, so a stale
-// token makes EVERY connect attempt fail ("Invalid or expired token") and the
-// room silently loses all live events (roster, chat, gifts). Refresh proactively
-// when the stored token is missing or about to expire.
-const TOKEN_EXPIRY_MARGIN_MS = 60_000;
-
-/** Decode a JWT's `exp` (ms since epoch) without verifying — null when unreadable. */
-function decodeJwtExpMs(token: string): number | null {
-  try {
-    const payload = token.split('.')[1];
-    const json = JSON.parse(
-      atob(payload.replace(/-/g, '+').replace(/_/g, '/')),
-    ) as { exp?: number };
-    return typeof json.exp === 'number' ? json.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Stored access token, refreshed first when absent or expiring within the margin.
- *  `force` skips the local expiry check — for when the server already rejected it. */
-async function getFreshSocketToken(force = false): Promise<string | null> {
-  const stored = await TokenStorage.getAccess();
-  const expMs = stored ? decodeJwtExpMs(stored) : null;
-  if (!force && stored && expMs !== null && expMs - Date.now() > TOKEN_EXPIRY_MARGIN_MS) {
-    return stored;
-  }
-  // Missing, unreadable, or stale — rotate via the shared (deduped) refresh flow.
-  const outcome = await refreshSession({ revokeSessionOnFailure: false });
-  if (outcome.status === 'success') return outcome.accessToken;
-  logDiagnostic('socket', 'token_refresh_failed', { status: outcome.status });
-  return stored; // last resort — may still be accepted if clocks disagree
 }
 
 // Deterministic 32-bit UID from a UUID — backend fallback when Redis is unavailable.
@@ -144,6 +108,8 @@ export function useRoomConnection({
   const agoraGenRef = useRef(0);
   const agoraTeardownRef = useRef<Promise<void>>(Promise.resolve());
   const ws         = useRef<SocketIOClient | null>(null);
+  const roomPasswordRef = useRef(roomPassword);
+  roomPasswordRef.current = roomPassword;
   const onWsRef    = useRef(onWsEvent);
   onWsRef.current  = onWsEvent;
   const localUidRef = useRef(0);
@@ -540,17 +506,17 @@ export function useRoomConnection({
     const socket = ws.current;
     if (!socket?.connected || !enabled || !roomId) return;
     const joinPayload: Record<string, unknown> = { roomId };
-    if (roomPassword) joinPayload.password = roomPassword;
+    const password = roomPasswordRef.current;
+    if (password) joinPayload.password = password;
     socket.emit('room:join', joinPayload, handleRoomJoinAck);
-  }, [roomId, enabled, roomPassword, handleRoomJoinAck]);
+  }, [roomId, enabled, handleRoomJoinAck]);
 
   const connectWs = useCallback(async () => {
     if (!enabled) return;
     const token = await getFreshSocketToken();
     if (!token) return;
 
-    const baseUrl = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1')
-      .replace('/api/v1', '');
+    const baseUrl = getSocketBaseUrl();
 
     const socket = ioClient(baseUrl, {
       transports: ['websocket'],
@@ -560,8 +526,9 @@ export function useRoomConnection({
       reconnectionDelayMax: 5000,
       // No attempt cap: Agora publishes independently for hours (24h RTC token),
       // so a socket that gives up leaves a ghost publisher — seat cleared
-      // server-side after 2s, voice still audible, and no rejoin ever reconciles
-      // it. Infinite retries guarantee the seats.snapshot resync on recovery.
+      // server-side after debounce (8s, aligned with reconnectionDelayMax), voice
+      // still audible, and no rejoin ever reconciles it. Infinite retries guarantee
+      // the seats.snapshot resync on recovery.
     });
     ws.current = socket;
 
@@ -612,9 +579,11 @@ export function useRoomConnection({
     });
   }, [enabled, emitRoomJoin]);
 
-  const disconnectWs = useCallback(() => {
+  const disconnectWs = useCallback((opts?: { explicitLeave?: boolean }) => {
     if (ws.current) {
-      try { ws.current.emit('room:leave', { roomId }); } catch {}
+      if (opts?.explicitLeave) {
+        try { ws.current.emit('room:leave', { roomId }); } catch {}
+      }
       // Drop every handler before disconnect so any in-flight events from the
       // server don't fire callbacks that close over stale React state.
       try { ws.current.removeAllListeners(); } catch {}
@@ -803,12 +772,21 @@ export function useRoomConnection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, roomId, publishVideo, subscribeVideo]);
 
-  // WebSocket lifecycle — depends on connectWs so password changes trigger a reconnect.
+  // WebSocket lifecycle — reconnect when room switches or realtime is disabled/enabled.
   useEffect(() => {
     if (!enabled) return;
     connectWs();
+    // Intentional exit uses disconnectWs({ explicitLeave: true }) from stopSession.
+    // Effect teardown only drops the socket; server debounces full leave so brief
+    // reconnects (same room / password rotation) do not clear mic seats immediately.
     return () => disconnectWs();
   }, [enabled, roomId, connectWs, disconnectWs]);
+
+  // Password supplied after lock gate — re-join on the existing socket (no full reconnect).
+  useEffect(() => {
+    if (!enabled || !roomPasswordRef.current) return;
+    emitRoomJoin();
+  }, [enabled, roomPassword, emitRoomJoin]);
 
   // Re-join when returning from Keep (socket still connected; connect handler does not re-fire).
   useEffect(() => {
@@ -837,5 +815,6 @@ export function useRoomConnection({
     engine: engineRef.current,
     isExpoGo: IS_EXPO_GO,
     ws: ws.current,
+    disconnectWs,
   };
 }

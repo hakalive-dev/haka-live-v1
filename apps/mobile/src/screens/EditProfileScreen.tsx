@@ -19,6 +19,8 @@ import { TokenStorage } from '../storage';
 import { setUser } from '../store/authSlice';
 import { setProfile } from '../store/profileSlice';
 import type { RootState } from '../store';
+import { INDIA_STATES } from '@haka-live/shared-types/state-rankings';
+import { StatePickerField, StatePickerModal } from '@components/StatePicker';
 
 const DOB_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -35,10 +37,16 @@ export default function EditProfileScreen() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
   const [country, setCountry] = useState(user?.country ?? '');
+  const [stateCode, setStateCode] = useState(user?.state ?? '');
   const [city, setCity] = useState(user?.city ?? '');
   const [gender, setGender] = useState<string>(user?.gender ?? '');
   const [dob, setDob] = useState<string>(user?.dateOfBirth ? user.dateOfBirth.slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
+  const [showStatePicker, setShowStatePicker] = useState(false);
+
+  const hasStateList = country.trim().toLowerCase() === 'india' || country.trim().toUpperCase() === 'IN';
+  const stateDisplayName =
+    INDIA_STATES.find((s) => s.code === stateCode)?.name ?? (stateCode || '');
 
   // Re-seed form when auth user loads (e.g. opened before Redux hydrated).
   useEffect(() => {
@@ -46,6 +54,7 @@ export default function EditProfileScreen() {
     setDisplayName(user.displayName ?? '');
     setBio(user.bio ?? '');
     setCountry(user.country ?? '');
+    setStateCode(user.state ?? '');
     setCity(user.city ?? '');
     setGender(user.gender ?? '');
     setDob(user.dateOfBirth ? user.dateOfBirth.slice(0, 10) : '');
@@ -88,6 +97,9 @@ export default function EditProfileScreen() {
           payload.gender = gender;
         }
       }
+      if (hasStateList && stateCode.trim() && (!profileLocked || !user?.state?.trim())) {
+        payload.state = stateCode.trim();
+      }
       const updated = await authApi.updateProfile(payload);
       dispatch(setUser(updated));
       dispatch(setProfile(updated));
@@ -99,7 +111,7 @@ export default function EditProfileScreen() {
     } finally {
       setSaving(false);
     }
-  }, [displayName, bio, country, city, gender, dob, profileLocked, dispatch, navigation]);
+  }, [displayName, bio, country, stateCode, city, gender, dob, profileLocked, hasStateList, user?.state, dispatch, navigation]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -150,6 +162,21 @@ export default function EditProfileScreen() {
             <Text style={styles.hint}>
               Country cannot be changed after your Haka ID is created. Contact support if you need help.
             </Text>
+          ) : null}
+
+          {hasStateList ? (
+            <StatePickerField
+              label="State / Province"
+              value={stateCode}
+              displayName={stateDisplayName}
+              onPress={() => setShowStatePicker(true)}
+              disabled={profileLocked && Boolean(user?.state?.trim())}
+              hint={
+                profileLocked && user?.state
+                  ? 'State cannot be changed after your Haka ID is created. Contact support if you need help.'
+                  : 'Required for State Star rankings if you are a verified female host.'
+              }
+            />
           ) : null}
 
           <Text style={styles.label}>City</Text>
@@ -208,6 +235,16 @@ export default function EditProfileScreen() {
             ))}
           </View>
       </KeyboardAwareScroll>
+
+      {hasStateList ? (
+        <StatePickerModal
+          visible={showStatePicker}
+          states={INDIA_STATES}
+          selectedCode={stateCode}
+          onSelect={(code) => setStateCode(code)}
+          onClose={() => setShowStatePicker(false)}
+        />
+      ) : null}
     </View>
   );
 }

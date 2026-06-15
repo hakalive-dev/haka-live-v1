@@ -11,6 +11,7 @@ import { BATTLE_EVENTS } from '../../shared-types';
 import * as calcService from '../rooms/calculator.service';
 import { redis } from '../../config/redis';
 import * as luckyGiftsService from '../lucky-gifts/lucky-gifts.service';
+import { MAX_GIFT_SEND_QTY } from '../../shared-types/gifts';
 
 const sendGiftSchema = z
   .object({
@@ -18,7 +19,14 @@ const sendGiftSchema = z
     recipientId: z.string().min(1).optional(),
     recipientAgencyId: z.string().min(1).optional(),
     roomId: z.string().min(1).optional(),
-    qty: z.number().int().min(1).max(999).default(1),
+    qty: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_GIFT_SEND_QTY, {
+        message: `Quantity must be between 1 and ${MAX_GIFT_SEND_QTY}`,
+      })
+      .default(1),
   })
   .refine(
     (v) => !!v.recipientId !== !!v.recipientAgencyId,
@@ -205,6 +213,22 @@ export async function getRoomLuckyWinners(req: Request, res: Response, next: Nex
   try {
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '30'), 10)));
     ok(res, await luckyGiftsService.getRoomLuckyWinners(req.params.roomId, limit));
+  } catch (err) { next(err); }
+}
+
+/** GET /gifts/lucky/room/:roomId/rankings — all-time lucky win totals per sender in a room */
+export async function getRoomLuckyRankings(req: Request, res: Response, next: NextFunction) {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? '50'), 10)));
+    ok(res, await luckyGiftsService.getRoomLuckyRankings(req.params.roomId, limit));
+  } catch (err) { next(err); }
+}
+
+/** GET /gifts/lucky/room/:roomId/history — paginated lucky wins in a room */
+export async function getRoomLuckyHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, limit } = historyQuerySchema.parse(req.query);
+    ok(res, await luckyGiftsService.getRoomLuckyHistory(req.params.roomId, page, limit));
   } catch (err) { next(err); }
 }
 

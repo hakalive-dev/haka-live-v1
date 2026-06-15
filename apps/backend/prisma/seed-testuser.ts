@@ -415,12 +415,16 @@ async function main() {
     },
     {
       id: MOMENTS.v1, userId: ME, postType: 'video',
+      mediaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      posterUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=430&h=932&fit=crop',
       caption: "Highlights from last week's stream 🎉",
       hashtag: '#highlights #hakalive',
       sharesCount: 20,
     },
     {
       id: MOMENTS.v2, userId: ME, postType: 'video',
+      mediaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+      posterUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=430&h=932&fit=crop',
       caption: 'Room party recap — we raised 50,000 beans together! 🎊',
       hashtag: '#party #hakalive #recap',
       sharesCount: 15,

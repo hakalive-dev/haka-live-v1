@@ -67,6 +67,8 @@ export async function resolveAdminPermissions(role: string, adminId?: string): P
   // Permissions are the UNION of all roles the account holds. When an adminId is
   // given we read roles[] from the DB; otherwise we resolve just the passed role.
   let effectiveRoles: string[] = [role];
+  let permissionsRevoked = false;
+  let customPermissions: string[] | null = null;
 
   if (adminId) {
     try {
@@ -75,15 +77,21 @@ export async function resolveAdminPermissions(role: string, adminId?: string): P
         select: { customPermissions: true, permissionsRevoked: true, roles: true, role: true },
       });
 
-      if (admin?.permissionsRevoked) return [];
-      if (admin?.customPermissions?.length) return admin.customPermissions;
-      if (admin) effectiveRoles = admin.roles?.length ? admin.roles : [admin.role];
+      if (!admin) return [];
+      permissionsRevoked = admin.permissionsRevoked;
+      if (admin.customPermissions?.length) customPermissions = admin.customPermissions;
+      effectiveRoles = admin.roles?.length ? admin.roles : [admin.role];
     } catch {
       return [];
     }
   }
 
-  if (effectiveRoles.includes('super_admin')) return ['*'];
+  // Super admin always wins unless permissions were explicitly revoked (security lock).
+  if (effectiveRoles.includes('super_admin')) {
+    return permissionsRevoked ? [] : ['*'];
+  }
+  if (permissionsRevoked) return [];
+  if (customPermissions?.length) return customPermissions;
 
   const perms = new Set<string>();
   for (const r of effectiveRoles) {

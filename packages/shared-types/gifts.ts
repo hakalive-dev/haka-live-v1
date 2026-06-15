@@ -1,3 +1,6 @@
+/** Max gifts per POST /gifts/send (panel qty and combo batch). */
+export const MAX_GIFT_SEND_QTY = 9_999;
+
 export const GIFT_CATEGORIES = {
   BAG: 'bag',
   HOT: 'hot',

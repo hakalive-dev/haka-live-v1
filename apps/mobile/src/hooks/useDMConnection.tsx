@@ -9,14 +9,19 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSelector } from 'react-redux';
 import { io as ioClient, Socket as SocketIOClient } from 'socket.io-client';
 
 import { queryKeys } from '@api/queryKeys';
-import { TokenStorage } from '../storage';
+import {
+  emptyChatInboxData,
+  type ChatInboxData,
+} from '@hooks/queries/useChatInboxQuery';
+import { logDiagnostic } from '../diagnostics/releaseDiagnostics';
+import { getFreshSocketToken, getSocketBaseUrl } from '../utils/socketAuth';
 import type { RootState } from '../store';
-import type { DirectMessage } from '@/types';
+import type { DMConversation, DirectMessage } from '@/types';
 
 export interface DMWsEvent {
   event: 'new_dm' | 'dm:deleted';
@@ -37,6 +42,117 @@ export function invalidateChatUnreadQueries(
   void queryClient.invalidateQueries({ queryKey: queryKeys.chat.messagesBadge() });
 }
 
+function sortConversationsByLastMessage(list: DMConversation[]): DMConversation[] {
+  return [...list].sort((a, b) => {
+    const aTime = a.lastMessage?.createdAt
+      ? new Date(a.lastMessage.createdAt).getTime()
+      : 0;
+    const bTime = b.lastMessage?.createdAt
+      ? new Date(b.lastMessage.createdAt).getTime()
+      : 0;
+    return bTime - aTime;
+  });
+}
+
+function patchConversationList(
+  list: DMConversation[],
+  peerId: string,
+  msg: DirectMessage,
+  otherUser: DMConversation['otherUser'],
+  allowNew: boolean,
+  direction: 'inbound' | 'outbound',
+  currentUserId: string,
+): DMConversation[] {
+  const idx = list.findIndex((c) => c.otherUser.id === peerId);
+  const unreadCount =
+    direction === 'outbound'
+      ? 0
+      : msg.recipient.id === currentUserId
+        ? (idx >= 0 ? list[idx].unreadCount + 1 : 1)
+        : idx >= 0
+          ? list[idx].unreadCount
+          : 0;
+
+  if (idx >= 0) {
+    const updated: DMConversation = {
+      ...list[idx],
+      lastMessage: msg,
+      unreadCount,
+    };
+    const rest = list.filter((_, i) => i !== idx);
+    return sortConversationsByLastMessage([updated, ...rest]);
+  }
+  if (!allowNew) return list;
+  const newRow: DMConversation = {
+    otherUser,
+    lastMessage: msg,
+    unreadCount,
+    isFollowing: false,
+    isFamiliar: false,
+  };
+  return sortConversationsByLastMessage([newRow, ...list]);
+}
+
+function patchInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+  direction: 'inbound' | 'outbound',
+) {
+  const peerId =
+    msg.sender.id === currentUserId ? msg.recipient.id : msg.sender.id;
+  const otherUser =
+    msg.sender.id === currentUserId ? msg.recipient : msg.sender;
+
+  queryClient.setQueryData<ChatInboxData>(queryKeys.chat.inbox(), (old) => {
+    const base = old ?? emptyChatInboxData();
+    const patchList = (list: DMConversation[], allowNew: boolean) =>
+      patchConversationList(
+        list,
+        peerId,
+        msg,
+        otherUser,
+        allowNew,
+        direction,
+        currentUserId,
+      );
+
+    return {
+      ...base,
+      conversations: patchList(base.conversations, true),
+      friendConversations: patchList(base.friendConversations, false),
+    };
+  });
+}
+
+/** Optimistically update inbox preview when the current user sends a DM. */
+export function applyOutboundDmToInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  patchInboxCache(queryClient, msg, currentUserId, 'outbound');
+}
+
+/** Optimistically update inbox preview when the current user receives a DM. */
+export function applyInboundDmToInboxCache(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  if (msg.recipient?.id !== currentUserId) return;
+  patchInboxCache(queryClient, msg, currentUserId, 'inbound');
+}
+
+export function onOutboundDmSent(
+  queryClient: QueryClient,
+  msg: DirectMessage,
+  currentUserId: string,
+) {
+  applyOutboundDmToInboxCache(queryClient, msg, currentUserId);
+  invalidateChatUnreadQueries(queryClient);
+}
+
 export function DMConnectionProvider({
   children,
   enabled,
@@ -48,7 +164,10 @@ export function DMConnectionProvider({
   const [teamAnnouncementRevision, setTeamAnnouncementRevision] = useState(0);
   const socket = useRef<SocketIOClient | null>(null);
   const currentUserId = useSelector((s: RootState) => s.auth.user?.id);
+  const accessToken = useSelector((s: RootState) => s.auth.accessToken);
   const queryClient = useQueryClient();
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
 
   const disconnect = useCallback(() => {
     if (socket.current) {
@@ -59,26 +178,36 @@ export function DMConnectionProvider({
 
   const connect = useCallback(async () => {
     if (!enabled) return;
-    const token = await TokenStorage.getAccess();
+    const token = await getFreshSocketToken();
     if (!token) return;
 
     disconnect();
 
-    const baseUrl = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3010/api/v1').replace(
-      '/api/v1',
-      '',
-    );
-
-    const client = ioClient(baseUrl, {
+    const client = ioClient(getSocketBaseUrl(), {
       transports: ['websocket'],
       auth: { token },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     socket.current = client;
+
+    let reauthAttempted = false;
+
+    client.on('connect', () => {
+      reauthAttempted = false;
+    });
 
     client.on('new_dm', (data: Record<string, unknown>) => {
       setDmEvent({ event: 'new_dm', data });
       const msg = data as unknown as DirectMessage;
-      if (msg.recipient?.id === currentUserId) {
+      const uid = currentUserIdRef.current;
+      if (!uid) return;
+      if (msg.recipient?.id === uid) {
+        applyInboundDmToInboxCache(queryClient, msg, uid);
+        invalidateChatUnreadQueries(queryClient);
+      } else if (msg.sender?.id === uid) {
+        applyOutboundDmToInboxCache(queryClient, msg, uid);
         invalidateChatUnreadQueries(queryClient);
       }
     });
@@ -92,9 +221,28 @@ export function DMConnectionProvider({
     });
 
     client.on('connect_error', (err) => {
+      logDiagnostic('socket', 'dm_connect_error', { message: err.message });
       console.warn('[DM Socket.io] connect error:', err.message);
+      const isAuthError = /token|authentication/i.test(err.message);
+      if (!isAuthError || reauthAttempted) return;
+      reauthAttempted = true;
+      void getFreshSocketToken(true).then((fresh) => {
+        if (!fresh || socket.current !== client) return;
+        client.auth = { token: fresh };
+        if (!client.connected) client.connect();
+      });
     });
-  }, [enabled, currentUserId, disconnect, queryClient]);
+  }, [enabled, disconnect, queryClient]);
+
+  // Keep handshake auth in sync when REST/session refresh rotates the JWT.
+  useEffect(() => {
+    const client = socket.current;
+    if (!client || !enabled || !accessToken) return;
+    const current = (client.auth as { token?: string } | undefined)?.token;
+    if (current === accessToken) return;
+    client.auth = { token: accessToken };
+    if (!client.connected) client.connect();
+  }, [accessToken, enabled]);
 
   useEffect(() => {
     if (!enabled) {

@@ -26,6 +26,12 @@ import {
   getRoomSeatsSnapshot,
   roomViewersRedisKey,
 } from '../modules/rooms/room-presence';
+import {
+  FULL_LEAVE_DEBOUNCE_MS,
+  clearDisconnectSeatGrace,
+  rememberDisconnectSeats,
+  restoreSeatsFromDisconnectGrace,
+} from '../modules/rooms/room-seat-grace';
 import { getRtcUidMap } from '../modules/rooms/agora.service';
 
 export { getConnectedUserIdsInRoom, roomViewersRedisKey } from '../modules/rooms/room-presence';
@@ -174,9 +180,6 @@ async function pickFirstFreeSeat(roomId: string, preferred: number | null): Prom
   return any?.position ?? null;
 }
 
-/** Debounce window so a reconnecting socket can `room:join` before we clear seats (disconnect race). */
-const FULL_LEAVE_DEBOUNCE_MS = 2000;
-
 type RoomLeaveMode = 'explicit' | 'disconnect';
 
 const pendingFullRoomLeaves = new Map<string, ReturnType<typeof setTimeout>>();
@@ -264,6 +267,16 @@ async function performFullRoomUserLeave(
     where: { roomId, userId },
     select: { position: true, isLocked: true },
   }).catch(() => [] as { position: number; isLocked: boolean }[]);
+
+  if (mode === 'explicit') {
+    await clearDisconnectSeatGrace(roomId, userId).catch(() => {});
+  } else if (occupiedSeats.length > 0) {
+    await rememberDisconnectSeats(
+      roomId,
+      userId,
+      occupiedSeats.map((s) => s.position),
+    ).catch(() => {});
+  }
 
   await prisma.roomSeat.updateMany({
     where: { roomId, userId },
@@ -416,6 +429,17 @@ export function registerRoomHandlers(io: Server) {
             user: restoredHostSeat.user,
             isLocked: restoredHostSeat.isLocked,
             isMuted: restoredHostSeat.isMuted,
+          });
+        }
+
+        const restoredGraceSeats = await restoreSeatsFromDisconnectGrace(roomId, userId);
+        for (const seat of restoredGraceSeats) {
+          io.to(roomId).emit('seat.updated', {
+            position: seat.position,
+            userId: seat.userId,
+            user: seat.user,
+            isLocked: seat.isLocked,
+            isMuted: seat.isMuted,
           });
         }
 

@@ -35,6 +35,8 @@ export const CALL_EVENTS = {
 
 export type CallEvent = typeof CALL_EVENTS[keyof typeof CALL_EVENTS];
 
+export type CallType = 'voice' | 'video';
+
 export const BATTLE_EVENTS = {
   STARTED:       'battle:started',
   SCORE_UPDATED: 'battle:score.updated',

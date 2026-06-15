@@ -39,9 +39,11 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
     return true;
   }
 
-  if (type === 'video_call' && data.callerId) {
+  if ((type === 'video_call' || type === 'voice_call') && data.callerId) {
+    const callType = data.callType === 'voice' || type === 'voice_call' ? 'voice' : 'video';
     promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone', {
       callId: data.callId,
+      callType,
     });
     return true;
   }
@@ -74,6 +76,19 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
   if (type === 'invite_accepted') {
     navigationRef.navigate('InviteCreator');
     return true;
+  }
+
+  if (
+    type === 'moment_like' ||
+    type === 'moment_comment' ||
+    type === 'moment_share' ||
+    type === 'moment_gift' ||
+    data.open === 'actor_profile'
+  ) {
+    if (data.actorId) {
+      navigationRef.navigate('PublicProfile', { userId: data.actorId });
+      return true;
+    }
   }
 
   return false;

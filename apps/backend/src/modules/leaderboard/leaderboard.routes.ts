@@ -2,11 +2,14 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.middleware';
 import * as ctrl from './leaderboard.controller';
 import { coinSellerController } from '../payments/coinSeller.controller';
+import stateRankingRouter from './state-ranking.routes';
 
 const router = Router();
 
 // All leaderboard routes require authentication
 router.use(authenticate);
+
+router.use('/state', stateRankingRouter);
 
 router.get('/rich/me',        ctrl.getMyRichRank);
 router.get('/charm/me',       ctrl.getMyCharmRank);

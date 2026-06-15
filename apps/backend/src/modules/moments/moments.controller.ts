@@ -29,7 +29,14 @@ export const momentController = {
 
       const file = req.file;
       if (file) {
-        const isVideo = /^video\//i.test(file.mimetype) || postType === 'video';
+        const isVideoFile = /^video\//i.test(file.mimetype);
+        if (postType === 'video' && !isVideoFile) {
+          return fail(res, 'Video posts require a video file', 400);
+        }
+        if (postType === 'moment' && isVideoFile) {
+          return fail(res, 'Moment posts require an image file', 400);
+        }
+        const isVideo = isVideoFile || postType === 'video';
         const folder = isVideo ? 'moments/videos' : 'moments/images';
         const requestBaseUrl = `${req.protocol}://${req.get('host')}`;
         mediaUrl = await uploadToStorage(
@@ -136,7 +143,8 @@ export const momentController = {
 
   async share(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await momentsService.share(req.params.id);
+      const callerId = (req as any).user.id;
+      const result = await momentsService.share(callerId, req.params.id);
       return ok(res, result);
     } catch (err) {
       next(err);

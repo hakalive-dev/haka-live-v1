@@ -142,14 +142,7 @@ export function RoomSessionProvider({ children }: { children: React.ReactNode })
     );
   }, []);
 
-  const stopSession = useCallback(() => {
-    onWsEventRef.current = undefined;
-    isBackgroundRef.current = false;
-    setIsBackground(false);
-    void musicPlayerRef.current?.stopAudio();
-    setMusicState(DEFAULT_MUSIC);
-    setSession(null);
-  }, []);
+  const disconnectWsRef = useRef<(opts?: { explicitLeave?: boolean }) => void>(() => {});
 
   const connection = useRoomConnection({
     roomId: session?.roomId ?? "",
@@ -162,6 +155,17 @@ export function RoomSessionProvider({ children }: { children: React.ReactNode })
     rejoinGeneration: session?.rejoinGeneration ?? 0,
     onWsEvent: dispatchRoomWsEvent,
   });
+  disconnectWsRef.current = connection.disconnectWs;
+
+  const stopSession = useCallback(() => {
+    onWsEventRef.current = undefined;
+    isBackgroundRef.current = false;
+    setIsBackground(false);
+    void musicPlayerRef.current?.stopAudio();
+    setMusicState(DEFAULT_MUSIC);
+    disconnectWsRef.current({ explicitLeave: true });
+    setSession(null);
+  }, []);
 
   const value = useMemo<RoomSessionContextValue>(
     () => ({

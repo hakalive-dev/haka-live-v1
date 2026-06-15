@@ -5,7 +5,7 @@ import type { LeaderboardUserEntry, LeaderboardFamilyEntry, MyRankResult, Equipp
 
 export type LeaderboardWindow   = 'daily' | 'weekly' | 'monthly';
 export type LeaderboardCategory = 'gifters' | 'hosts' | 'earners' | 'rich' | 'charm'
-  | 'state_star' | 'state_city' | 'agent_income' | 'agent_reward'
+  | 'agent_income' | 'agent_reward'
   | 'game_top' | 'game_winner' | 'activity_agency' | 'activity_host'
   | 'creator_income' | 'creator_amount'
   | 'agent_coins' | 'creator_hosts';
@@ -103,8 +103,6 @@ const CATEGORY_ENDPOINT: Record<LeaderboardCategory, string> = {
   rich:            '/leaderboard/rich',
   charm:           '/leaderboard/charm',
   hosts:           '/leaderboard/earners',
-  state_star:      '/leaderboard/rich',
-  state_city:      '/leaderboard/charm',
   agent_income:    '/leaderboard/earners',
   agent_reward:    '/leaderboard/gifters',
   game_top:        '/leaderboard/gifters',
@@ -152,7 +150,7 @@ export const leaderboardApi = {
   async getByCategory(category: LeaderboardCategory, window: LeaderboardWindow = 'daily'): Promise<LeaderboardUserEntry[]> {
     if (useMock) {
       // Return category-appropriate mock data
-      const isEarnerCategory = ['earners', 'hosts', 'agent_income', 'activity_agency', 'activity_host', 'game_winner', 'state_city', 'charm', 'creator_income', 'creator_hosts'].includes(category);
+      const isEarnerCategory = ['earners', 'hosts', 'agent_income', 'activity_agency', 'activity_host', 'game_winner', 'charm', 'creator_income', 'creator_hosts'].includes(category);
       return isEarnerCategory ? mockLeaderboard.hosts[window] : mockLeaderboard.gifters[window];
     }
     if (category === 'agent_coins') {

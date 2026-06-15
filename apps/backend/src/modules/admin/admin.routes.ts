@@ -45,6 +45,7 @@ import adminTargetsRouter from './targets/admin-targets.routes';
 import adminHostsRouter from './hosts/admin-hosts.routes';
 import adminHierarchyRouter from './hierarchy/admin-hierarchy.routes';
 import adminMaintenanceRouter from './maintenance/maintenance.routes';
+import adminStateRankingRouter from './state-ranking/admin-state-ranking.routes';
 
 const router = Router();
 
@@ -95,5 +96,6 @@ router.use('/targets',               authenticateAdmin, adminTargetsRouter);
 router.use('/hosts',                 authenticateAdmin, adminHostsRouter);
 router.use('/management',             authenticateAdmin, adminHierarchyRouter);
 router.use('/maintenance',            authenticateAdmin, adminMaintenanceRouter);
+router.use('/state-ranking',          authenticateAdmin, adminStateRankingRouter);
 
 export default router;

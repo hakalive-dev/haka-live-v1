@@ -48,7 +48,11 @@ import {
   normalizeGiftCoinCost,
 } from '@components/gifts/GiftEffectOverlay';
 import { giftsApi } from '@api/gifts';
-import { invalidateChatUnreadQueries, useDMConnection } from '@hooks/useDMConnection';
+import {
+  invalidateChatUnreadQueries,
+  onOutboundDmSent,
+  useDMConnection,
+} from '@hooks/useDMConnection';
 import { useDmMessageActions } from '@hooks/useDmMessageActions';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGiftEffectPlayback } from '@hooks/useGiftEffectPlayback';
@@ -76,7 +80,7 @@ import {
   isWithdrawalMessageUserId,
   WITHDRAWAL_MESSAGE_AVATAR,
 } from '@/constants/withdrawal-message';
-import { startVideoCall } from '@/utils/videoCall';
+import { startVideoCall, startVoiceCall } from '@/utils/call';
 
 type Props = RootStackScreenProps<'DMConversation'>;
 
@@ -395,9 +399,12 @@ export function DMConversationScreen({ route, navigation }: Props) {
         setMessages((prev) => [...prev, dm]);
         setCoinBalance((b) => Math.max(0, b - gift.coinCost * qty));
         invalidateUserLevels(currentUser?.id, recipient.id);
+        if (currentUser?.id) {
+          onOutboundDmSent(queryClient, dm, currentUser.id);
+        }
       } catch {}
     },
-    [playSenderGiftAnimation, currentUser?.id],
+    [playSenderGiftAnimation, currentUser?.id, queryClient],
   );
 
   // Load message history. Sources from fetchQuery so an inbox-row prefetch is
@@ -623,9 +630,12 @@ export function DMConversationScreen({ route, navigation }: Props) {
     try {
       const sent = await chatApi.sendDM(userId, trimmed);
       setMessages((prev) => [...prev, sent]);
+      if (currentUser?.id) {
+        onOutboundDmSent(queryClient, sent, currentUser.id);
+      }
     } catch {}
     setSending(false);
-  }, [text, sending, userId]);
+  }, [text, sending, userId, currentUser?.id, queryClient]);
 
   const otherUserAvatar = otherSender.avatar;
 
@@ -751,7 +761,14 @@ export function DMConversationScreen({ route, navigation }: Props) {
           <View style={styles.headerActions}>
             <TouchableOpacity
               hitSlop={8}
-              style={styles.headerVideoBtn}
+              style={styles.headerCallBtn}
+              onPress={() => void startVoiceCall(userId, displayName)}
+            >
+              <Ionicons name="call" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              hitSlop={8}
+              style={styles.headerCallBtn}
               onPress={() => void startVideoCall(userId, displayName)}
             >
               <Ionicons name="videocam" size={22} color={Colors.primary} />
@@ -1242,9 +1259,12 @@ export function DMConversationScreen({ route, navigation }: Props) {
           setPhotoShareVisible(false);
           setPhotoShareAsset(null);
         }}
-        onSent={(dm) =>
-          setMessages((prev) => (prev.some((m) => m.id === dm.id) ? prev : [...prev, dm]))
-        }
+        onSent={(dm) => {
+          setMessages((prev) => (prev.some((m) => m.id === dm.id) ? prev : [...prev, dm]));
+          if (currentUser?.id) {
+            onOutboundDmSent(queryClient, dm, currentUser.id);
+          }
+        }}
       />
 
       <PhotoViewerModal
@@ -1361,7 +1381,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  headerVideoBtn: {
+  headerCallBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,

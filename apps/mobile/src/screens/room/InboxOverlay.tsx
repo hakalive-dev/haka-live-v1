@@ -38,7 +38,7 @@ import {
 } from '@components/gifts/GiftEffectOverlay';
 import { useGiftEffectPlayback } from '@hooks/useGiftEffectPlayback';
 import { invalidateUserLevels } from '@hooks/queries/useLevelQueries';
-import { invalidateChatUnreadQueries } from '@hooks/useDMConnection';
+import { invalidateChatUnreadQueries, onOutboundDmSent } from '@hooks/useDMConnection';
 import { useDmMessageActions } from '@hooks/useDmMessageActions';
 import { GiftPanel, type GiftRecipient } from './GiftPanel';
 import { PhotoViewerModal } from './PhotoViewerModal';
@@ -151,6 +151,59 @@ export function InboxOverlay({ visible, onClose, currentUserId }: Props) {
     return true;
   });
 
+  const patchLocalConversations = useCallback(
+    (msg: DirectMessage) => {
+      const uid = currentUserId ?? currentUser?.id;
+      if (!uid) return;
+      const peerId = msg.sender.id === uid ? msg.recipient.id : msg.sender.id;
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.otherUser.id === peerId);
+        if (idx >= 0) {
+          const updated: DMConversation = {
+            ...prev[idx],
+            lastMessage: msg,
+            unreadCount: 0,
+          };
+          const rest = prev.filter((_, i) => i !== idx);
+          return [updated, ...rest].sort((a, b) => {
+            const aTime = a.lastMessage?.createdAt
+              ? new Date(a.lastMessage.createdAt).getTime()
+              : 0;
+            const bTime = b.lastMessage?.createdAt
+              ? new Date(b.lastMessage.createdAt).getTime()
+              : 0;
+            return bTime - aTime;
+          });
+        }
+        const otherUser = msg.sender.id === uid ? msg.recipient : msg.sender;
+        const newRow: DMConversation = {
+          otherUser,
+          lastMessage: msg,
+          unreadCount: 0,
+          isFollowing: false,
+          isFamiliar: false,
+        };
+        return [newRow, ...prev];
+      });
+      setActive((prev) =>
+        prev && prev.otherUser.id === peerId
+          ? { ...prev, lastMessage: msg, unreadCount: 0 }
+          : prev,
+      );
+    },
+    [currentUserId, currentUser?.id],
+  );
+
+  const notifyOutboundDm = useCallback(
+    (msg: DirectMessage) => {
+      const uid = currentUserId ?? currentUser?.id;
+      if (!uid) return;
+      onOutboundDmSent(queryClient, msg, uid);
+      patchLocalConversations(msg);
+    },
+    [currentUserId, currentUser?.id, queryClient, patchLocalConversations],
+  );
+
   const openThread = useCallback(async (c: DMConversation) => {
     setActive(c);
     setMessages([]);
@@ -174,10 +227,11 @@ export function InboxOverlay({ visible, onClose, currentUserId }: Props) {
       const msg = await chatApi.sendDM(active.otherUser.id, content);
       setMessages((prev) => [...prev, msg]);
       setDraft('');
+      notifyOutboundDm(msg);
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     } catch {}
     finally { setSending(false); }
-  }, [draft, active, sending]);
+  }, [draft, active, sending, notifyOutboundDm]);
 
   const openEmojiPicker = useCallback(() => {
     Keyboard.dismiss();
@@ -309,9 +363,10 @@ export function InboxOverlay({ visible, onClose, currentUserId }: Props) {
         setMessages((prev) => [...prev, dm]);
         setCoinBalance((b) => Math.max(0, b - gift.coinCost * qty));
         invalidateUserLevels(currentUser?.id, recipient.id);
+        notifyOutboundDm(dm);
       } catch {}
     },
-    [playGiftAnimation, currentUser?.displayName, currentUser?.id],
+    [playGiftAnimation, currentUser?.displayName, currentUser?.id, notifyOutboundDm],
   );
 
   const handleClose = () => {
@@ -559,9 +614,10 @@ export function InboxOverlay({ visible, onClose, currentUserId }: Props) {
             setPhotoShareVisible(false);
             setPhotoShareAsset(null);
           }}
-          onSent={(dm) =>
-            setMessages((prev) => (prev.some((m) => m.id === dm.id) ? prev : [...prev, dm]))
-          }
+          onSent={(dm) => {
+            setMessages((prev) => (prev.some((m) => m.id === dm.id) ? prev : [...prev, dm]));
+            notifyOutboundDm(dm);
+          }}
         />
       ) : null}
 

@@ -35,6 +35,7 @@ export interface User extends UserEquippedCosmetics {
   avatar: string;
   bio: string;
   country: string;
+  state?: string;
   city?: string;
   gender?: string;
   dateOfBirth?: string | null;
@@ -58,6 +59,8 @@ export interface User extends UserEquippedCosmetics {
   hasPassword?: boolean;
   /** True when a Google identity is linked via Supabase Auth (auto-linked at login). */
   googleLinked?: boolean;
+  /** Super admin may browse state rankings for any country. */
+  canInspectStateRankings?: boolean;
   /** Active payroll profile; user may still be role `agent`. */
   isPayrollAgent?: boolean;
 }
@@ -79,6 +82,7 @@ export interface OnboardingData {
   username: string;
   displayName: string;
   country: string;
+  state?: string;
   city?: string;
   gender?: string;
   dateOfBirth?: string | null;
@@ -349,6 +353,8 @@ export interface Gift {
 export interface LuckyDrawOutcome {
   drawId: string;
   isWin: boolean;
+  /** Multiplier drawn for this send (0 on lose). */
+  winMultiplier?: number;
   rewardCoins: number;
   coinCost: number;
   senderCoinBalance?: number;
@@ -398,6 +404,10 @@ export interface ChatMessage {
     giftIcon: string;
     rewardCoins: number;
     giftImageFallback?: string | null;
+    /** Wins rolled into one chat line after a combo session (default 1). */
+    winCount?: number;
+    /** Total gifts sent in the combo session that produced the win(s). */
+    sendMultiplier?: number;
   };
 }
 
@@ -1267,6 +1277,7 @@ export interface MomentPost {
   user: MomentAuthor;
   post_type: "moment" | "video";
   media_url: string | null;
+  poster_url?: string | null;
   caption: string;
   hashtag: string;
   likes_count: number;
