@@ -45,7 +45,7 @@ const PROFILE_FRAME_AVATAR = {
   3: { d: 45, offsetX: 0, offsetY: 1.0 },
 } as const;
 
-export type RankingFrameRowVariant = 'game' | 'activity';
+export type RankingFrameRowVariant = 'game' | 'activity' | 'stateQueen';
 
 function formatNum(n: number): string {
   return n.toLocaleString();
@@ -106,9 +106,11 @@ type Props = {
   entry: LeaderboardUserEntry;
   displayW: number;
   variant: RankingFrameRowVariant;
+  /** Daily pool share for ranks 1–4 on the State Queen screen. */
+  rewardAmount?: number;
 };
 
-export function RankingFrameRow({ entry, displayW, variant }: Props) {
+export function RankingFrameRow({ entry, displayW, variant, rewardAmount }: Props) {
   const displayH = rowHeight(displayW);
   const rowRadius = rowCornerRadius(displayW);
   const metrics = avatarMetrics(entry, displayW);
@@ -117,6 +119,8 @@ export function RankingFrameRow({ entry, displayW, variant }: Props) {
   const rowSource = isTop3 ? RANKING_ROWS[entry.rank as 1 | 2 | 3] : RANKING_ROW_4TH;
   const bonusReward = Math.max(1, Math.floor(entry.score / 50_000));
   const scoreBelow4 = !isTop3;
+  const isStateQueen = variant === 'stateQueen';
+  const showHostReward = isStateQueen && isTop3 && rewardAmount != null && rewardAmount > 0;
 
   return (
     <View style={{ width: displayW, height: displayH, marginBottom: Spacing.sm, overflow: 'visible' }}>
@@ -214,7 +218,7 @@ export function RankingFrameRow({ entry, displayW, variant }: Props) {
             ) : (
               <>
                 <Image source={BEAN_ICON} style={styles.rowIconSm} contentFit="contain" />
-                <Text style={[styles.rewardValue, scoreBelow4 && styles.rewardValueBelow4]}>
+                <Text style={[styles.rewardValue, scoreBelow4 && !isStateQueen && styles.rewardValueBelow4]}>
                   {formatNum(entry.score)}
                 </Text>
               </>
@@ -223,26 +227,59 @@ export function RankingFrameRow({ entry, displayW, variant }: Props) {
         </View>
 
         <View style={styles.rowRight}>
-          <View style={styles.scoreRow}>
-            <Image
-              source={variant === 'game' ? DIAMOND_ICON : COIN_ICON}
-              style={styles.rowIconMd}
-              contentFit="contain"
-            />
-            <Text
-              style={[styles.scoreText, scoreBelow4 && styles.scoreTextBelow4]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.65}
-            >
-              {formatNum(entry.score)}
-            </Text>
-          </View>
-          <View style={[styles.receivedPill, scoreBelow4 && styles.receivedPillBelow4]}>
-            <Text style={[styles.receivedText, scoreBelow4 && styles.receivedTextBelow4]}>
-              {isTop3 ? 'Unreceived' : 'Received'}
-            </Text>
-          </View>
+          {isStateQueen ? (
+            <>
+              {showHostReward ? (
+                <View style={styles.scoreRow}>
+                  <Text style={styles.rewardLabel}>Reward: </Text>
+                  <Image source={COIN_ICON} style={styles.rowIconMd} contentFit="contain" />
+                  <Text style={styles.stateQueenRewardText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>
+                    {formatNum(rewardAmount!)}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.scoreRow}>
+                  <Image source={COIN_ICON} style={styles.rowIconMd} contentFit="contain" />
+                  <Text
+                    style={[styles.scoreText, styles.scoreTextBelow4]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.65}
+                  >
+                    {formatNum(entry.score)}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.receivedPill, !isTop3 && styles.receivedPillBelow4]}>
+                <Text style={[styles.receivedText, !isTop3 && styles.receivedTextBelow4]}>
+                  {isTop3 ? 'Received' : 'Unreceived'}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.scoreRow}>
+                <Image
+                  source={variant === 'game' ? DIAMOND_ICON : COIN_ICON}
+                  style={styles.rowIconMd}
+                  contentFit="contain"
+                />
+                <Text
+                  style={[styles.scoreText, scoreBelow4 && styles.scoreTextBelow4]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.65}
+                >
+                  {formatNum(entry.score)}
+                </Text>
+              </View>
+              <View style={[styles.receivedPill, scoreBelow4 && styles.receivedPillBelow4]}>
+                <Text style={[styles.receivedText, scoreBelow4 && styles.receivedTextBelow4]}>
+                  {isTop3 ? 'Unreceived' : 'Received'}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </View>
     </View>
@@ -310,4 +347,5 @@ const styles = StyleSheet.create({
   },
   receivedText: { color: '#F24822', fontSize: 10, fontWeight: '700' },
   receivedTextBelow4: { color: Colors.textPrimary },
+  stateQueenRewardText: { color: Colors.goldLight, fontSize: 11, fontWeight: '800', maxWidth: 100 },
 });

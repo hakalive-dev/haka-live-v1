@@ -24,6 +24,7 @@
     "seed:admin": "ts-node prisma/seed-admin.ts",
     "seed:female-host": "ts-node prisma/seed-female-host.ts",
     "seed:state-ranking-host": "ts-node prisma/seed-state-ranking-host.ts",
+    "seed:state-ranking-top4": "ts-node src/scripts/seed-state-ranking-top4-india.ts",
     "seed:testuser": "ts-node prisma/seed-testuser.ts",
     "backfill:haka-ids": "ts-node prisma/backfill-haka-ids.ts",
     "backfill:gift-commission": "ts-node prisma/backfill-gift-commission.ts",

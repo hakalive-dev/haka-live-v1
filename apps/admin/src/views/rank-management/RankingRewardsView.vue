@@ -14,6 +14,8 @@ const rewards = ref<api.RankingRewardRow[]>([]);
 const tiers = ref<api.RankingRewardTier[]>([]);
 const house = ref<api.HouseEntryRow[]>([]);
 const houseForm = ref({ idOrHaka: '', income: 0, note: '' });
+const housePickerKey = ref(0);
+const excludeHouseUserIds = computed(() => house.value.map((row) => row.userId));
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
@@ -57,6 +59,7 @@ async function addHouse() {
       houseForm.value.note,
     );
     houseForm.value = { idOrHaka: '', income: 0, note: '' };
+    housePickerKey.value += 1;
     house.value = await api.listHouseEntries(board.value);
     notice.value = 'House entry saved.';
   } catch (e: unknown) {
@@ -255,7 +258,12 @@ onMounted(load);
         <div class="form-row">
           <div class="form-field">
             <label class="form-label">Female host</label>
-            <FemaleHostSearchPicker v-model="houseForm.idOrHaka" :disabled="saving" />
+            <FemaleHostSearchPicker
+              :key="housePickerKey"
+              v-model="houseForm.idOrHaka"
+              :exclude-user-ids="excludeHouseUserIds"
+              :disabled="saving"
+            />
           </div>
           <div class="form-field">
             <label class="form-label">Income</label>
@@ -477,6 +485,9 @@ onMounted(load);
   padding: 16px 24px;
   border-bottom: 1px solid var(--card-border, #e2e8f0);
   background: var(--row-hover, rgba(0, 0, 0, 0.015));
+  overflow: visible;
+  position: relative;
+  z-index: 2;
 }
 .form-row {
   display: flex;
@@ -490,6 +501,10 @@ onMounted(load);
   gap: 6px;
   flex: 1;
   min-width: 140px;
+}
+.form-field:first-child {
+  flex: 2;
+  min-width: 260px;
 }
 .form-field-action {
   flex: 0 0 auto;

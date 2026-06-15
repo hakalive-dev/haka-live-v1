@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image } from 'expo-image';
 
+import { mainTabBarOverlayHeight } from '@/constants/layout';
 import { Colors, Radius, Spacing } from '@/theme';
 import { MomentGridSkeleton, Skeleton } from '@components/Skeleton';
 import { UserAvatar } from '@components/UserAvatar';
@@ -1148,8 +1149,14 @@ export function DiscoverScreen() {
     [activePostId, queryClient],
   );
 
-  // Full-screen TikTok-style paging (header floats over video)
-  const videoCardH = screenH;
+  const tabBarInset = mainTabBarOverlayHeight(insets);
+  const [videoFeedHeight, setVideoFeedHeight] = useState(0);
+  const feedAboveTabBarStyle = useMemo(
+    () => ({ flex: 1 as const, marginBottom: tabBarInset }),
+    [tabBarInset],
+  );
+  // Fill the feed viewport exactly — bottom edge sits flush on the tab bar
+  const videoCardH = videoFeedHeight > 0 ? videoFeedHeight : screenH - tabBarInset;
 
   const videoGetItemLayout = useCallback(
     (_: unknown, index: number) => ({
@@ -1259,9 +1266,12 @@ export function DiscoverScreen() {
 
       {/* ── Moment tab ── */}
       {activeTab === 'moment' && (momentLoading ? (
-        <MomentGridSkeleton cols={dims.cols} />
+        <View style={feedAboveTabBarStyle}>
+          <MomentGridSkeleton cols={dims.cols} />
+        </View>
       ) : (
         <FlatList
+          style={feedAboveTabBarStyle}
           data={moments}
           keyExtractor={(p) => p.id}
           contentContainerStyle={styles.momentList}
@@ -1287,11 +1297,11 @@ export function DiscoverScreen() {
       {activeTab === 'video' && (
         <ErrorBoundary>
           {videoLoading ? (
-            <View style={styles.videoSkeleton}>
-              <Skeleton width="100%" height={videoCardH} borderRadius={0} />
+            <View style={feedAboveTabBarStyle}>
+              <Skeleton width="100%" height="100%" borderRadius={0} />
             </View>
           ) : videoError ? (
-            <View style={styles.videoEmpty}>
+            <View style={[styles.videoEmpty, feedAboveTabBarStyle]}>
               <Ionicons name="cloud-offline-outline" size={48} color={Colors.textTertiary} />
               <Text style={styles.videoEmptyTitle}>Could not load videos</Text>
               <Text style={styles.videoEmptyBody}>Check your connection and try again.</Text>
@@ -1303,7 +1313,7 @@ export function DiscoverScreen() {
               </TouchableOpacity>
             </View>
           ) : videos.length === 0 ? (
-            <View style={styles.videoEmpty}>
+            <View style={[styles.videoEmpty, feedAboveTabBarStyle]}>
               <Ionicons name="videocam-outline" size={48} color={Colors.textTertiary} />
               <Text style={styles.videoEmptyTitle}>No videos yet</Text>
               <Text style={styles.videoEmptyBody}>Be the first to share a short video.</Text>
@@ -1315,7 +1325,13 @@ export function DiscoverScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.videoFeedWrap}>
+            <View
+              style={[styles.videoFeedWrap, feedAboveTabBarStyle]}
+              onLayout={(e) => {
+                const h = Math.round(e.nativeEvent.layout.height);
+                if (h > 0) setVideoFeedHeight(h);
+              }}
+            >
               {activeVideo ? (
                 <View style={styles.videoPlayerLayer} pointerEvents="box-none">
                   <VideoFeedPlayer
@@ -1379,7 +1395,7 @@ export function DiscoverScreen() {
       {/* ── FAB — visible on Moment and Video tabs ── */}
       {(activeTab === 'moment' || activeTab === 'video') && (
         <MomentCameraButton
-          style={[styles.fab, { bottom: insets.bottom + 70 }]}
+          style={[styles.fab, { bottom: tabBarInset + Spacing.md }]}
           onPress={() => nav.navigate('CreateMoment', { postType: activeTab as 'moment' | 'video' })}
         />
       )}
@@ -1520,8 +1536,7 @@ const styles = StyleSheet.create({
   // ── Post / moment cards ────────────────────────────────────────────────────
   // List: paddingTop:13 matches Figma gap from tabs to first card
   momentList: {
-    paddingTop: 13,
-    paddingBottom: Spacing.xxxl,
+    paddingTop: 8,
   },
   // Card: white, height:500, TL:50 TR:0 BR:15 BL:0, horizontal margin 25px
   postCard: {

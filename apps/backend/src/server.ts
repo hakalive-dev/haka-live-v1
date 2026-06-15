@@ -14,6 +14,8 @@ import { startCalculatorCleanupJob } from './jobs/calculator-cleanup.job';
 import { startBanExpiryJob } from './jobs/ban-expiry.job';
 import { ROLE_PERMISSIONS } from './shared-types/roles';
 import { runWelcomeDmBackfill } from './modules/chat/backfill-welcome-dm.service';
+import { seedStateRankingTop4India } from './scripts/seed-state-ranking-top4-india';
+import { redis } from './config/redis';
 
 const PORT = parseInt(env.PORT, 10);
 
@@ -91,6 +93,11 @@ async function bootstrap() {
   // Seed built-in admin tags (non-fatal, idempotent)
   await seedAdminTags().catch((err) => {
     console.warn('⚠️  Admin tags seed skipped:', err.message);
+  });
+
+  // One-time State Star demo hosts (Postgres + Redis) — skips if already seeded
+  await seedStateRankingTop4India(prisma, redis).catch((err) => {
+    console.warn('⚠️  State Star top4 seed skipped (will retry next deploy):', err.message);
   });
 
   if (env.RUN_WELCOME_DM_BACKFILL === 'true') {

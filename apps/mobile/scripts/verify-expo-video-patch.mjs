@@ -42,6 +42,11 @@ if (!fs.existsSync(loadControl)) {
   if (!java.includes('getAllocator(PlayerId playerId)')) {
     errors.push('DefaultLoadControl must use getAllocator(PlayerId playerId) for Media3 1.9');
   }
+  if (!java.includes('shouldContinuePreloading(\n    PlayerId playerId, Timeline timeline')) {
+    errors.push(
+      'DefaultLoadControl must use shouldContinuePreloading(PlayerId, Timeline, ...) for Media3 1.9',
+    );
+  }
 }
 
 if (!fs.existsSync(videoPlayerLoadControl)) {
