@@ -20,6 +20,7 @@ import * as Location from 'expo-location';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { UserAvatar } from '@components/UserAvatar';
+import { useLeaderboardRealtime } from '@/hooks/useLeaderboardRealtime';
 import { stateRankingApi, type StateRankingRow } from '@api/stateRanking';
 import { STATE_RANKING_COUNTRIES } from '@haka-live/shared-types/state-rankings';
 import { Colors, Spacing, Radius } from '@/theme';
@@ -262,6 +263,21 @@ export function StateStarTab({ navigation, onTabChange }: Props) {
     queryKey: ['stateRanking', 'myState'],
     queryFn: () => stateRankingApi.getMyState(),
     enabled: faceApproved || canInspect,
+  });
+
+  // Live updates: the server signals when this country's state totals change; refetch the
+  // list + prize pool + my-state row. The signal carries no data, so the face gate (already
+  // enforced on these REST calls) still applies.
+  const shownCountry = statesQuery.data?.countryCode;
+  useLeaderboardRealtime({
+    board: 'state',
+    countryCode: shownCountry,
+    enabled: (faceApproved || canInspect) && !!shownCountry,
+    onChanged: () => {
+      void statesQuery.refetch();
+      void summaryQuery.refetch();
+      void myStateQuery.refetch();
+    },
   });
 
   const items = statesQuery.data?.items ?? [];

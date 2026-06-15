@@ -1,6 +1,7 @@
 import { redis } from '../../config/redis';
 import { prisma } from '../../config/prisma';
 import { userSummarySelect, serializeUserSummary } from '../users/user-summary';
+import { mergeAndRank, getActiveHouseEntries } from './house-entries.service';
 import type { Period } from './regional-earner-keys';
 
 export type { Period } from './regional-earner-keys';
@@ -203,26 +204,55 @@ export async function getCreatorLeaderboard(
   page: number,
   limit: number,
 ) {
-  return getLeaderboard(key, page, limit);
+  // Activity board blends in admin-seeded house entries (read-time only; real scores untouched).
+  const house = await getActiveHouseEntries('creator');
+  return getLeaderboard(key, page, limit, house);
 }
 
 /**
  * Get paginated leaderboard entries for a given Redis sorted set key.
  * Fetches user profiles in bulk from Postgres.
  */
-export async function getLeaderboard(key: string, page: number, limit: number) {
+export async function getLeaderboard(
+  key: string,
+  page: number,
+  limit: number,
+  /** Admin-seeded house entries to blend into the top window (page 1 only). Empty for most boards. */
+  house: Array<{ userId: string; income: number }> = [],
+) {
   const start = (page - 1) * limit;
   const end = start + limit - 1;
 
-  // zrevrange returns members from highest to lowest score
-  const raw = await redis.zrevrange(key, start, end, 'WITHSCORES');
-  const entries = parseWithScores(raw);
+  // Each entry as {userId, score, rank}. House entries are merged into the top window only
+  // (page 1), where injected ranks must be globally correct; deeper pages read raw.
+  let ranked: Array<{ userId: string; score: number; rank: number }>;
+  let total: number;
 
-  if (entries.length === 0) {
-    return { items: [], page, limit, hasMore: false };
+  if (house.length > 0 && page === 1) {
+    const raw = await redis.zrevrange(key, 0, limit + house.length - 1, 'WITHSCORES');
+    const real = parseWithScores(raw).map((e) => ({ userId: e.userId, score: e.score }));
+    const realIds = new Set(real.map((r) => r.userId));
+    ranked = mergeAndRank(real, house, limit).entries.map((e) => ({
+      userId: e.userId,
+      score: e.score,
+      rank: e.rank,
+    }));
+    total = (await redis.zcard(key)) + house.filter((h) => !realIds.has(h.userId)).length;
+  } else {
+    const raw = await redis.zrevrange(key, start, end, 'WITHSCORES');
+    ranked = parseWithScores(raw).map((e, idx) => ({
+      userId: e.userId,
+      score: e.score,
+      rank: start + idx + 1,
+    }));
+    total = await redis.zcard(key);
   }
 
-  const userIds = entries.map((e) => e.userId);
+  if (ranked.length === 0) {
+    return { items: [], total: 0, page, limit, hasMore: false };
+  }
+
+  const userIds = ranked.map((e) => e.userId);
   const [users, hiddenSettings] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: userIds } },
@@ -237,9 +267,7 @@ export async function getLeaderboard(key: string, page: number, limit: number) {
   const hiddenIds = new Set(hiddenSettings.map((s) => s.userId));
   const userMap = new Map(users.map((u) => [u.id, serializeUserSummary(u)]));
 
-  const total = await redis.zcard(key);
-
-  const items = entries.map((entry, idx) => {
+  const items = ranked.map((entry) => {
     const u = userMap.get(entry.userId) ?? {
       id: entry.userId,
       username: null,
@@ -267,7 +295,7 @@ export async function getLeaderboard(key: string, page: number, limit: number) {
         }
       : u;
     return {
-      rank: start + idx + 1,
+      rank: entry.rank,
       score: entry.score,
       user: masked,
     };

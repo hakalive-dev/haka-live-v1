@@ -219,6 +219,8 @@ model User {
 
   musicTracks UserMusicTrack[] @relation("UserMusicLibrary")
   stateRankingRewards StateRankingReward[] @relation("StateRankingRewards")
+  rankingRewards      RankingReward[]      @relation("RankingRewards")
+  rankingHouseEntries RankingHouseEntry[]  @relation("RankingHouseEntries")
 
   @@index([agentId])
   @@map("users")
@@ -2522,4 +2524,58 @@ model StateRankingConfig {
   updatedAt               DateTime @updatedAt
 
   @@map("state_ranking_config")
+}
+
+// ── Ranking rewards (Agent / Activity leaderboards) ───────────────────────────
+// One config row per board ('agent' | 'creator'). Ships DISABLED — no payout until
+// a super-admin sets tiers and flips `enabled`. Beans are credited at period close.
+model RankingRewardConfig {
+  id                      String   @id // board key: 'agent' | 'creator'
+  enabled                 Boolean  @default(false)
+  period                  String   @default("daily") // daily | weekly | monthly
+  rewardTiers             Json     @default("[]") // [{ rankMin, rankMax, amount }]
+  requireFaceVerification Boolean  @default(true)
+  updatedAt               DateTime @updatedAt
+
+  @@map("ranking_reward_config")
+}
+
+// Admin-seeded "house" entries — company-owned accounts placed into a ranking at a chosen
+// income to raise the competitive bar. Merged into rankings at READ time (real scores stay
+// untouched) and NEVER paid by reward settlement. Temporary; deactivate to remove instantly.
+model RankingHouseEntry {
+  id        String   @id @default(uuid())
+  board     String   // 'agent' | 'creator' | 'state'
+  userId    String
+  user      User     @relation("RankingHouseEntries", fields: [userId], references: [id], onDelete: Cascade)
+  income    Int      // score it ranks at
+  note      String   @default("")
+  active    Boolean  @default(true)
+  createdBy String   // admin user id
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([board, userId])
+  @@index([board, active])
+  @@map("ranking_house_entries")
+}
+
+// Idempotent payout audit — one row per (board, period, periodDate, user). The unique
+// constraint + in-transaction existence check prevents double-pay on retry/restart.
+model RankingReward {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation("RankingRewards", fields: [userId], references: [id], onDelete: Cascade)
+  board        String   // 'agent' | 'creator'
+  period       String   // daily | weekly | monthly
+  periodDate   DateTime
+  rank         Int
+  score        Int
+  rewardAmount Int
+  walletTxId   String?
+  createdAt    DateTime @default(now())
+
+  @@unique([board, period, periodDate, userId])
+  @@index([board, period, periodDate])
+  @@map("ranking_rewards")
 }

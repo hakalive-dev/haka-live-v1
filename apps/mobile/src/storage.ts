@@ -8,6 +8,8 @@ const USER_KEY = "user_cache_v1";
 const PENDING_INVITE_CODE_KEY = "pending_invite_code_v1";
 /** Set once after the first-launch clipboard check for a deferred invite code. */
 const INVITE_CLIPBOARD_CHECKED_KEY = "invite_clipboard_checked_v1";
+/** Latest optional-update versionCode the user dismissed — throttles the "what's new" nag. */
+const DISMISSED_UPDATE_VERSION_KEY = "dismissed_update_version_v1";
 const USER_CACHE_FILE = `${FileSystem.documentDirectory ?? ""}user-session.json`;
 
 async function readUserJsonFromDisk(): Promise<string | null> {
@@ -73,6 +75,14 @@ export const TokenStorage = {
     (await SecureStore.getItemAsync(INVITE_CLIPBOARD_CHECKED_KEY)) === "1",
   markInviteClipboardChecked: () =>
     SecureStore.setItemAsync(INVITE_CLIPBOARD_CHECKED_KEY, "1"),
+  /** versionCode of the latest optional update the user tapped "Later"/"Update" on. */
+  getDismissedUpdateVersion: async (): Promise<number> => {
+    const raw = await SecureStore.getItemAsync(DISMISSED_UPDATE_VERSION_KEY);
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  },
+  setDismissedUpdateVersion: (versionCode: number) =>
+    SecureStore.setItemAsync(DISMISSED_UPDATE_VERSION_KEY, String(versionCode)),
   clear: async () => {
     const userJson = (await readUserJsonFromDisk()) ?? (await SecureStore.getItemAsync(USER_KEY));
     if (userJson) {

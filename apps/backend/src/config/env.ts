@@ -17,11 +17,15 @@ const schema = z.object({
   ENABLE_SCHEDULER: z.enum(['true', 'false']).default('true'),
 
   /**
-   * Global per-identity request cap per 15-min window (production only).
+   * Global per-identity request budget per `RATE_LIMIT_WINDOW_MS` (production only).
    * Keyed by user → device → IP (see app.ts), so this is a per-user budget,
    * NOT per-IP — many users behind one carrier-grade NAT IP no longer share it.
+   * A short window keeps abuse protection while letting a user who briefly bursts
+   * recover in minutes instead of being locked out for the whole window.
    */
-  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+  /** Sliding the global window: shorter = faster recovery after a burst. Default 3 min. */
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(180_000),
   /** Stricter cap for /auth (login, refresh, OTP). Keyed by IP for brute-force protection. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(50),
 
@@ -94,6 +98,19 @@ const schema = z.object({
   WHATSAPP_TEMPLATE_NAME: z.string().default('haka_otp'),
   WHATSAPP_TEMPLATE_LANG: z.string().default('en_US'),
   WHATSAPP_API_VERSION: z.string().default('v21.0'),
+
+  // ── Android app-update gate (GET /api/v1/config) ──────────────────────────────
+  // Drives the in-app "Update available" popup. Bump these when a new AAB ships.
+  // Set MIN only when older builds must be force-updated; LATEST drives the optional
+  // "what's new" nudge. 0 (default) disables that level of the gate.
+  ANDROID_LATEST_VERSION_CODE: z.coerce.number().int().nonnegative().default(0),
+  ANDROID_LATEST_VERSION_NAME: z.string().default(''),
+  ANDROID_MIN_VERSION_CODE: z.coerce.number().int().nonnegative().default(0),
+  ANDROID_STORE_URL: z
+    .string()
+    .default('https://play.google.com/store/apps/details?id=com.hakalive.app'),
+  // Release-notes bullets, '|'-separated (newlines are awkward in env files).
+  ANDROID_RELEASE_NOTES: z.string().default(''),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV !== 'production') return;
 

@@ -1,24 +1,80 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import * as api from '@/api/stateRanking';
+import * as houseApi from '@/api/rankingRewards';
 
 const config = ref<api.StateRankingConfigRow | null>(null);
 const rewards = ref<api.StateRankingRewardRow[]>([]);
+const house = ref<houseApi.HouseEntryRow[]>([]);
+const houseForm = ref({ idOrHaka: '', income: 0, note: '' });
 const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
+const notice = ref('');
 
 async function load() {
   loading.value = true;
   error.value = '';
+  notice.value = '';
   try {
-    const [cfg, items] = await Promise.all([api.getConfig(), api.listRewards(100)]);
+    const [cfg, items, houseItems] = await Promise.all([
+      api.getConfig(),
+      api.listRewards(100),
+      houseApi.listHouseEntries('state'),
+    ]);
     config.value = cfg;
     rewards.value = items;
+    house.value = houseItems;
   } catch {
     error.value = 'Failed to load state ranking settings.';
   }
   loading.value = false;
+}
+
+async function addHouse() {
+  if (!houseForm.value.idOrHaka.trim()) {
+    error.value = 'Enter a user or Haka ID.';
+    return;
+  }
+  saving.value = true;
+  error.value = '';
+  notice.value = '';
+  try {
+    await houseApi.addHouseEntry(
+      'state',
+      houseForm.value.idOrHaka.trim(),
+      Number(houseForm.value.income),
+      houseForm.value.note,
+    );
+    houseForm.value = { idOrHaka: '', income: 0, note: '' };
+    house.value = await houseApi.listHouseEntries('state');
+    notice.value = 'House entry saved. The account\'s income rolls into its profile state.';
+  } catch (e: unknown) {
+    error.value = (e as Error)?.message ?? 'Could not add house entry.';
+  }
+  saving.value = false;
+}
+
+async function toggleHouse(row: houseApi.HouseEntryRow) {
+  saving.value = true;
+  try {
+    await houseApi.setHouseEntryActive(row.id, !row.active);
+    house.value = await houseApi.listHouseEntries('state');
+  } catch {
+    error.value = 'Could not update house entry.';
+  }
+  saving.value = false;
+}
+
+async function removeHouse(row: houseApi.HouseEntryRow) {
+  saving.value = true;
+  try {
+    await houseApi.deleteHouseEntry(row.id);
+    house.value = await houseApi.listHouseEntries('state');
+  } catch {
+    error.value = 'Could not remove house entry.';
+  }
+  saving.value = false;
 }
 
 async function toggleEnabled() {
@@ -54,6 +110,7 @@ onMounted(load);
     <p class="subtitle">Daily state leaderboards — config and settlement history (super admin).</p>
 
     <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="notice" class="notice">{{ notice }}</p>
     <p v-if="loading">Loading…</p>
 
     <section v-if="config && !loading" class="card">
@@ -98,6 +155,46 @@ onMounted(load);
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section v-if="!loading" class="card">
+      <h2>House entries</h2>
+      <p class="subtitle">
+        Company-owned accounts placed into the state rankings at a set income. Each account's income
+        rolls into <strong>its profile state's</strong> total and ranks among that state's hosts, but
+        house accounts are <strong>never paid</strong> at settlement. Deactivate to remove instantly.
+      </p>
+      <div class="house-form">
+        <input v-model="houseForm.idOrHaka" placeholder="User ID or Haka ID" />
+        <input v-model.number="houseForm.income" type="number" min="0" placeholder="Income" />
+        <input v-model="houseForm.note" placeholder="Note (optional)" />
+        <button type="button" :disabled="saving" @click="addHouse">Add</button>
+      </div>
+      <table v-if="house.length" class="table">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Income</th>
+            <th>Note</th>
+            <th>Active</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in house" :key="row.id">
+            <td>{{ row.user.displayName }} ({{ row.user.hakaId ?? row.userId.slice(0, 8) }})</td>
+            <td>{{ row.income.toLocaleString() }}</td>
+            <td>{{ row.note || '—' }}</td>
+            <td>
+              <button type="button" :disabled="saving" @click="toggleHouse(row)">
+                {{ row.active ? 'Active' : 'Inactive' }}
+              </button>
+            </td>
+            <td><button type="button" class="link" @click="removeHouse(row)">remove</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="muted">No house entries.</p>
     </section>
 
     <section v-if="!loading" class="card">
@@ -167,6 +264,26 @@ onMounted(load);
 }
 .muted {
   color: #888;
+}
+.notice {
+  color: #0a7d28;
+}
+.house-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.house-form input {
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+.link {
+  background: none;
+  border: none;
+  color: #c00;
+  cursor: pointer;
 }
 button {
   cursor: pointer;

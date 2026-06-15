@@ -26,6 +26,12 @@ import {
   stateTotalsRedisKey,
   type StateRankingHostSnapshot,
 } from './state-ranking-keys';
+import {
+  getActiveStateHouseHosts,
+  mergeStateTotals,
+  houseIncomeByState,
+  mergeAndRank,
+} from './house-entries.service';
 
 export type { StateRankingHostSnapshot };
 
@@ -137,25 +143,27 @@ async function fetchTopHostsForState(
   stateCode: string,
   dateKey: string,
   limit: number,
+  houseForState: Array<{ userId: string; income: number }> = [],
 ): Promise<StateRankingHostPreview[]> {
   const key = stateHostsRedisKey(countryCode, stateCode, dateKey);
-  const raw = await redis.zrevrange(key, 0, limit - 1, 'WITHSCORES');
-  const entries = parseWithScores(raw);
+  const raw = await redis.zrevrange(key, 0, limit + houseForState.length - 1, 'WITHSCORES');
+  const real = parseWithScores(raw).map((e) => ({ userId: e.id, score: e.score }));
+  const { entries } = mergeAndRank(real, houseForState, limit);
   if (entries.length === 0) return [];
 
   const users = await prisma.user.findMany({
-    where: { id: { in: entries.map((e) => e.id) } },
+    where: { id: { in: entries.map((e) => e.userId) } },
     select: { id: true, displayName: true, avatar: true },
   });
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  return entries.map((e, idx) => {
-    const u = userMap.get(e.id);
+  return entries.map((e) => {
+    const u = userMap.get(e.userId);
     return {
-      id: e.id,
+      id: e.userId,
       displayName: u?.displayName ?? '',
       avatar: u?.avatar || null,
-      rank: idx + 1,
+      rank: e.rank,
       score: e.score,
     };
   });
@@ -172,32 +180,59 @@ export async function listStateRankings(
   const config = await getStateRankingConfig();
   const totalsKey = stateTotalsRedisKey(country, dateKey);
   const raw = await redis.zrevrange(totalsKey, 0, -1, 'WITHSCORES');
-  const entries = parseWithScores(raw);
+  const realTotals = parseWithScores(raw).map((e) => ({ stateCode: e.id.toUpperCase(), score: e.score }));
+
+  // Blend admin-seeded house hosts: their income rolls into their state's total (read-time only).
+  const houseHosts = (await getActiveStateHouseHosts()).filter((h) =>
+    isValidStateForCountry(country, h.stateCode),
+  );
+  const houseByStateForHosts = groupHouseHostsByState(houseHosts);
+  const totals = houseHosts.length
+    ? mergeStateTotals(realTotals, houseIncomeByState(houseHosts))
+    : realTotals;
 
   const rows: StateRankingRow[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i]!;
+  for (let i = 0; i < totals.length; i++) {
     const stateRank = i + 1;
-    const stateCode = entry.id.toUpperCase();
+    const stateCode = totals[i]!.stateCode;
     const stateName = getStateName(country, stateCode) ?? stateCode;
     const poolReward = poolForStateRank(stateRank, config.stateRankTiers);
     const previewLimit = stateRank <= 3 ? topHostPreview : 0;
     const topHosts =
       previewLimit > 0
-        ? await fetchTopHostsForState(country, stateCode, dateKey, previewLimit)
+        ? await fetchTopHostsForState(
+            country,
+            stateCode,
+            dateKey,
+            previewLimit,
+            houseByStateForHosts.get(stateCode) ?? [],
+          )
         : [];
 
     rows.push({
       rank: stateRank,
       stateCode,
       stateName,
-      totalGiftScore: Math.floor(entry.score),
+      totalGiftScore: Math.floor(totals[i]!.score),
       poolReward,
       topHosts,
     });
   }
 
   return rows;
+}
+
+/** Group house hosts by state into {stateCode → [{userId, income}]} for per-state host merges. */
+function groupHouseHostsByState(
+  hosts: Array<{ userId: string; income: number; stateCode: string }>,
+): Map<string, Array<{ userId: string; income: number }>> {
+  const map = new Map<string, Array<{ userId: string; income: number }>>();
+  for (const h of hosts) {
+    const list = map.get(h.stateCode) ?? [];
+    list.push({ userId: h.userId, income: h.income });
+    map.set(h.stateCode, list);
+  }
+  return map;
 }
 
 export async function getStateRankingSummary(
@@ -207,7 +242,15 @@ export async function getStateRankingSummary(
   const country = normalizeCountryCode(countryCode);
   const config = await getStateRankingConfig();
   const totalsKey = stateTotalsRedisKey(country, dateKey);
-  const count = await redis.zcard(totalsKey);
+
+  // Count distinct active states including any that exist only via house hosts.
+  const realStates = new Set((await redis.zrange(totalsKey, 0, -1)).map((s) => s.toUpperCase()));
+  const houseHosts = (await getActiveStateHouseHosts()).filter((h) =>
+    isValidStateForCountry(country, h.stateCode),
+  );
+  for (const h of houseHosts) realStates.add(h.stateCode);
+  const count = realStates.size;
+
   return {
     totalDailyPrizePool: totalDailyPrizePoolForStateCount(count, config.stateRankTiers),
     activeStateCount: count,
@@ -275,23 +318,49 @@ export async function listStateHosts(
   const key = stateHostsRedisKey(country, state, dateKey);
   const start = (page - 1) * limit;
   const end = start + limit - 1;
-  const raw = await redis.zrevrange(key, start, end, 'WITHSCORES');
-  const entries = parseWithScores(raw);
-  if (entries.length === 0) {
+
+  // House hosts for this state are merged into the top window (page 1), like the Activity board.
+  const houseForState = (await getActiveStateHouseHosts())
+    .filter((h) => h.stateCode === state && isValidStateForCountry(country, state))
+    .map((h) => ({ userId: h.userId, income: h.income }));
+
+  let ranked: Array<{ userId: string; score: number; rank: number }>;
+  let total: number;
+  if (houseForState.length > 0 && page === 1) {
+    const raw = await redis.zrevrange(key, 0, limit + houseForState.length - 1, 'WITHSCORES');
+    const real = parseWithScores(raw).map((e) => ({ userId: e.id, score: e.score }));
+    const realIds = new Set(real.map((r) => r.userId));
+    ranked = mergeAndRank(real, houseForState, limit).entries.map((e) => ({
+      userId: e.userId,
+      score: e.score,
+      rank: e.rank,
+    }));
+    total = (await redis.zcard(key)) + houseForState.filter((h) => !realIds.has(h.userId)).length;
+  } else {
+    const raw = await redis.zrevrange(key, start, end, 'WITHSCORES');
+    ranked = parseWithScores(raw).map((e, idx) => ({
+      userId: e.id,
+      score: e.score,
+      rank: start + idx + 1,
+    }));
+    total = await redis.zcard(key);
+  }
+
+  if (ranked.length === 0) {
     return { items: [], page, limit, hasMore: false };
   }
 
   const users = await prisma.user.findMany({
-    where: { id: { in: entries.map((e) => e.id) } },
+    where: { id: { in: ranked.map((e) => e.userId) } },
     select: userSummarySelect(),
   });
   const userMap = new Map(users.map((u) => [u.id, serializeUserSummary(u)]));
 
-  const items = entries.map((entry, idx) => ({
-    rank: start + idx + 1,
+  const items = ranked.map((entry) => ({
+    rank: entry.rank,
     score: Math.floor(entry.score),
-    user: userMap.get(entry.id) ?? {
-      id: entry.id,
+    user: userMap.get(entry.userId) ?? {
+      id: entry.userId,
       username: null,
       displayName: '',
       avatar: '',
@@ -304,8 +373,7 @@ export async function listStateHosts(
     },
   }));
 
-  const total = await redis.zcard(key);
-  return { items, page, limit, hasMore: end + 1 < total };
+  return { items, page, limit, hasMore: start + limit < total };
 }
 
 export async function getMyHostRankInState(
@@ -341,24 +409,38 @@ export async function settleStateRankingRewards(
 
   const totalsKey = stateTotalsRedisKey(country, dateKey);
   const raw = await redis.zrevrange(totalsKey, 0, -1, 'WITHSCORES');
-  const stateEntries = parseWithScores(raw);
-  if (stateEntries.length === 0) return 0;
+  const realTotals = parseWithScores(raw).map((e) => ({ stateCode: e.id.toUpperCase(), score: e.score }));
+
+  // Merge house hosts so payouts follow the SAME ranks users see: house income rolls into its
+  // state's total (affects state rank → pool) and ranks among that state's hosts — but house
+  // hosts are NEVER credited (they occupy ranks, real hosts are paid by their displayed rank).
+  const houseHosts = (await getActiveStateHouseHosts()).filter((h) =>
+    isValidStateForCountry(country, h.stateCode),
+  );
+  const houseByState = groupHouseHostsByState(houseHosts);
+  const stateTotals = houseHosts.length
+    ? mergeStateTotals(realTotals, houseIncomeByState(houseHosts))
+    : realTotals;
+  if (stateTotals.length === 0) return 0;
 
   const splits = config.hostSplitPercentages;
   const topN = config.topHostsPerState;
   let credited = 0;
 
-  for (let i = 0; i < stateEntries.length; i++) {
+  for (let i = 0; i < stateTotals.length; i++) {
     const stateRank = i + 1;
-    const stateCode = stateEntries[i]!.id.toUpperCase();
+    const stateCode = stateTotals[i]!.stateCode;
     const poolTotal = poolForStateRank(stateRank, config.stateRankTiers);
+    const houseForState = houseByState.get(stateCode) ?? [];
     const hostsKey = stateHostsRedisKey(country, stateCode, dateKey);
-    const hostRaw = await redis.zrevrange(hostsKey, 0, topN - 1, 'WITHSCORES');
-    const hosts = parseWithScores(hostRaw);
+    const hostRaw = await redis.zrevrange(hostsKey, 0, topN + houseForState.length - 1, 'WITHSCORES');
+    const realHosts = parseWithScores(hostRaw).map((e) => ({ userId: e.id, score: e.score }));
+    const { entries: hosts } = mergeAndRank(realHosts, houseForState, topN);
 
-    for (let h = 0; h < hosts.length && h < 4; h++) {
-      const host = hosts[h]!;
-      const hostRank = (h + 1) as 1 | 2 | 3 | 4;
+    for (const host of hosts) {
+      if (host.rank > splits.length) break; // only the top `splits.length` (4) hosts are paid
+      if (host.isHouse) continue; // house hosts occupy the rank but are never credited
+      const hostRank = host.rank as 1 | 2 | 3 | 4;
       const rewardAmount = hostRewardAmount(poolTotal, hostRank, splits);
 
       try {
@@ -366,7 +448,7 @@ export async function settleStateRankingRewards(
           const existing = await tx.stateRankingReward.findUnique({
             where: {
               userId_periodDate_countryCode_stateCode: {
-                userId: host.id,
+                userId: host.userId,
                 periodDate,
                 countryCode: country,
                 stateCode,
@@ -377,7 +459,7 @@ export async function settleStateRankingRewards(
 
           const walletTx = await creditBeansInTx(
             tx,
-            host.id,
+            host.userId,
             rewardAmount,
             `state_ranking:${dateKey}:${country}:${stateCode}:${hostRank}`,
             `State ranking reward — ${getStateName(country, stateCode) ?? stateCode} #${hostRank}`,
@@ -385,7 +467,7 @@ export async function settleStateRankingRewards(
 
           await tx.stateRankingReward.create({
             data: {
-              userId: host.id,
+              userId: host.userId,
               countryCode: country,
               stateCode,
               periodDate,
@@ -400,7 +482,7 @@ export async function settleStateRankingRewards(
         });
         credited++;
       } catch (err) {
-        console.error('state ranking settlement failed', { country, stateCode, hostId: host.id, err });
+        console.error('state ranking settlement failed', { country, stateCode, hostId: host.userId, err });
       }
     }
   }

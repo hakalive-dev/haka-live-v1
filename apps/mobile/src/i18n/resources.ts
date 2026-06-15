@@ -47,6 +47,14 @@ const en = {
     systemName: 'System',
     saveFailed: 'Failed to save.',
   },
+  appUpdate: {
+    requiredTitle: 'Update required',
+    availableTitle: 'Update available',
+    requiredMessage: 'This version is no longer supported. Please update to keep using Haka.',
+    availableMessage: "A new version is here with new features and fixes. Update when you're ready.",
+    updateNow: 'Update now',
+    later: 'Later',
+  },
 };
 
 /** Shape every locale must satisfy so missing keys are caught at compile time. */
@@ -89,6 +97,14 @@ const fr: Translation = {
     systemName: 'Système',
     saveFailed: "Échec de l'enregistrement.",
   },
+  appUpdate: {
+    requiredTitle: 'Mise à jour requise',
+    availableTitle: 'Mise à jour disponible',
+    requiredMessage: "Cette version n'est plus prise en charge. Veuillez mettre à jour pour continuer à utiliser Haka.",
+    availableMessage: 'Une nouvelle version est disponible avec de nouvelles fonctionnalités et des corrections. Mettez à jour quand vous le souhaitez.',
+    updateNow: 'Mettre à jour',
+    later: 'Plus tard',
+  },
 };
 
 const pt: Translation = {
@@ -127,6 +143,14 @@ const pt: Translation = {
     savedMessage: 'Idioma definido como {{lang}}',
     systemName: 'Sistema',
     saveFailed: 'Falha ao salvar.',
+  },
+  appUpdate: {
+    requiredTitle: 'Atualização necessária',
+    availableTitle: 'Atualização disponível',
+    requiredMessage: 'Esta versão não é mais compatível. Atualize para continuar usando o Haka.',
+    availableMessage: 'Uma nova versão chegou com novos recursos e correções. Atualize quando quiser.',
+    updateNow: 'Atualizar agora',
+    later: 'Mais tarde',
   },
 };
 
@@ -167,6 +191,14 @@ const es: Translation = {
     systemName: 'Sistema',
     saveFailed: 'No se pudo guardar.',
   },
+  appUpdate: {
+    requiredTitle: 'Actualización requerida',
+    availableTitle: 'Actualización disponible',
+    requiredMessage: 'Esta versión ya no es compatible. Actualiza para seguir usando Haka.',
+    availableMessage: 'Hay una nueva versión con nuevas funciones y correcciones. Actualiza cuando quieras.',
+    updateNow: 'Actualizar ahora',
+    later: 'Más tarde',
+  },
 };
 
 const ar: Translation = {
@@ -205,6 +237,14 @@ const ar: Translation = {
     savedMessage: 'تم تعيين اللغة إلى {{lang}}',
     systemName: 'النظام',
     saveFailed: 'فشل الحفظ.',
+  },
+  appUpdate: {
+    requiredTitle: 'التحديث مطلوب',
+    availableTitle: 'يتوفّر تحديث',
+    requiredMessage: 'هذا الإصدار لم يعد مدعومًا. يُرجى التحديث لمواصلة استخدام Haka.',
+    availableMessage: 'يتوفّر إصدار جديد يتضمّن ميزات جديدة وإصلاحات. حدِّث عندما تكون جاهزًا.',
+    updateNow: 'التحديث الآن',
+    later: 'لاحقًا',
   },
 };
 
@@ -245,6 +285,14 @@ const hi: Translation = {
     systemName: 'सिस्टम',
     saveFailed: 'सहेजने में विफल।',
   },
+  appUpdate: {
+    requiredTitle: 'अपडेट आवश्यक है',
+    availableTitle: 'अपडेट उपलब्ध है',
+    requiredMessage: 'यह संस्करण अब समर्थित नहीं है। Haka का उपयोग जारी रखने के लिए कृपया अपडेट करें।',
+    availableMessage: 'नई सुविधाओं और सुधारों के साथ एक नया संस्करण आया है। जब आप तैयार हों तब अपडेट करें।',
+    updateNow: 'अभी अपडेट करें',
+    later: 'बाद में',
+  },
 };
 
 const zh: Translation = {
@@ -283,6 +331,14 @@ const zh: Translation = {
     savedMessage: '语言已设置为 {{lang}}',
     systemName: '系统',
     saveFailed: '保存失败。',
+  },
+  appUpdate: {
+    requiredTitle: '需要更新',
+    availableTitle: '有可用更新',
+    requiredMessage: '此版本已不再受支持。请更新以继续使用 Haka。',
+    availableMessage: '新版本已发布，包含新功能和修复。准备好后即可更新。',
+    updateNow: '立即更新',
+    later: '稍后',
   },
 };
 
@@ -323,6 +379,14 @@ const ja: Translation = {
     systemName: 'システム',
     saveFailed: '保存に失敗しました。',
   },
+  appUpdate: {
+    requiredTitle: 'アップデートが必要です',
+    availableTitle: 'アップデートがあります',
+    requiredMessage: 'このバージョンはサポートされなくなりました。Haka を引き続き使用するには更新してください。',
+    availableMessage: '新機能と修正を含む新しいバージョンが利用できます。準備ができたら更新してください。',
+    updateNow: '今すぐ更新',
+    later: '後で',
+  },
 };
 
 const ko: Translation = {
@@ -361,6 +425,14 @@ const ko: Translation = {
     savedMessage: '언어가 {{lang}}(으)로 설정되었습니다',
     systemName: '시스템',
     saveFailed: '저장하지 못했습니다.',
+  },
+  appUpdate: {
+    requiredTitle: '업데이트 필요',
+    availableTitle: '업데이트 사용 가능',
+    requiredMessage: '이 버전은 더 이상 지원되지 않습니다. Haka를 계속 사용하려면 업데이트하세요.',
+    availableMessage: '새로운 기능과 수정 사항이 포함된 새 버전이 출시되었습니다. 준비되면 업데이트하세요.',
+    updateNow: '지금 업데이트',
+    later: '나중에',
   },
 };
 
@@ -401,6 +473,14 @@ const ru: Translation = {
     systemName: 'Системный',
     saveFailed: 'Не удалось сохранить.',
   },
+  appUpdate: {
+    requiredTitle: 'Требуется обновление',
+    availableTitle: 'Доступно обновление',
+    requiredMessage: 'Эта версия больше не поддерживается. Обновите приложение, чтобы продолжить использовать Haka.',
+    availableMessage: 'Вышла новая версия с новыми функциями и исправлениями. Обновите, когда будет удобно.',
+    updateNow: 'Обновить',
+    later: 'Позже',
+  },
 };
 
 const tr: Translation = {
@@ -440,6 +520,14 @@ const tr: Translation = {
     systemName: 'Sistem',
     saveFailed: 'Kaydedilemedi.',
   },
+  appUpdate: {
+    requiredTitle: 'Güncelleme gerekli',
+    availableTitle: 'Güncelleme mevcut',
+    requiredMessage: 'Bu sürüm artık desteklenmiyor. Haka’yı kullanmaya devam etmek için lütfen güncelleyin.',
+    availableMessage: 'Yeni özellikler ve düzeltmeler içeren yeni bir sürüm var. Hazır olduğunuzda güncelleyin.',
+    updateNow: 'Şimdi güncelle',
+    later: 'Daha sonra',
+  },
 };
 
 const th: Translation = {
@@ -478,6 +566,14 @@ const th: Translation = {
     savedMessage: 'ตั้งค่าภาษาเป็น {{lang}}',
     systemName: 'ระบบ',
     saveFailed: 'บันทึกไม่สำเร็จ',
+  },
+  appUpdate: {
+    requiredTitle: 'จำเป็นต้องอัปเดต',
+    availableTitle: 'มีอัปเดตใหม่',
+    requiredMessage: 'เวอร์ชันนี้ไม่รองรับอีกต่อไป โปรดอัปเดตเพื่อใช้งาน Haka ต่อ',
+    availableMessage: 'มีเวอร์ชันใหม่พร้อมฟีเจอร์ใหม่และการแก้ไข อัปเดตได้เมื่อคุณพร้อม',
+    updateNow: 'อัปเดตเลย',
+    later: 'ภายหลัง',
   },
 };
 

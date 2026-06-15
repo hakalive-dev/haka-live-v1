@@ -37,6 +37,7 @@ import { preloadSvgaAssets } from './src/screens/room/SVGAGiftEffect';
 import { API_BASE_URL, pingBackend } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ConnectivityProvider } from './src/components/Connectivity';
+import { AppUpdateGate } from './src/components/AppUpdateGate';
 
 function App() {
   useKeepAwake();
@@ -66,6 +67,8 @@ function App() {
                       <IncomingCallProvider>
                         <ConnectivityProvider>
                           <RootNavigator />
+                          {/* Overlays an update popup when the build is behind. */}
+                          <AppUpdateGate />
                         </ConnectivityProvider>
                       </IncomingCallProvider>
                     </SeatInvitePromptProvider>

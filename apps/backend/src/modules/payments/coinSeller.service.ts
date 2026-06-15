@@ -10,6 +10,7 @@ import { assertNoRiskBlock } from "../../utils/risk-control";
 import { getIO } from "../../sockets";
 import { insertServerDirectMessage } from "../chat/chat.service";
 import { scheduleWalletCoinsNotify } from "../chat/haka-team-coins-notify.service";
+import { mergeAndRank, getActiveHouseEntries } from "../leaderboard/house-entries.service";
 import { getHakaTeamUserId } from "../../constants/haka-team";
 import { isSellerRechargePaymentMethod } from "./payments-config";
 import { sumRollingAgencyTurnoverCoins } from "../gifts/rolling-agency-income";
@@ -1078,7 +1079,7 @@ export const coinSellerService = {
       take: 50,
       include: { user: { select: userSnippet } },
     });
-    return profiles.map((p, i) => ({
+    const realItems = profiles.map((p, i) => ({
       rank: i + 1,
       score: Number(p.totalCoinsSold),
       id: p.user.id,
@@ -1089,5 +1090,39 @@ export const coinSellerService = {
       activeSpecialId: p.user.activeSpecialId ?? null,
       activeSpecialIdLevel: p.user.activeSpecialIdLevel ?? null,
     }));
+
+    // Blend in admin-seeded house entries (read-time only). Agent rewards no-op, so these are
+    // display-only — they raise the visible bar without affecting any payout.
+    const house = await getActiveHouseEntries("agent");
+    if (house.length === 0) return realItems;
+
+    const realById = new Map(realItems.map((r) => [r.id, r]));
+    const { entries } = mergeAndRank(
+      realItems.map((r) => ({ userId: r.id, score: r.score })),
+      house,
+      realItems.length + house.length,
+    );
+    const missingIds = entries.filter((e) => !realById.has(e.userId)).map((e) => e.userId);
+    const extras = missingIds.length
+      ? await prisma.user.findMany({ where: { id: { in: missingIds } }, select: userSnippet })
+      : [];
+    const extraById = new Map(extras.map((u) => [u.id, u]));
+
+    return entries.map((e) => {
+      const real = realById.get(e.userId);
+      if (real) return { ...real, rank: e.rank, score: e.score };
+      const u = extraById.get(e.userId);
+      return {
+        rank: e.rank,
+        score: e.score,
+        id: e.userId,
+        username: u?.username ?? null,
+        displayName: u?.displayName ?? "",
+        avatar: u?.avatar ?? null,
+        hakaId: u?.hakaId ?? null,
+        activeSpecialId: u?.activeSpecialId ?? null,
+        activeSpecialIdLevel: u?.activeSpecialIdLevel ?? null,
+      };
+    });
   },
 };

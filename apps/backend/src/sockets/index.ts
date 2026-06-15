@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import { authMiddleware } from './auth';
 import { registerRoomHandlers } from './rooms.socket';
 import { registerChatHandlers } from './chat.socket';
+import { registerLeaderboardHandlers, startLeaderboardBroadcaster } from './leaderboard.socket';
 import * as pkService from '../modules/pk/pk.service';
 import { startPkMatchmaker } from '../jobs/pk-matchmaker.job';
 import { PK_EVENTS, BATTLE_EVENTS } from '../shared-types';
@@ -49,6 +50,7 @@ export function initSocketServer(httpServer: http.Server): Server {
   // Register namespace handlers
   registerRoomHandlers(io);
   registerChatHandlers(io);
+  registerLeaderboardHandlers(io);
 
   pkService.setMatchEndCallback((matchId, result) => {
     io.to(`pk:${matchId}`).emit(PK_EVENTS.ENDED, result);
@@ -66,6 +68,7 @@ export function initSocketServer(httpServer: http.Server): Server {
     recoverActiveSessions().catch(console.error);
     recoverActiveCalls().catch(console.error);
     startPkMatchmaker(io);
+    startLeaderboardBroadcaster(io);
   }
 
   return io;

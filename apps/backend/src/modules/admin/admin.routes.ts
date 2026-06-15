@@ -46,6 +46,7 @@ import adminHostsRouter from './hosts/admin-hosts.routes';
 import adminHierarchyRouter from './hierarchy/admin-hierarchy.routes';
 import adminMaintenanceRouter from './maintenance/maintenance.routes';
 import adminStateRankingRouter from './state-ranking/admin-state-ranking.routes';
+import adminRankingRewardsRouter from './ranking-rewards/admin-ranking-rewards.routes';
 
 const router = Router();
 
@@ -97,5 +98,6 @@ router.use('/hosts',                 authenticateAdmin, adminHostsRouter);
 router.use('/management',             authenticateAdmin, adminHierarchyRouter);
 router.use('/maintenance',            authenticateAdmin, adminMaintenanceRouter);
 router.use('/state-ranking',          authenticateAdmin, adminStateRankingRouter);
+router.use('/ranking-rewards',        authenticateAdmin, adminRankingRewardsRouter);
 
 export default router;

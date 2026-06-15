@@ -1,4 +1,4 @@
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
@@ -43,13 +43,38 @@ export function rateLimitKey(req: Request): string {
   return `ip:${req.ip}`;
 }
 
+/** Which bucket a key fell into — for diagnosing *why* a 429 fired without logging PII. */
+export function keyType(key: string): string {
+  const idx = key.indexOf(':');
+  return idx > 0 ? key.slice(0, idx) : 'ip';
+}
+
+/**
+ * 429 handler for the global limiter. Logs every block so we can see which
+ * route/key-type actually exhausts the budget (the offender is rarely the request
+ * that finally trips it), then returns the JSON envelope. The key for users is
+ * `u:<uuid>` — an opaque id, not email/phone — so it's safe to log.
+ */
+export function handleGlobalLimit(req: Request, res: Response): void {
+  const key = rateLimitKey(req);
+  console.warn('[rate-limit] 429', {
+    limiter: 'global',
+    method: req.method,
+    path: req.path,
+    keyType: keyType(key),
+    key,
+  });
+  res.status(429).json(limitMessage);
+}
+
 export const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
   max: isDev ? 10_000 : env.RATE_LIMIT_MAX,
   message: limitMessage,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKey,
+  handler: handleGlobalLimit,
 });
 
 /**

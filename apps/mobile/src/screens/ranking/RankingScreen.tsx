@@ -22,6 +22,7 @@ import { queryKeys } from '@api/queryKeys';
 import type { LeaderboardWindow, CreatorStats } from '@api/leaderboard';
 import { Colors, Spacing, Radius } from '@/theme';
 import { RankingSkeleton } from '@components/Skeleton';
+import { useLeaderboardRealtime } from '@/hooks/useLeaderboardRealtime';
 import type { LeaderboardUserEntry } from '@/types';
 import type { RootStackParamList, RootStackScreenProps } from '@navigation/types';
 import { StateStarTab } from './StateStarTab';
@@ -118,6 +119,17 @@ export function RankingScreen({ route }: Props) {
   const data: LeaderboardUserEntry[] = mainTab === 'game' ? [] : (rankingQuery.data ?? []);
   const loading = mainTab !== 'game' && data.length === 0 && rankingQuery.isLoading;
   const [refreshing, setRefreshing] = useState(false);
+
+  // Live updates: while on Agent/Activity, the server signals when the board changes and
+  // we refetch immediately (the 60s poll above stays as a fallback if the socket drops).
+  useLeaderboardRealtime({
+    board: mainTab === 'agent' ? 'agent' : 'creator',
+    period,
+    enabled: mainTab === 'agent' || mainTab === 'creator',
+    onChanged: () => {
+      void rankingQuery.refetch();
+    },
+  });
 
   useEffect(() => {
     const tick = () => {

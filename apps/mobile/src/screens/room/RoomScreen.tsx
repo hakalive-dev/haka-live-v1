@@ -5906,9 +5906,12 @@ const SeatItem = React.memo(function SeatItem({
               active={isSpeaking && !seat.user.equippedMicVoiceWave?.image}
               inset={seatInset}
             />
-            {isSpeaking && seat.user.equippedMicVoiceWave?.image ? (
+            {seat.user.equippedMicVoiceWave?.image ? (
+              // Stays mounted while equipped; `active` fades/plays it only while
+              // this user speaks — avoids a reload flash on every speech burst.
               <MicVoiceWaveEffect
                 source={seat.user.equippedMicVoiceWave.image}
+                active={isSpeaking}
                 seatSize={size}
                 wrapWidth={itemWidth}
                 cellHeight={cellExtent}

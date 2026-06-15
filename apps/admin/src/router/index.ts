@@ -30,6 +30,7 @@ const router = createRouter({
         { path: 'gifts/platform-revenue', name: 'PlatformRevenue', component: () => import('@/views/gifts/PlatformRevenueView.vue') },
         { path: 'gifts/commission-config', name: 'CommissionConfig', component: () => import('@/views/gifts/CommissionConfigView.vue') },
         { path: 'gifts/state-ranking', name: 'StateRanking', component: () => import('@/views/gifts/StateRankingView.vue') },
+        { path: 'gifts/ranking-rewards', name: 'RankingRewards', component: () => import('@/views/gifts/RankingRewardsView.vue') },
         { path: 'gifts/lucky-gifts', name: 'LuckyGifts', component: () => import('@/views/gifts/LuckyGiftsView.vue'), meta: { permission: 'gift.manage' } },
         { path: 'wallets', name: 'Wallets', component: () => import('@/views/payments/WalletListView.vue') },
         { path: 'transactions', name: 'WalletTransactions', component: () => import('@/views/payments/WalletTransactionsView.vue') },
