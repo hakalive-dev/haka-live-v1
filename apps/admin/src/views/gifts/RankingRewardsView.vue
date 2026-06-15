@@ -2,12 +2,11 @@
 import { ref, computed, onMounted } from 'vue';
 import * as api from '@/api/rankingRewards';
 
-const BOARDS: { key: api.RewardBoard; label: string }[] = [
-  { key: 'creator', label: 'Activity' },
-  { key: 'agent', label: 'Agent' },
-];
+// The board is fixed per route (separate Activity / Agent sidebar pages).
+const props = defineProps<{ board: api.RewardBoard }>();
+const board = computed(() => props.board);
+const title = computed(() => (props.board === 'agent' ? 'Agent Rewards' : 'Activity Rewards'));
 
-const board = ref<api.RewardBoard>('creator');
 const config = ref<api.RankingRewardConfigRow | null>(null);
 const rewards = ref<api.RankingRewardRow[]>([]);
 // Local editable copy of the tiers (committed only on Save).
@@ -87,12 +86,6 @@ async function removeHouse(row: api.HouseEntryRow) {
   saving.value = false;
 }
 
-async function switchBoard(next: api.RewardBoard) {
-  if (board.value === next) return;
-  board.value = next;
-  await load();
-}
-
 async function patch(body: Partial<api.RankingRewardConfigRow>) {
   if (!config.value) return;
   saving.value = true;
@@ -144,23 +137,11 @@ onMounted(load);
 
 <template>
   <div class="page">
-    <h1>Ranking Rewards</h1>
+    <h1>{{ title }}</h1>
     <p class="subtitle">
       Beans paid to top rankers at period close. Ships disabled — set tiers, then enable.
       Super-admin only.
     </p>
-
-    <div class="tabs">
-      <button
-        v-for="b in BOARDS"
-        :key="b.key"
-        type="button"
-        :class="{ active: board === b.key }"
-        @click="switchBoard(b.key)"
-      >
-        {{ b.label }}
-      </button>
-    </div>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="notice" class="notice">{{ notice }}</p>

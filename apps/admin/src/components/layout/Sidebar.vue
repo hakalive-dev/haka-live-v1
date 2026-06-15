@@ -110,8 +110,9 @@ const allSections: NavSection[] = [
   {
     title: 'Rank Management',
     items: [
-      { label: 'Ranking Rewards',     to: '/gifts/ranking-rewards',     permission: 'gift.manage' },
-      { label: 'State Ranking',       to: '/gifts/state-ranking',       permission: 'gift.manage' },
+      { label: 'Activity',            to: '/gifts/ranking-rewards/activity', permission: 'gift.manage' },
+      { label: 'Agent',               to: '/gifts/ranking-rewards/agent',    permission: 'gift.manage' },
+      { label: 'State Ranking',       to: '/gifts/state-ranking',            permission: 'gift.manage' },
     ],
   },
   {
