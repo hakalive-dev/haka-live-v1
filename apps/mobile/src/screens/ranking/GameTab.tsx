@@ -111,7 +111,7 @@ export function GameTab({ navigation, onTabChange }: Props) {
       }
       return apiData;
     }
-    const useFixture = useMock || __DEV__;
+    const useFixture = useMock;
     if (!useFixture) return [];
     const base = subTab === 'teen_patti' ? mockGameTeenPattiRank : mockGameTopGamerRank;
     const scaled = periodLabel === 'Previous'

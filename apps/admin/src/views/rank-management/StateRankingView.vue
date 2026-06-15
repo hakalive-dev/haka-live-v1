@@ -228,6 +228,7 @@ onMounted(load);
         <thead>
           <tr>
             <th>Account</th>
+            <th>Profile state</th>
             <th>Income</th>
             <th>Note</th>
             <th>Active</th>
@@ -237,6 +238,10 @@ onMounted(load);
         <tbody>
           <tr v-for="row in house" :key="row.id">
             <td>{{ row.user.displayName }} ({{ row.user.hakaId ?? row.userId.slice(0, 8) }})</td>
+            <td>
+              <span v-if="row.user.state?.trim()" class="field-value">{{ row.user.state }}</span>
+              <span v-else class="state-missing">Missing — set on user profile</span>
+            </td>
             <td>{{ row.income.toLocaleString() }}</td>
             <td>{{ row.note || '—' }}</td>
             <td>
@@ -489,6 +494,11 @@ onMounted(load);
 .empty {
   color: var(--text-muted);
   font-size: 13px;
+}
+.state-missing {
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 600;
 }
 .pad {
   padding: 20px 24px;

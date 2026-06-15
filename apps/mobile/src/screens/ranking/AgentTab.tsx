@@ -23,7 +23,7 @@ import { UserAvatar } from '@components/UserAvatar';
 import { RICH, CHARM } from '@screens/level/LevelScreen';
 import { leaderboardApi } from '@api/leaderboard';
 import { useMock } from '@api/config';
-import { mockAgentCoinsRank, mockStateRankingRows } from '@api/mock/ranking';
+import { mockAgentCoinsRank } from '@api/mock/ranking';
 import { stateRankingApi } from '@api/stateRanking';
 import { queryKeys } from '@api/queryKeys';
 import { Colors, Spacing, Radius } from '@/theme';
@@ -297,7 +297,7 @@ export function AgentTab({ navigation, onTabChange }: Props) {
   });
 
   const topStates = useMemo(
-    () => statesQuery.data?.items ?? mockStateRankingRows,
+    () => statesQuery.data?.items ?? [],
     [statesQuery.data?.items],
   );
 
@@ -325,7 +325,7 @@ export function AgentTab({ navigation, onTabChange }: Props) {
   const apiData = rankingQuery.data ?? [];
   const data = useMemo(() => {
     if (apiData.length > 0) return apiData;
-    const useFixture = useMock || __DEV__;
+    const useFixture = useMock;
     if (!useFixture) return [];
     const normalized = selectedStateCode?.trim().toUpperCase();
     const filtered = normalized

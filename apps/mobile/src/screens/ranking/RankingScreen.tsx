@@ -163,7 +163,7 @@ export function RankingScreen({ route }: Props) {
   const apiData: LeaderboardUserEntry[] = rankingQuery.data ?? [];
   const data = useMemo(() => {
     if (apiData.length > 0) return apiData;
-    const useFixture = useMock || __DEV__;
+    const useFixture = useMock;
     if (!useFixture) return [];
     return mockActivityHostsRank[period];
   }, [apiData, period]);

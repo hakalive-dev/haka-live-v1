@@ -56,7 +56,13 @@ export type HouseEntryRow = {
   note: string;
   active: boolean;
   createdAt: string;
-  user: { id: string; displayName: string; hakaId: string | null };
+  user: {
+    id: string;
+    displayName: string;
+    hakaId: string | null;
+    state?: string;
+    country?: string;
+  };
 };
 
 export async function listHouseEntries(board: HouseBoard): Promise<HouseEntryRow[]> {

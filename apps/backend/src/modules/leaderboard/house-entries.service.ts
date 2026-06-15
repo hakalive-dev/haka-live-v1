@@ -7,6 +7,10 @@
  */
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middleware/error.middleware';
+import {
+  isValidStateForCountry,
+  normalizeCountryCode,
+} from './state-ranking.constants';
 
 export type HouseBoard = 'agent' | 'creator' | 'state';
 export const HOUSE_BOARDS: readonly HouseBoard[] = ['agent', 'creator', 'state'];
@@ -121,7 +125,9 @@ export async function listHouseEntries(board: HouseBoard) {
   return prisma.rankingHouseEntry.findMany({
     where: { board },
     orderBy: { income: 'desc' },
-    include: { user: { select: { id: true, displayName: true, hakaId: true } } },
+    include: {
+      user: { select: { id: true, displayName: true, hakaId: true, state: true, country: true } },
+    },
   });
 }
 
@@ -136,12 +142,34 @@ export async function upsertHouseEntry(opts: {
     throw new AppError('Income must be a non-negative number', 400);
   }
   const userId = await resolveUserId(opts.idOrHaka);
+  if (opts.board === 'state') {
+    const profile = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { state: true, country: true },
+    });
+    const stateCode = (profile?.state ?? '').trim().toUpperCase();
+    const country = normalizeCountryCode(profile?.country ?? '');
+    if (!stateCode) {
+      throw new AppError(
+        'House account must have a profile state set before it can appear on State Ranking',
+        400,
+      );
+    }
+    if (!isValidStateForCountry(country, stateCode)) {
+      throw new AppError(
+        `Profile state "${stateCode}" is not valid for country ${country || 'unknown'}`,
+        400,
+      );
+    }
+  }
   const income = Math.floor(opts.income);
   return prisma.rankingHouseEntry.upsert({
     where: { board_userId: { board: opts.board, userId } },
     create: { board: opts.board, userId, income, note: opts.note ?? '', createdBy: opts.createdBy },
     update: { income, ...(opts.note !== undefined ? { note: opts.note } : {}), active: true },
-    include: { user: { select: { id: true, displayName: true, hakaId: true } } },
+    include: {
+      user: { select: { id: true, displayName: true, hakaId: true, state: true, country: true } },
+    },
   });
 }
 
