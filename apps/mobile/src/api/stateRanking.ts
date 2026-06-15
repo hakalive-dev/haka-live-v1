@@ -1,4 +1,12 @@
 import { apiClient } from './client';
+import { useMock } from './config';
+import {
+  mockMyStateRow,
+  mockStateHostsByCode,
+  mockStateRankingRows,
+  mockStateRankingSummary,
+} from './mock/ranking';
+import { INDIA_STATES } from '@haka-live/shared-types/state-rankings';
 
 export type StateSubdivision = { code: string; name: string };
 
@@ -27,6 +35,15 @@ export type StateRankTier = {
 
 export const stateRankingApi = {
   async getConfig(countryCode?: string) {
+    if (useMock) {
+      const code = countryCode?.toUpperCase() ?? 'IN';
+      return {
+        enabled: code === 'IN',
+        countryCode: code,
+        states: INDIA_STATES,
+        requireFaceVerification: true,
+      };
+    }
     const res = await apiClient.get('/leaderboard/state/config', {
       params: countryCode ? { countryCode } : undefined,
     });
@@ -39,6 +56,13 @@ export const stateRankingApi = {
   },
 
   async getStates(params?: { date?: string; countryCode?: string }) {
+    if (useMock) {
+      return {
+        items: mockStateRankingRows,
+        dateKey: mockStateRankingSummary.dateKey,
+        countryCode: params?.countryCode?.toUpperCase() ?? 'IN',
+      };
+    }
     const res = await apiClient.get('/leaderboard/state/states', { params });
     return res.data as {
       items: StateRankingRow[];
@@ -48,6 +72,9 @@ export const stateRankingApi = {
   },
 
   async getSummary(params?: { date?: string; countryCode?: string }) {
+    if (useMock) {
+      return { ...mockStateRankingSummary };
+    }
     const res = await apiClient.get('/leaderboard/state/states/summary', { params });
     return res.data as {
       totalDailyPrizePool: number;
@@ -57,6 +84,14 @@ export const stateRankingApi = {
   },
 
   async getMyState(date?: string) {
+    if (useMock) {
+      return {
+        row: mockMyStateRow,
+        hasState: true,
+        countryCode: 'IN',
+        dateKey: mockStateRankingSummary.dateKey,
+      };
+    }
     const res = await apiClient.get('/leaderboard/state/me/state', {
       params: date ? { date } : undefined,
     });
@@ -69,6 +104,9 @@ export const stateRankingApi = {
   },
 
   async getMyHostRank(date?: string) {
+    if (useMock) {
+      return { rank: 2, score: 268_000, eligible: true };
+    }
     const res = await apiClient.get('/leaderboard/state/me/host', {
       params: date ? { date } : undefined,
     });
@@ -79,6 +117,22 @@ export const stateRankingApi = {
     stateCode: string,
     params?: { page?: number; limit?: number; date?: string; countryCode?: string },
   ) {
+    if (useMock) {
+      const code = stateCode.toUpperCase();
+      const items = mockStateHostsByCode[code] ?? [];
+      const page = params?.page ?? 1;
+      const limit = params?.limit ?? 20;
+      const start = (page - 1) * limit;
+      const slice = items.slice(start, start + limit);
+      return {
+        items: slice,
+        page,
+        limit,
+        hasMore: start + slice.length < items.length,
+        stateCode: code,
+        countryCode: params?.countryCode?.toUpperCase() ?? 'IN',
+      };
+    }
     const res = await apiClient.get(`/leaderboard/state/states/${stateCode}/hosts`, { params });
     return res.data as {
       items: Array<{ rank: number; score: number; user: { id: string; displayName: string; avatar: string } }>;
@@ -100,6 +154,9 @@ export const stateRankingApi = {
   },
 
   async suggestState(lat: number, lng: number) {
+    if (useMock) {
+      return { stateCode: 'TN', stateName: 'Tamil Nadu' };
+    }
     const res = await apiClient.get('/leaderboard/state/suggest-state', {
       params: { lat, lng },
     });
@@ -107,6 +164,9 @@ export const stateRankingApi = {
   },
 
   async getCanInspect() {
+    if (useMock) {
+      return { canInspectStateRankings: true };
+    }
     const res = await apiClient.get('/leaderboard/state/can-inspect');
     return res.data as { canInspectStateRankings: boolean };
   },

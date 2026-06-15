@@ -1071,10 +1071,11 @@ export const coinSellerService = {
     }));
   },
 
-  async getLeaderboard() {
+  async getLeaderboard(stateCode?: string) {
+    const normalizedState = stateCode?.trim().toUpperCase() || undefined;
     const profiles = await prisma.coinSellerProfile.findMany({
-      where: { user: { role: "agent" } },
-      orderBy: { totalCoinsSold: "desc" },
+      where: normalizedState ? { user: { state: normalizedState } } : undefined,
+      orderBy: { totalCoinsSold: 'desc' },
       take: 50,
       include: { user: { select: userSnippet } },
     });

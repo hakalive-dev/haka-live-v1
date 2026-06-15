@@ -181,7 +181,7 @@ export async function listStateRankings(
     const stateCode = entry.id.toUpperCase();
     const stateName = getStateName(country, stateCode) ?? stateCode;
     const poolReward = poolForStateRank(stateRank, config.stateRankTiers);
-    const previewLimit = stateRank <= 3 ? topHostPreview : 0;
+    const previewLimit = topHostPreview;
     const topHosts =
       previewLimit > 0
         ? await fetchTopHostsForState(country, stateCode, dateKey, previewLimit)

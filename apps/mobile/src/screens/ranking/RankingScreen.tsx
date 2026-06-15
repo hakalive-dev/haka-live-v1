@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
+  Animated,
+  Easing,
   FlatList,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,17 +17,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSelector } from 'react-redux';
 
 import { UserAvatar } from '@components/UserAvatar';
-import { RICH, CHARM } from '@screens/level/LevelScreen';
 import { leaderboardApi } from '@api/leaderboard';
+import { useMock } from '@api/config';
+import { mockActivityHostsRank } from '@api/mock/ranking';
 import { queryKeys } from '@api/queryKeys';
 import type { LeaderboardWindow, CreatorStats } from '@api/leaderboard';
 import { Colors, Spacing, Radius } from '@/theme';
 import { RankingSkeleton } from '@components/Skeleton';
 import type { LeaderboardUserEntry } from '@/types';
 import type { RootStackParamList, RootStackScreenProps } from '@navigation/types';
+import type { RootState } from '@store/index';
 import { StateStarTab } from './StateStarTab';
+import { AgentTab } from './AgentTab';
+import { GameTab } from './GameTab';
+import { RankingFrameRow } from './RankingFrameRow';
 
 type Props = RootStackScreenProps<'Ranking'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -48,15 +57,43 @@ const PERIOD_TABS: { key: LeaderboardWindow; label: string }[] = [
   { key: 'monthly', label: 'Monthly' },
 ];
 
-const GAME_EMPTY_MESSAGE = 'Games coming soon';
 const CREATOR_EMPTY_MESSAGE = 'No rankings yet';
-const AGENT_EMPTY_MESSAGE = 'No rankings yet';
+
+const ACTIVITY_COIN_ICON = require('../../../assets/ranking/coin.png');
+const ACTIVITY_BACKGROUND = require('../../../assets/ranking/activity-background.png');
+const ACTIVITY_BG_W = 402;
+const ACTIVITY_BG_H = 898;
+const ACTIVITY_HEADER_VISIBLE_RATIO = 0.32;
+/** Pulls the list panel up over the hero background. */
+const ACTIVITY_LIST_PANEL_LIFT = Spacing.xxxl;
+const ACTIVITY_BG_COLOR = '#12081A';
+const ACTIVITY_LIST_BG = require('../../../assets/ranking/game/list-bg.png');
+const ACTIVITY_LIST_BG_W = 374;
+const ACTIVITY_LIST_HORIZONTAL_PAD = Spacing.md;
+
+function ActivityListPanelBackground() {
+  return (
+    <Image
+      source={ACTIVITY_LIST_BG}
+      style={StyleSheet.absoluteFill}
+      contentFit="fill"
+      cachePolicy="memory-disk"
+    />
+  );
+}
+
+const ACTIVITY_RANK_NOTICE_TEXT =
+  "We rewards for the next rank, If they don't meet the house";
+
+const DISTANCE_FOOTER_H = 48;
+const ACTIVITY_RANK_NOTICE_BANNER_H = 44;
+const MARQUEE_GAP = Spacing.xl;
 
 const TAB_BG_COLORS: Record<MainTab, string> = {
   state:   '#1A0A28',
-  agent:   '#000000',
+  agent:   '#0D1119',
   game:    '#47014A',
-  creator: '#13249A',
+  creator: ACTIVITY_BG_COLOR,
 };
 
 const BANNER_GRADIENTS: Record<MainTab, [string, string, string]> = {
@@ -85,6 +122,16 @@ const BANNER_IMAGES: Record<MainTab, ReturnType<typeof require>> = {
 export function RankingScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const user = useSelector((s: RootState) => s.auth.user);
+  const activityBgHeight = screenWidth * (ACTIVITY_BG_H / ACTIVITY_BG_W);
+  const headerHeight = Math.round(activityBgHeight * ACTIVITY_HEADER_VISIBLE_RATIO);
+  const listPanelInset = Math.round(
+    (screenWidth * (ACTIVITY_BG_W - ACTIVITY_LIST_BG_W)) / (2 * ACTIVITY_BG_W),
+  );
+  const listPanelWidth = screenWidth - listPanelInset * 2;
+  const rowDisplayW = listPanelWidth - ACTIVITY_LIST_HORIZONTAL_PAD * 2;
+  const listPanelTop = insets.top + headerHeight - ACTIVITY_LIST_PANEL_LIFT;
 
   const initialTabParam = route.params?.initialTab;
   const initialTab: MainTab =
@@ -106,17 +153,20 @@ export function RankingScreen({ route }: Props) {
       mainTab,
       period,
     }),
-    queryFn: () => {
-      if (mainTab === 'agent') return leaderboardApi.getAgentCoinsRank();
-      return leaderboardApi.getByCategory('creator_hosts', period);
-    },
-    enabled: mainTab !== 'game' && mainTab !== 'state',
+    queryFn: () => leaderboardApi.getByCategory('creator_hosts', period),
+    enabled: mainTab === 'creator',
     staleTime: 60_000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
-  const data: LeaderboardUserEntry[] = mainTab === 'game' ? [] : (rankingQuery.data ?? []);
-  const loading = mainTab !== 'game' && data.length === 0 && rankingQuery.isLoading;
+  const apiData: LeaderboardUserEntry[] = rankingQuery.data ?? [];
+  const data = useMemo(() => {
+    if (apiData.length > 0) return apiData;
+    const useFixture = useMock || __DEV__;
+    if (!useFixture) return [];
+    return mockActivityHostsRank[period];
+  }, [apiData, period]);
+  const loading = data.length === 0 && rankingQuery.isLoading;
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -167,48 +217,143 @@ export function RankingScreen({ route }: Props) {
       });
   }, [mainTab, period]);
 
-  const creatorMyRank =
-    mainTab === 'creator' && creatorStats != null
-      ? { rank: creatorStats.earnerRank, score: creatorStats.earnerScore }
-      : null;
+  const myEntry = useMemo(
+    () => (user?.id ? data.find((row) => row.id === user.id) : undefined),
+    [data, user?.id],
+  );
 
-  const topScore = data.length > 0 ? data[0].score : 0;
-  const myDistance =
-    creatorMyRank != null && topScore > 0 && creatorMyRank.score != null
-      ? topScore - creatorMyRank.score
-      : topScore;
+  const myScore = myEntry?.score ?? creatorStats?.earnerScore ?? 0;
 
-  const emptyMessage =
-    mainTab === 'game'
-      ? GAME_EMPTY_MESSAGE
-      : mainTab === 'creator'
-        ? CREATOR_EMPTY_MESSAGE
-        : AGENT_EMPTY_MESSAGE;
+  const distanceFromRankAbove = useMemo(() => {
+    if (data.length === 0) return null;
+    const rankedSelf =
+      myEntry ??
+      (creatorStats?.earnerRank != null && creatorStats.earnerRank > 0
+        ? { rank: creatorStats.earnerRank, score: creatorStats.earnerScore, id: user?.id ?? '' }
+        : undefined);
+    if (rankedSelf) {
+      if (rankedSelf.rank <= 1) return 0;
+      const rankAbove = data.find((row) => row.rank === rankedSelf.rank - 1);
+      if (rankAbove) return Math.max(0, rankAbove.score - rankedSelf.score);
+      const idx = data.findIndex((row) => row.rank === rankedSelf.rank);
+      if (idx > 0) return Math.max(0, data[idx - 1]!.score - rankedSelf.score);
+      return 0;
+    }
+    const lowestRanked = data[data.length - 1];
+    if (!lowestRanked) return null;
+    return Math.max(0, lowestRanked.score - myScore + 1);
+  }, [data, myEntry, creatorStats, myScore, user?.id]);
+
+  const showDistanceFooter = data.length > 0 && distanceFromRankAbove != null;
+  const activityFooterBlockH =
+    ACTIVITY_RANK_NOTICE_BANNER_H + Spacing.sm * 2 + DISTANCE_FOOTER_H + Spacing.md * 2;
+  const footerHeight = showDistanceFooter
+    ? activityFooterBlockH + insets.bottom + Spacing.sm
+    : insets.bottom + Spacing.sm;
+
+  const emptyMessage = CREATOR_EMPTY_MESSAGE;
 
   if (mainTab === 'state') {
     return <StateStarTab navigation={navigation} onTabChange={handleMainTabChange} />;
   }
 
+  if (mainTab === 'agent') {
+    return <AgentTab navigation={navigation} onTabChange={handleMainTabChange} />;
+  }
+
+  if (mainTab === 'game') {
+    return <GameTab navigation={navigation} onTabChange={handleMainTabChange} />;
+  }
+
+  const listHeader = (
+    <>
+      <View style={styles.activityListToolbar}>
+        <View style={styles.periodStripLeft}>
+          <Ionicons name="time-outline" size={14} color={Colors.textInverse} />
+          <Text style={styles.activityPeriodStripTimer}>DAY: {dayCountdown}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.periodStripRight}
+          onPress={() => setPeriod(period === 'daily' ? 'weekly' : 'daily')}
+        >
+          <Ionicons name="swap-horizontal-outline" size={14} color={Colors.textInverse} />
+          <Text style={styles.activityPeriodStripCurrent}>
+            {period === 'daily' ? 'Today' : 'Weekly'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {period === 'weekly' ? (
+        <Text style={styles.activityRewardNote}>🏆 Rewards distributed at end of week</Text>
+      ) : null}
+    </>
+  );
+
+  const listPanelStyle = [
+    styles.activityListPanel,
+    {
+      top: listPanelTop,
+      left: listPanelInset,
+      right: listPanelInset,
+      bottom: 0,
+    },
+  ];
+
   return (
     <View style={[styles.screen, { backgroundColor: TAB_BG_COLORS[mainTab] }]}>
-      {/* ── Banner (image covers header + banner together) ── */}
-      <View style={[styles.banner, { paddingTop: insets.top }]}>
-        {/* Full-width background image */}
-        <Image
-          source={BANNER_IMAGES[mainTab]}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
-        {/* Dark gradient overlay for readability */}
-        <LinearGradient
-          colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.25)', 'rgba(0,0,0,0.1)']}
-          style={StyleSheet.absoluteFill}
-        />
+      <Image
+        source={ACTIVITY_BACKGROUND}
+        style={[styles.activityBackground, { width: screenWidth, height: activityBgHeight }]}
+        contentFit="fill"
+        contentPosition="top"
+        cachePolicy="memory-disk"
+        allowDownscaling={false}
+      />
 
-        {/* ── Header: main tabs + back ── */}
-        <View style={styles.header}>
+      {loading ? (
+        <View style={listPanelStyle}>
+          <ActivityListPanelBackground />
+          <View style={[styles.loadingWrap, { paddingHorizontal: ACTIVITY_LIST_HORIZONTAL_PAD }]}>
+            <RankingSkeleton rows={6} />
+          </View>
+        </View>
+      ) : (
+        <View style={listPanelStyle}>
+          <ActivityListPanelBackground />
+          <FlatList
+            style={styles.list}
+            data={data}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={listHeader}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingBottom: footerHeight,
+              paddingHorizontal: ACTIVITY_LIST_HORIZONTAL_PAD,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="#FFD700"
+                colors={['#FFD700']}
+              />
+            }
+            renderItem={({ item }) => (
+              <RankingFrameRow entry={item} displayW={rowDisplayW} variant="activity" />
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyCenter}>
+                <Ionicons name="trophy-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyText}>{emptyMessage}</Text>
+              </View>
+            }
+          />
+        </View>
+      )}
+
+      <View style={[styles.creatorTopSection, { paddingTop: insets.top }]} pointerEvents="box-none">
+        <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+            <Ionicons name="chevron-back" size={24} color={Colors.textInverse} />
           </TouchableOpacity>
           <View style={styles.mainTabRow}>
             {MAIN_TABS.map((tab) => {
@@ -226,133 +371,26 @@ export function RankingScreen({ route }: Props) {
               );
             })}
           </View>
+          <TouchableOpacity hitSlop={8}>
+            <Ionicons name="help-circle-outline" size={22} color={Colors.textInverse} />
+          </TouchableOpacity>
         </View>
-
-        {/* Creator tab — reward level overlay */}
-        {mainTab === 'creator' && creatorStats != null && (
-          <View style={styles.creatorOverlay}>
-            {/* Level + reward card */}
-            <View style={styles.creatorCard}>
-              <View style={styles.creatorCardInner}>
-                <View style={styles.creatorLevelRow}>
-                  <Text style={styles.creatorCardText}>Level: </Text>
-                  {Array.from({ length: creatorStats.stars }).map((_, i) => (
-                    <Image key={i} source={require('../../../assets/ranking/star.png')} style={styles.creatorStarImg} />
-                  ))}
-                </View>
-                <View style={styles.creatorRewardRow}>
-                  <Text style={styles.creatorCardText}>Reward: </Text>
-                  <Image source={require('../../../assets/ranking/reward.png')} style={styles.creatorRewardImg} />
-                  <Text style={styles.creatorCardText}> {creatorStats.earnerScore.toLocaleString()}</Text>
-                </View>
-              </View>
-              <View style={styles.creatorMaxBtn}>
-                <Text style={styles.creatorMaxText}>MAX</Text>
-              </View>
-            </View>
-
-            {/* Progress bar */}
-            <View style={styles.creatorProgressSection}>
-              <View style={styles.creatorProgressNumbers}>
-                <Text style={styles.creatorProgressNum}>{creatorStats.charmXp.toLocaleString()}</Text>
-                <Text style={styles.creatorProgressNum}>{creatorStats.nextLevelXp.toLocaleString()}</Text>
-              </View>
-              <View style={styles.creatorProgressBar}>
-                {(() => {
-                  const pct = creatorStats.nextLevelXp > 0
-                    ? Math.min(Math.floor((creatorStats.charmXp / creatorStats.nextLevelXp) * 100), 99)
-                    : 0;
-                  return (
-                    <View style={[styles.creatorProgressFill, { width: `${pct}%` }]}>
-                      <Text style={styles.creatorProgressPct}>{pct}%</Text>
-                    </View>
-                  );
-                })()}
-              </View>
-              <View style={styles.creatorMaxRewardRow}>
-                <TouchableOpacity style={styles.creatorHelpBtn}>
-                  <Text style={styles.creatorHelpText}>?</Text>
-                </TouchableOpacity>
-                <Text style={styles.creatorMaxRewardText}>Maximum Reward:  🏆 {creatorStats.earnerScore.toLocaleString()}</Text>
-              </View>
-            </View>
-          </View>
-        )}
       </View>
 
-      {/* ── Period strip (creator tab only) ── */}
-      {mainTab === 'creator' && (
-        <>
-          <View style={styles.periodStrip}>
-            <View style={styles.periodStripLeft}>
-              <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
-              <Text style={styles.periodStripTimer}>DAY: {dayCountdown}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.periodStripRight}
-              onPress={() => setPeriod(period === 'daily' ? 'weekly' : 'daily')}
-            >
-              <Ionicons name="swap-horizontal-outline" size={14} color={Colors.textSecondary} />
-              <Text style={styles.periodStripCurrent}>
-                {period === 'daily' ? 'Today' : 'Weekly'}
-              </Text>
-            </TouchableOpacity>
+      {showDistanceFooter ? (
+        <View style={styles.activityFooterWrap}>
+          <View style={styles.rankRewardBanner}>
+            <ActivityRankNoticeMarquee text={ACTIVITY_RANK_NOTICE_TEXT} />
           </View>
-          {period === 'weekly' && (
-            <Text style={styles.rewardNote}>🏆 Rewards distributed at end of week</Text>
-          )}
-        </>
-      )}
-
-      {/* ── Content ── */}
-      {loading ? (
-        <RankingSkeleton rows={6} />
-      ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingBottom: insets.bottom + Spacing.xxxl,
-            paddingHorizontal: Spacing.md,
-            paddingTop: Spacing.md,
-            gap: Spacing.sm,
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor="#FFD700"
-              colors={['#FFD700']}
-            />
-          }
-          renderItem={({ item }) => <AgentRankCard entry={item} />}
-          ListFooterComponent={
-            mainTab === 'creator' ? (
-              <View style={styles.footer}>
-                <View style={styles.footerCard}>
-                  <Text style={styles.footerLabel}>My Rank — </Text>
-                  <Text style={styles.footerRankText}>{creatorMyRank?.rank ?? '--'}</Text>
-                  <View style={styles.footerDivider} />
-                  <Text style={styles.footerLabel}>Distance from Rank 1: </Text>
-                  <Image source={require('../../../assets/ranking/reward.png')} style={styles.footerRewardIcon} />
-                  <Text style={styles.footerScore}>{myDistance.toLocaleString()}</Text>
-                </View>
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyCenter}>
-              <Ionicons
-                name={mainTab === 'game' ? 'game-controller-outline' : 'trophy-outline'}
-                size={48}
-                color={Colors.textTertiary}
-              />
-              <Text style={styles.emptyText}>{emptyMessage}</Text>
-            </View>
-          }
-        />
-      )}
+          <View style={[styles.distanceFooter, { paddingBottom: insets.bottom + Spacing.sm }]}>
+            <Text style={styles.distanceFooterLabel}>Distance from rank is: </Text>
+            <Image source={ACTIVITY_COIN_ICON} style={styles.distanceFooterIcon} contentFit="contain" />
+            <Text style={styles.distanceFooterValue}>
+              {distanceFromRankAbove.toLocaleString()}
+            </Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -449,84 +487,51 @@ function ScoreLabel({ score, large }: { score: number; large?: boolean }) {
   );
 }
 
-// ── Agent Rank Card ───────────────────────────────────────────────────────────
+// ── Activity rank notice marquee ─────────────────────────────────────────────
 
-function AgentRankCard({ entry }: { entry: LeaderboardUserEntry }) {
-  const isBelow = entry.rank >= 4;
+function ActivityRankNoticeMarquee({ text }: { text: string }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const [segmentWidth, setSegmentWidth] = useState(0);
 
-  const gradColors: [string, string] =
-    entry.rank === 1 ? ['#FFB021', '#F6C875'] :
-    entry.rank === 2 ? ['#7897D9', '#3C76F3'] :
-    entry.rank === 3 ? ['#CF9067', '#E07630'] :
-    ['#6BA1C5', '#6BA1C5'];
+  useEffect(() => {
+    if (segmentWidth <= 0) return;
+
+    translateX.setValue(0);
+    const distance = segmentWidth + MARQUEE_GAP;
+    const duration = Math.max(10_000, distance * 28);
+    const anim = Animated.loop(
+      Animated.timing(translateX, {
+        toValue: -distance,
+        duration,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [segmentWidth, translateX]);
 
   return (
-    <LinearGradient
-      colors={gradColors}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={[styles.agentCard, styles.agentCardTop]}
-    >
-      {/* Avatar */}
-      <View style={styles.agentAvatarWrap}>
-        <UserAvatar
-          user={{
-            displayName: entry.displayName,
-            avatar: entry.avatar,
-            equippedFrame: entry.equippedFrame ?? null,
+    <View style={styles.marqueeClip}>
+      <Animated.View
+        style={[
+          styles.marqueeTrack,
+          segmentWidth > 0 ? { transform: [{ translateX }] } : null,
+        ]}
+      >
+        <Text
+          style={styles.rankRewardBannerText}
+          onLayout={(e) => {
+            const width = e.nativeEvent.layout.width;
+            if (width > 0) setSegmentWidth(width);
           }}
-          size={56}
-        />
-      </View>
-
-      {/* Info */}
-      <View style={styles.agentInfo}>
-        <View style={styles.agentNameRow}>
-          <Text style={[styles.agentName, isBelow && styles.agentNameWhite]} numberOfLines={1}>
-            {entry.displayName}
-          </Text>
-          {isBelow && <Text style={styles.agentFlagIcon}>🏳️</Text>}
-        </View>
-        <View style={styles.agentBadgeRow}>
-          {entry.richLevel != null && entry.richLevel > 0 && (
-            <Image
-              source={RICH[Math.min(Math.max(entry.richLevel, 1), 100)] ?? RICH[1]}
-              style={styles.agentLevelImg}
-              contentFit="contain"
-            />
-          )}
-          {entry.charmLevel != null && entry.charmLevel > 0 && (
-            <Image
-              source={CHARM[Math.min(Math.max(entry.charmLevel, 0), 100)] ?? CHARM[0]}
-              style={styles.agentLevelImg}
-              contentFit="contain"
-            />
-          )}
-        </View>
-        <View style={styles.agentBeanRow}>
-          {isBelow && <Text style={styles.agentRewardLabel}>Reward: </Text>}
-          <Image source={require('../../../assets/ranking/reward.png')} style={styles.agentIconImg} />
-          <Text style={styles.agentBeanText}>{entry.score.toLocaleString()}</Text>
-        </View>
-      </View>
-
-      {/* Right: coin + received/unreceived */}
-      <View style={styles.agentRight}>
-        <View style={styles.agentCoinRow}>
-          <Image source={require('../../../assets/ranking/coin.png')} style={styles.agentIconImg} />
-          <Text style={styles.agentCoinAmount}>{entry.score.toLocaleString()}</Text>
-        </View>
-        {isBelow ? (
-          <View style={styles.agentReceivedPill}>
-            <Text style={styles.agentReceived}>Received</Text>
-          </View>
-        ) : (
-          <View style={styles.agentUnreceivedPill}>
-            <Text style={styles.agentUnreceived}>Unreceived</Text>
-          </View>
-        )}
-      </View>
-    </LinearGradient>
+        >
+          {text}
+        </Text>
+        <View style={{ width: MARQUEE_GAP }} />
+        <Text style={styles.rankRewardBannerText}>{text}</Text>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -540,30 +545,72 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-
-  // Header (lives inside banner, no background of its own)
-  header: {
+  activityBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  list: {
+    flex: 1,
+  },
+  activityListPanel: {
+    position: 'absolute',
+    overflow: 'hidden',
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+  },
+  activityListToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  activityPeriodStripTimer: {
+    fontSize: 13,
+    color: Colors.textInverse,
+    fontWeight: '600',
+  },
+  activityPeriodStripCurrent: {
+    fontSize: 13,
+    color: Colors.textInverse,
+    fontWeight: '600',
+  },
+  activityRewardNote: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    paddingBottom: Spacing.xs,
+  },
+
+  banner: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    overflow: 'hidden',
+    minHeight: 320,
+  },
+  bannerInner: {
+    flex: 1,
+    justifyContent: 'space-between',
+    position: 'relative',
+    minHeight: 280,
+  },
+  bannerSpacer: { flex: 1, minHeight: Spacing.md },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.sm,
-    width: '100%',
   },
   mainTabRow: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(120,120,120,0.45)',
+    backgroundColor: 'rgba(60,60,60,0.55)',
     borderRadius: Radius.full,
-    paddingHorizontal: 3,
-    paddingVertical: 3,
+    padding: 3,
   },
   mainTabItem: {
     flex: 1,
-    paddingVertical: 5,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
     borderRadius: Radius.full,
     alignItems: 'center',
   },
@@ -571,23 +618,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   mainTabText: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.75)',
+    color: 'rgba(255,255,255,0.8)',
   },
   mainTabTextActive: {
-    color: '#E8A020',
+    color: '#D4880A',
     fontWeight: '700',
-  },
-
-  // Banner (also contains the header row)
-  banner: {
-    paddingBottom: Spacing.sm,
-    paddingHorizontal: 0,
-    gap: Spacing.xs,
-    alignItems: 'center',
-    overflow: 'hidden',
-    minHeight: 320,
   },
   bannerImage: {
     width: '100%',
@@ -666,6 +703,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingWrap: {
+    flex: 1,
+  },
+  creatorTopSection: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.md,
+    zIndex: 2,
   },
 
   // Top 3
@@ -1012,143 +1060,6 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
-  // Activity overlay
-  creatorOverlay: {
-    width: '100%',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    gap: Spacing.sm,
-    alignItems: 'center',
-  },
-  creatorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: '#7B22CC',
-    borderWidth: 2,
-    borderColor: '#FFD700',
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.md,
-    paddingLeft: Spacing.lg,
-    paddingRight: Spacing.sm,
-    gap: Spacing.md,
-  },
-  creatorCardInner: {
-    gap: 6,
-  },
-  creatorCardText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  creatorLevelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  creatorStarImg: {
-    width: 18,
-    height: 18,
-  },
-  creatorRewardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  creatorRewardImg: {
-    width: 18,
-    height: 18,
-  },
-  creatorMaxBtn: {
-    backgroundColor: '#FFD700',
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    minWidth: 50,
-    alignItems: 'center',
-  },
-  creatorMaxText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1A1A2E',
-  },
-  creatorProgressSection: {
-    gap: 6,
-    width: '100%',
-  },
-  creatorProgressNumbers: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  creatorProgressNum: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  creatorProgressBar: {
-    height: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: Radius.full,
-    overflow: 'hidden',
-  },
-  creatorProgressFill: {
-    width: '50%',
-    height: '100%',
-    backgroundColor: '#E8A020',
-    borderRadius: Radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  creatorProgressPct: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  creatorMaxRewardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  creatorHelpBtn: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  creatorHelpText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.7)',
-  },
-  creatorMaxRewardText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '500',
-  },
-  creatorSelectorsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingBottom: Spacing.sm,
-    width: '100%',
-  },
-  creatorSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    gap: 4,
-  },
-  creatorSelectorText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-  },
-
   // Period strip
   periodStrip: {
     flexDirection: 'row',
@@ -1184,47 +1095,62 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xs,
   },
 
-  // Footer
-  footer: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xl,
-  },
-  footerCard: {
+  distanceFooter: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceElevated,
-    borderRadius: Radius.md,
+    justifyContent: 'flex-start',
+    backgroundColor: Colors.surface,
+    borderRadius: 0,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    minHeight: DISTANCE_FOOTER_H + Spacing.md,
   },
-  footerLabel: {
-    fontSize: 13,
-    color: Colors.textSecondary,
+  activityFooterWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    zIndex: 10,
+    elevation: 10,
   },
-  footerRankText: {
-    fontSize: 14,
-    fontWeight: '700',
+  rankRewardBanner: {
+    backgroundColor: Colors.primary,
+    overflow: 'hidden',
+    minHeight: ACTIVITY_RANK_NOTICE_BANNER_H,
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  marqueeClip: {
+    overflow: 'hidden',
+    width: '100%',
+  },
+  marqueeTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rankRewardBannerText: {
     color: Colors.textPrimary,
-  },
-  footerDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: Colors.border,
-    marginHorizontal: Spacing.md,
-  },
-  footerCoin: {
     fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
   },
-  footerRewardIcon: {
+  distanceFooterLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  distanceFooterIcon: {
     width: 16,
     height: 16,
+    marginLeft: 2,
   },
-  footerScore: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.gold,
+  distanceFooterValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.textSecondary,
     marginLeft: 4,
   },
 

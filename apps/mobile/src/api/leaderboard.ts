@@ -1,6 +1,13 @@
 import { apiClient } from './client';
 import { useMock } from './config';
 import { mockFans, mockLeaderboard } from './mock/leaderboard';
+import {
+  mockActivityCreatorStats,
+  mockActivityHostsRank,
+  mockAgentCoinsRank,
+  mockGameTeenPattiRank,
+  mockGameTopGamerRank,
+} from './mock/ranking';
 import type { LeaderboardUserEntry, LeaderboardFamilyEntry, MyRankResult, EquippedCosmetic } from '../types';
 
 export type LeaderboardWindow   = 'daily' | 'weekly' | 'monthly';
@@ -140,16 +147,34 @@ export const leaderboardApi = {
     return [];
   },
 
-  async getAgentCoinsRank(): Promise<LeaderboardUserEntry[]> {
-    if (useMock) return mockLeaderboard.gifters.daily;
-    const res = await apiClient.get('/leaderboard/coin_sellers');
+  async getGameRank(mode: 'top_gamer' | 'teen_patti' = 'top_gamer'): Promise<LeaderboardUserEntry[]> {
+    if (useMock) {
+      return mode === 'teen_patti' ? mockGameTeenPattiRank : mockGameTopGamerRank;
+    }
+    const endpoint = mode === 'teen_patti' ? '/leaderboard/earners' : '/leaderboard/gifters';
+    const res = await apiClient.get(endpoint, { params: { period: 'monthly' } });
+    return (res.data.items as Parameters<typeof flattenEntry>[0][]).map(flattenEntry);
+  },
+
+  async getAgentCoinsRank(stateCode?: string): Promise<LeaderboardUserEntry[]> {
+    if (useMock) {
+      const normalized = stateCode?.trim().toUpperCase();
+      const filtered = normalized
+        ? mockAgentCoinsRank.filter((row) => row.stateCode === normalized)
+        : mockAgentCoinsRank;
+      return filtered.map((row, index) => ({ ...row, rank: index + 1 }));
+    }
+    const res = await apiClient.get('/leaderboard/coin_sellers', {
+      params: stateCode ? { stateCode } : undefined,
+    });
     const items = (res.data.items ?? res.data) as CoinSellerRankItem[];
     return items.map(flattenCoinSellerItem);
   },
 
   async getByCategory(category: LeaderboardCategory, window: LeaderboardWindow = 'daily'): Promise<LeaderboardUserEntry[]> {
     if (useMock) {
-      // Return category-appropriate mock data
+      if (category === 'creator_hosts') return mockActivityHostsRank[window];
+      if (category === 'agent_coins') return mockAgentCoinsRank;
       const isEarnerCategory = ['earners', 'hosts', 'agent_income', 'activity_agency', 'activity_host', 'game_winner', 'charm', 'creator_income', 'creator_hosts'].includes(category);
       return isEarnerCategory ? mockLeaderboard.hosts[window] : mockLeaderboard.gifters[window];
     }
@@ -215,16 +240,7 @@ export const leaderboardApi = {
   },
 
   async getCreatorStats(period: LeaderboardWindow = 'daily'): Promise<CreatorStats> {
-    if (useMock) {
-      return {
-        charmLevel: 37,
-        charmXp: 2_450_000,
-        nextLevelXp: 5_065_300,
-        stars: 2,
-        earnerScore: 128_400,
-        earnerRank: 8,
-      };
-    }
+    if (useMock) return mockActivityCreatorStats[period];
     const res = await apiClient.get('/leaderboard/creator/me', { params: { period } });
     return res.data as CreatorStats;
   },

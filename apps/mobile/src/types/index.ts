@@ -1009,6 +1009,8 @@ export interface LeaderboardUserEntry {
   activeSpecialIdLevel?: string | null;
   richLevel?: number | null;
   charmLevel?: number | null;
+  /** ISO state code when ranking is scoped by state (agent coin sellers). */
+  stateCode?: string | null;
 }
 
 export interface LeaderboardFamilyEntry {

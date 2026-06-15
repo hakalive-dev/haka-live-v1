@@ -61,6 +61,7 @@ export const Spacing = {
   xl:   24,
   xxl:  32,
   xxxl: 48,
+  xxxxl: 64,
 } as const;
 
 // ── Border Radius ─────────────────────────────────────────────────────────────

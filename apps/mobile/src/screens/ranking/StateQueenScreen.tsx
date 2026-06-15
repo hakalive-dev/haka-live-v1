@@ -22,7 +22,7 @@ import type { RootState } from '@store/index';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StateQueen'>;
 
-const GOLD_BAG = require('../../../assets/ranking/state-star/gold-bag.png');
+const BEAN_ICON = require('../../../assets/bean.png');
 
 function formatNum(n: number): string {
   return n.toLocaleString();
@@ -90,7 +90,7 @@ export function StateQueenScreen({ navigation, route }: Props) {
                 {item.user.displayName}
               </Text>
               <View style={styles.scoreRow}>
-                <Image source={GOLD_BAG} style={styles.icon} />
+                <Image source={BEAN_ICON} style={styles.icon} contentFit="contain" />
                 <Text style={styles.score}>{formatNum(item.score)}</Text>
               </View>
             </View>

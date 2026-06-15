@@ -247,9 +247,10 @@ export const coinSellerController = {
     }
   },
 
-  async getLeaderboard(_req: Request, res: Response, next: NextFunction) {
+  async getLeaderboard(req: Request, res: Response, next: NextFunction) {
     try {
-      const list = await coinSellerService.getLeaderboard();
+      const stateCode = typeof req.query.stateCode === 'string' ? req.query.stateCode : undefined;
+      const list = await coinSellerService.getLeaderboard(stateCode);
       return ok(res, { items: list });
     } catch (err) {
       next(err);

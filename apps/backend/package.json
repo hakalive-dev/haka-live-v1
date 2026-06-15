@@ -23,6 +23,7 @@
     "seed:withdrawal-message": "ts-node scripts/seed-withdrawal-message-sample.ts",
     "seed:admin": "ts-node prisma/seed-admin.ts",
     "seed:female-host": "ts-node prisma/seed-female-host.ts",
+    "seed:state-ranking-host": "ts-node prisma/seed-state-ranking-host.ts",
     "seed:testuser": "ts-node prisma/seed-testuser.ts",
     "backfill:haka-ids": "ts-node prisma/backfill-haka-ids.ts",
     "backfill:gift-commission": "ts-node prisma/backfill-gift-commission.ts",
