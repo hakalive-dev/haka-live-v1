@@ -14,6 +14,7 @@ const listSchema = z.object({
   hostType: z.string().optional(),
   isActive: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
   country: z.string().optional(),
+  gender: z.enum(['male', 'female', '']).optional(),
   isMuted: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
   sort: z.enum(['createdAt', 'updatedAt', 'displayName', 'coinBalance', 'richLevel']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),

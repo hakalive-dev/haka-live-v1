@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import * as api from '@/api/rankingRewards';
+import FemaleHostSearchPicker from '@/components/rank-management/FemaleHostSearchPicker.vue';
 
 // The board is fixed per route (separate Activity / Agent sidebar pages).
 const props = defineProps<{ board: api.RewardBoard }>();
@@ -42,7 +43,7 @@ async function load() {
 
 async function addHouse() {
   if (!houseForm.value.idOrHaka.trim()) {
-    error.value = 'Enter a user or Haka ID.';
+    error.value = 'Select a female host.';
     return;
   }
   saving.value = true;
@@ -253,8 +254,8 @@ onMounted(load);
       <div class="add-form">
         <div class="form-row">
           <div class="form-field">
-            <label class="form-label">User ID or Haka ID</label>
-            <input class="form-input" v-model="houseForm.idOrHaka" placeholder="e.g. 1234567 or uuid" />
+            <label class="form-label">Female host</label>
+            <FemaleHostSearchPicker v-model="houseForm.idOrHaka" :disabled="saving" />
           </div>
           <div class="form-field">
             <label class="form-label">Income</label>

@@ -41,6 +41,7 @@ export interface ListUsersParams {
   isActive?: boolean;
   isMuted?: boolean;
   country?: string;
+  gender?: string;
   sort?: string;
   order?: "asc" | "desc";
 }
@@ -57,6 +58,7 @@ export async function listUsers(params: ListUsersParams) {
     isActive,
     isMuted,
     country,
+    gender,
     sort = "createdAt",
     order = "desc",
   } = params;
@@ -80,6 +82,7 @@ export async function listUsers(params: ListUsersParams) {
   if (isActive !== undefined) where.isActive = isActive;
   if (isMuted !== undefined) where.isMuted = isMuted;
   if (country) where.country = { contains: country, mode: "insensitive" };
+  if (gender === "male" || gender === "female") where.gender = gender;
 
   // Sort by coin balance or rich level requires special ordering
   const orderByClause: Prisma.UserOrderByWithRelationInput =
@@ -114,6 +117,7 @@ export async function listUsers(params: ListUsersParams) {
         onboardingComplete: true,
         country: true,
         gender: true,
+        state: true,
         city: true,
         createdAt: true,
         updatedAt: true,

@@ -109,15 +109,21 @@ export function houseIncomeByState(
 
 // ── Admin CRUD ────────────────────────────────────────────────────────────────
 
-/** Resolve an entered Haka ID or raw user id to a real user id (throws 404 if unknown). */
-async function resolveUserId(idOrHaka: string): Promise<string> {
+/** Resolve a house-entry account — must be an existing female host. */
+async function resolveHouseUserId(idOrHaka: string): Promise<string> {
   const value = idOrHaka.trim();
-  if (!value) throw new AppError('User id or Haka id required', 400);
+  if (!value) throw new AppError('Select a female host', 400);
   const user = await prisma.user.findFirst({
     where: { OR: [{ id: value }, { hakaId: value }] },
-    select: { id: true },
+    select: { id: true, role: true, gender: true },
   });
   if (!user) throw new AppError('No user found for that id', 404);
+  if (user.role !== 'host') {
+    throw new AppError('House entries must use a host account', 400);
+  }
+  if (user.gender !== 'female') {
+    throw new AppError('House entries must use a female host account', 400);
+  }
   return user.id;
 }
 
@@ -141,7 +147,7 @@ export async function upsertHouseEntry(opts: {
   if (!Number.isFinite(opts.income) || opts.income < 0) {
     throw new AppError('Income must be a non-negative number', 400);
   }
-  const userId = await resolveUserId(opts.idOrHaka);
+  const userId = await resolveHouseUserId(opts.idOrHaka);
   if (opts.board === 'state') {
     const profile = await prisma.user.findUnique({
       where: { id: userId },
