@@ -15,6 +15,7 @@ import Constants from 'expo-constants';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
 
 import { chatApi } from '@api/chat';
+import { useLoopingCallSound } from '@hooks/useCallSound';
 import { Colors, Radius, Spacing } from '@/theme';
 import type { RootStackScreenProps } from '@navigation/types';
 
@@ -61,6 +62,7 @@ export function VideoCallScreen({ route, navigation }: Props) {
     agoraToken,
     appId,
     uid,
+    incoming,
     callType = 'video',
   } = route.params;
   const insets = useSafeAreaInsets();
@@ -69,6 +71,7 @@ export function VideoCallScreen({ route, navigation }: Props) {
   const [connected, setConnected]     = useState(false);
   const [micEnabled, setMicEnabled]   = useState(true);
   const [camEnabled, setCamEnabled]   = useState(!isVoiceCall);
+  const [speakerOn, setSpeakerOn]     = useState(true);
   const [remoteUid, setRemoteUid]     = useState<number | null>(null);
   const [duration, setDuration]       = useState(0);
   const [connecting, setConnecting]   = useState(true);
@@ -76,9 +79,13 @@ export function VideoCallScreen({ route, navigation }: Props) {
   const engineRef    = useRef<any>(null);
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const remoteUidRef = useRef<number | null>(null);
+  const endSignalSentRef = useRef(false);
   const fadeAnim     = useRef(new Animated.Value(0)).current;
 
   remoteUidRef.current = remoteUid;
+
+  // Caller hears ringback until the callee's stream arrives.
+  useLoopingCallSound('ringback', !incoming && connected && remoteUid == null);
 
   // ── Connect Agora ──────────────────────────────────────────────────────────
 
@@ -146,6 +153,13 @@ export function VideoCallScreen({ route, navigation }: Props) {
           console.warn('[VideoCall] Agora error', err, msg);
           setConnecting(false);
         },
+        onTokenPrivilegeWillExpire: () => {
+          // Long calls outlive the token TTL — mint a fresh one for the same channel.
+          void chatApi
+            .getCallToken(userId)
+            .then((t) => engineRef.current?.renewToken(t.token))
+            .catch(() => {});
+        },
       });
 
       engine.enableAudio();
@@ -161,6 +175,7 @@ export function VideoCallScreen({ route, navigation }: Props) {
         autoSubscribeAudio: true,
         autoSubscribeVideo: !isVoiceCall,
       });
+      engine.setEnableSpeakerphone(true);
     } catch (err) {
       console.warn('[VideoCall] connect failed:', err);
       setConnecting(false);
@@ -174,14 +189,32 @@ export function VideoCallScreen({ route, navigation }: Props) {
     try {
       engine.stopPreview();
       await engine.leaveChannel();
+      engine.unregisterEventHandler({});
       engine.release();
     } catch {}
     engineRef.current = null;
   }, []);
 
+  const sendEndSignal = useCallback(() => {
+    if (endSignalSentRef.current) return;
+    endSignalSentRef.current = true;
+    // Cancel while still ringing produces a "missed call" log; the backend also
+    // settles answered rows from either endpoint, so a race with answer is safe.
+    if (remoteUidRef.current != null) {
+      void chatApi.postCallEnd(userId).catch(() => {});
+    } else {
+      void chatApi.postCallCancel(userId).catch(() => {});
+    }
+  }, [userId]);
+
   useEffect(() => {
     connectAgora();
-    return () => { disconnectAgora(); };
+    return () => {
+      // Covers every way off this screen (back gesture, remote-end navigation, …);
+      // the peer's signal paths are idempotent server-side.
+      sendEndSignal();
+      disconnectAgora();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -195,14 +228,10 @@ export function VideoCallScreen({ route, navigation }: Props) {
   // ── Controls ───────────────────────────────────────────────────────────────
 
   const handleEndCall = useCallback(async () => {
-    if (remoteUidRef.current != null) {
-      void chatApi.postCallEnd(userId).catch(() => {});
-    } else {
-      void chatApi.postCallCancel(userId).catch(() => {});
-    }
+    sendEndSignal();
     await disconnectAgora();
     navigation.goBack();
-  }, [disconnectAgora, navigation, userId]);
+  }, [sendEndSignal, disconnectAgora, navigation]);
 
   const handleToggleMic = useCallback(() => {
     const next = !micEnabled;
@@ -226,6 +255,20 @@ export function VideoCallScreen({ route, navigation }: Props) {
       }
     }
   }, [camEnabled]);
+
+  const handleFlipCamera = useCallback(() => {
+    if (!IS_EXPO_GO && engineRef.current) {
+      engineRef.current.switchCamera();
+    }
+  }, []);
+
+  const handleToggleSpeaker = useCallback(() => {
+    const next = !speakerOn;
+    setSpeakerOn(next);
+    if (!IS_EXPO_GO && engineRef.current) {
+      engineRef.current.setEnableSpeakerphone(next);
+    }
+  }, [speakerOn]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -257,9 +300,9 @@ export function VideoCallScreen({ route, navigation }: Props) {
                 ? 'Connecting…'
                 : remoteUid
                 ? formatDuration(duration)
-                : isVoiceCall
-                ? 'Ringing…'
-                : 'Waiting for answer…'}
+                : incoming
+                ? 'Connecting…'
+                : 'Ringing…'}
             </Text>
           </View>
         </View>
@@ -280,11 +323,7 @@ export function VideoCallScreen({ route, navigation }: Props) {
             <Text style={styles.noRemoteInitial}>{displayName[0]?.toUpperCase() ?? '?'}</Text>
           </View>
           <Text style={styles.noRemoteText}>
-            {remoteUid
-              ? displayName
-              : isVoiceCall
-              ? 'Ringing…'
-              : 'Waiting for answer…'}
+            {remoteUid ? displayName : incoming ? 'Connecting…' : 'Ringing…'}
           </Text>
         </View>
       )}
@@ -295,12 +334,29 @@ export function VideoCallScreen({ route, navigation }: Props) {
           style={[styles.ctrlBtn, !micEnabled && styles.ctrlBtnOff]}
           onPress={handleToggleMic}
         >
-          <Ionicons name={micEnabled ? 'mic' : 'mic-off'} size={24} color="#FFF" />
+          <Ionicons name={micEnabled ? 'mic' : 'mic-off'} size={22} color="#FFF" />
           <Text style={styles.ctrlLabel}>{micEnabled ? 'Mute' : 'Unmute'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.ctrlBtn, !camEnabled && styles.ctrlBtnOff]}
+          onPress={handleFlipCamera}
+          disabled={!camEnabled}
+        >
+          <Ionicons name="camera-reverse" size={22} color="#FFF" />
+          <Text style={styles.ctrlLabel}>Flip</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
           <Ionicons name="call" size={28} color="#FFF" style={{ transform: [{ rotate: '135deg' }] }} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.ctrlBtn, !speakerOn && styles.ctrlBtnOff]}
+          onPress={handleToggleSpeaker}
+        >
+          <Ionicons name={speakerOn ? 'volume-high' : 'volume-low'} size={22} color="#FFF" />
+          <Text style={styles.ctrlLabel}>Speaker</Text>
         </TouchableOpacity>
 
         {isVoiceCall ? (
@@ -310,7 +366,7 @@ export function VideoCallScreen({ route, navigation }: Props) {
             style={[styles.ctrlBtn, !camEnabled && styles.ctrlBtnOff]}
             onPress={handleToggleCam}
           >
-            <Ionicons name={camEnabled ? 'videocam' : 'videocam-off'} size={24} color="#FFF" />
+            <Ionicons name={camEnabled ? 'videocam' : 'videocam-off'} size={22} color="#FFF" />
             <Text style={styles.ctrlLabel}>{camEnabled ? 'Camera' : 'No cam'}</Text>
           </TouchableOpacity>
         )}
@@ -442,10 +498,10 @@ const styles = StyleSheet.create({
   },
   ctrlBtn: {
     alignItems: 'center',
-    gap: Spacing.xs,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    gap: 2,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
   },

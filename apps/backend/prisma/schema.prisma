@@ -95,6 +95,10 @@ model User {
   receivedDMs        DirectMessage[]         @relation("DMRecipient")
   hiddenDirectMessages DirectMessageHidden[] @relation("DMHiddenByUser")
 
+  // 1:1 video calls
+  callsMade     Call[] @relation("CallsMade")
+  callsReceived Call[] @relation("CallsReceived")
+
   // Wallet
   wallet             Wallet?             @relation("UserWallet")
   withdrawalRequests WithdrawalRequest[] @relation("UserWithdrawals")
@@ -215,6 +219,8 @@ model User {
 
   musicTracks UserMusicTrack[] @relation("UserMusicLibrary")
   stateRankingRewards StateRankingReward[] @relation("StateRankingRewards")
+  rankingRewards      RankingReward[]      @relation("RankingRewards")
+  rankingHouseEntries RankingHouseEntry[]  @relation("RankingHouseEntries")
 
   @@index([agentId])
   @@map("users")
@@ -412,7 +418,7 @@ model DirectMessage {
   recipient    User     @relation("DMRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   content      String
   isRead       Boolean  @default(false)
-  messageType  String   @default("text") // text | gift | image | agent_application | sub_agent_invite | coin_transfer | system_notice
+  messageType  String   @default("text") // text | gift | image | agent_application | sub_agent_invite | coin_transfer | system_notice | call_log
   mediaUrl     String?
   giftId       String?
   giftName     String   @default("")
@@ -443,6 +449,26 @@ model DirectMessageHidden {
   @@unique([messageId, userId])
   @@index([userId])
   @@map("direct_message_hidden")
+}
+
+// ── Call (1:1 video call lifecycle — ring timeout, missed/busy, call_log DMs) ──
+model Call {
+  id         String    @id @default(uuid())
+  callerId   String
+  caller     User      @relation("CallsMade", fields: [callerId], references: [id], onDelete: Cascade)
+  calleeId   String
+  callee     User      @relation("CallsReceived", fields: [calleeId], references: [id], onDelete: Cascade)
+  channelId  String
+  status     String    @default("ringing") // ringing | answered | declined | cancelled | missed | busy | ended
+  startedAt  DateTime  @default(now())
+  answeredAt DateTime?
+  endedAt    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([calleeId, status])
+  @@index([callerId, status])
+  @@map("calls")
 }
 
 // ── TeamAnnouncement (admin broadcast — one logical “current” row; history optional) ──
@@ -2498,4 +2524,58 @@ model StateRankingConfig {
   updatedAt               DateTime @updatedAt
 
   @@map("state_ranking_config")
+}
+
+// ── Ranking rewards (Agent / Activity leaderboards) ───────────────────────────
+// One config row per board ('agent' | 'creator'). Ships DISABLED — no payout until
+// a super-admin sets tiers and flips `enabled`. Beans are credited at period close.
+model RankingRewardConfig {
+  id                      String   @id // board key: 'agent' | 'creator'
+  enabled                 Boolean  @default(false)
+  period                  String   @default("daily") // daily | weekly | monthly
+  rewardTiers             Json     @default("[]") // [{ rankMin, rankMax, amount }]
+  requireFaceVerification Boolean  @default(true)
+  updatedAt               DateTime @updatedAt
+
+  @@map("ranking_reward_config")
+}
+
+// Admin-seeded "house" entries — company-owned accounts placed into a ranking at a chosen
+// income to raise the competitive bar. Merged into rankings at READ time (real scores stay
+// untouched) and NEVER paid by reward settlement. Temporary; deactivate to remove instantly.
+model RankingHouseEntry {
+  id        String   @id @default(uuid())
+  board     String   // 'agent' | 'creator' | 'state'
+  userId    String
+  user      User     @relation("RankingHouseEntries", fields: [userId], references: [id], onDelete: Cascade)
+  income    Int      // score it ranks at
+  note      String   @default("")
+  active    Boolean  @default(true)
+  createdBy String   // admin user id
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([board, userId])
+  @@index([board, active])
+  @@map("ranking_house_entries")
+}
+
+// Idempotent payout audit — one row per (board, period, periodDate, user). The unique
+// constraint + in-transaction existence check prevents double-pay on retry/restart.
+model RankingReward {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation("RankingRewards", fields: [userId], references: [id], onDelete: Cascade)
+  board        String   // 'agent' | 'creator'
+  period       String   // daily | weekly | monthly
+  periodDate   DateTime
+  rank         Int
+  score        Int
+  rewardAmount Int
+  walletTxId   String?
+  createdAt    DateTime @default(now())
+
+  @@unique([board, period, periodDate, userId])
+  @@index([board, period, periodDate])
+  @@map("ranking_rewards")
 }

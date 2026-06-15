@@ -17,6 +17,8 @@ jest.mock('../../config/prisma', () => ({
       create: jest.fn(),
     },
     stateRankingReward: { findUnique: jest.fn() },
+    // House entries are merged into reads; default to none so these tests see real data only.
+    rankingHouseEntry: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   },
 }));
@@ -32,11 +34,6 @@ jest.mock('../moderation/tags.service', () => ({
 import { redis } from '../../config/redis';
 import { prisma } from '../../config/prisma';
 import {
-  hostRewardAmount,
-  poolForStateRank,
-  totalDailyPrizePoolForStateCount,
-} from '@haka-live/shared-types/state-rankings';
-import {
   isStateRankingEligibleHost,
   dailyDateKey,
 } from './state-ranking-keys';
@@ -47,7 +44,13 @@ import {
   updateStateHostScore,
   canInspectAllStateRankings,
 } from './state-ranking.service';
-import { DEFAULT_STATE_RANK_REWARD_TIERS } from './state-ranking.constants';
+import {
+  DEFAULT_STATE_RANK_REWARD_TIERS,
+  DEFAULT_HOST_REWARD_SPLITS,
+  hostRewardAmount,
+  poolForStateRank,
+  totalDailyPrizePoolForStateCount,
+} from './state-ranking.constants';
 
 const mockRedis = redis as jest.Mocked<typeof redis>;
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
@@ -108,10 +111,11 @@ describe('state-ranking reward math', () => {
 
   it('splits pool 65/20/10/5 to top four hosts', () => {
     const pool = 1_000_000;
-    expect(hostRewardAmount(pool, 1)).toBe(650_000);
-    expect(hostRewardAmount(pool, 2)).toBe(200_000);
-    expect(hostRewardAmount(pool, 3)).toBe(100_000);
-    expect(hostRewardAmount(pool, 4)).toBe(50_000);
+    const splits = [...DEFAULT_HOST_REWARD_SPLITS];
+    expect(hostRewardAmount(pool, 1, splits)).toBe(650_000);
+    expect(hostRewardAmount(pool, 2, splits)).toBe(200_000);
+    expect(hostRewardAmount(pool, 3, splits)).toBe(100_000);
+    expect(hostRewardAmount(pool, 4, splits)).toBe(50_000);
   });
 
   it('sums tier pools for active state count', () => {

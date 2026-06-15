@@ -1,5 +1,6 @@
 import type { DirectMessage } from '@/types';
 import {
+  callLogDmPayload,
   coinTransferDmBody,
   parseLegacyDmJson,
   resolveStructuredDmCard,
@@ -21,6 +22,7 @@ const STRUCTURED_TYPES = new Set([
   'support_reply',
   'withdrawal_update',
   'system_notice',
+  'call_log',
 ]);
 
 function isStructuredMessage(message: DirectMessage): boolean {
@@ -61,6 +63,12 @@ export function getDmCopyText(message: DirectMessage): string | null {
     const legacy = parseLegacyDmJson(message.content);
     if (typeof legacy?.title === 'string') return legacy.title;
     if (typeof legacy?.body === 'string') return legacy.body;
+  }
+  if (type === 'call_log') {
+    const payload = callLogDmPayload(message.content);
+    if (payload?.outcome === 'ended') return 'Video call';
+    if (payload?.outcome === 'declined') return 'Call declined';
+    return 'Missed video call';
   }
 
   const text = message.content?.trim();

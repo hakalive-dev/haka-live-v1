@@ -119,6 +119,46 @@ export function withdrawalUpdateDmPayload(content: string): WithdrawalUpdateDmPa
   return null;
 }
 
+export type CallLogDmPayload = {
+  outcome: 'ended' | 'missed' | 'declined';
+  durationSeconds?: number;
+};
+
+export function callLogDmPayload(content: string): CallLogDmPayload | null {
+  const legacy = parseLegacyDmJson(content);
+  if (legacy?.kind !== 'call_log') return null;
+  const outcome = legacy.outcome;
+  if (outcome !== 'ended' && outcome !== 'missed' && outcome !== 'declined') return null;
+  const durationSeconds = Number(legacy.durationSeconds);
+  return {
+    outcome,
+    ...(Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
+  };
+}
+
+function formatCallDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = `${m}`.padStart(2, '0');
+  const ss = `${s}`.padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+
+/** Thread bubble label. `isMine` = the viewer placed the call (sender is always the caller). */
+export function callLogDmLabel(content: string, isMine: boolean): string {
+  const payload = callLogDmPayload(content);
+  if (!payload) return 'Video call';
+  switch (payload.outcome) {
+    case 'ended':
+      return `Video call · ${formatCallDuration(payload.durationSeconds ?? 0)}`;
+    case 'declined':
+      return isMine ? 'Call declined' : 'You declined this call';
+    case 'missed':
+      return isMine ? 'No answer' : 'Missed video call';
+  }
+}
+
 export function resolveStructuredDmCard(
   messageType: string | undefined,
   content: string,
@@ -173,6 +213,12 @@ export function dmInboxPreview(messageType: string | undefined, content: string)
       return caption.length > 80 ? `${caption.slice(0, 79)}…` : caption;
     }
     return 'Sent a photo';
+  }
+  if (messageType === 'call_log') {
+    const payload = callLogDmPayload(content);
+    if (payload?.outcome === 'ended') return 'Video call';
+    if (payload?.outcome === 'declined') return 'Call declined';
+    return 'Missed video call';
   }
   return null;
 }

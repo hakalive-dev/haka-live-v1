@@ -41,11 +41,18 @@ export function navigateFromPushData(data: PushNavigationData | undefined | null
 
   if ((type === 'video_call' || type === 'voice_call') && data.callerId) {
     const callType = data.callType === 'voice' || type === 'voice_call' ? 'voice' : 'video';
-    promptIncomingVideoCallFromPush(
-      data.callerId,
-      data.callerDisplayName ?? 'Someone',
+    promptIncomingVideoCallFromPush(data.callerId, data.callerDisplayName ?? 'Someone', {
+      callId: data.callId,
       callType,
-    );
+    });
+    return true;
+  }
+
+  if (type === 'video_call_missed' && data.senderId) {
+    navigationRef.navigate('DMConversation', {
+      userId: data.senderId,
+      displayName: data.senderName ?? 'Video call',
+    });
     return true;
   }
 

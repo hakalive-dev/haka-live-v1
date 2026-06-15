@@ -1,20 +1,12 @@
 import type { Server } from 'socket.io';
 import { prisma } from '../../config/prisma';
-import { AppError } from '../../middleware/error.middleware';
-import { assertCannotReplyToSystemDm } from './haka-team-guard';
 import { isHakaTeamUserId } from '../../constants/haka-team';
 import { isWithdrawalMessageUserId } from '../../constants/withdrawal-message';
 import {
   createNotification,
   sendPushOnly,
   userWantsMessagePush,
-  userAcceptsCalls,
-  sendIncomingCallPush,
 } from '../notifications/notifications.service';
-import { generateRtcToken, getOrAssignUid } from '../rooms/agora.service';
-import { getIO } from '../../sockets';
-import { CALL_EVENTS } from '../../shared-types';
-import { deriveCallChannelName } from './call-channel';
 
 const PREVIEW_MAX = 120;
 
@@ -149,108 +141,4 @@ export async function notifyRoomChatRecipients(opts: {
   }
 }
 
-async function assertCanSignalCall(callerId: string, calleeId: string) {
-  if (callerId === calleeId) throw new AppError('Invalid call target', 400);
-  const callee = await prisma.user.findUnique({ where: { id: calleeId }, select: { id: true } });
-  if (!callee) throw new AppError('User not found', 404);
-  const block = await prisma.blockedUser.findFirst({
-    where: {
-      OR: [
-        { actorId: callerId, targetId: calleeId },
-        { actorId: calleeId, targetId: callerId },
-      ],
-    },
-    select: { id: true },
-  });
-  if (block) throw new AppError('You cannot call this user', 403);
-}
-
-/**
- * Signal callee over socket + high-priority FCM. Callee mints their own Agora token (same channel).
- */
-export async function signalOutgoingCall(
-  callerId: string,
-  calleeId: string,
-  callType: 'voice' | 'video' = 'video',
-) {
-  assertCannotReplyToSystemDm(calleeId);
-  await assertCanSignalCall(callerId, calleeId);
-
-  if (!(await userAcceptsCalls(calleeId))) {
-    throw new AppError('This user has disabled calls', 403);
-  }
-
-  const caller = await prisma.user.findUnique({
-    where: { id: callerId },
-    select: { displayName: true },
-  });
-  const callerDisplayName = caller?.displayName?.trim() || 'Someone';
-
-  const channel = deriveCallChannelName(callerId, calleeId);
-  const calleeUid = await getOrAssignUid(calleeId, channel);
-  const { token, appId, expiresAt } = generateRtcToken(channel, calleeUid, 'publisher');
-
-  const modeLabel = callType === 'voice' ? 'voice' : 'video';
-  const pushType = callType === 'voice' ? 'voice_call' : 'video_call';
-
-  const payload = {
-    callerId,
-    callerDisplayName,
-    callType,
-    channelId: channel,
-    agoraToken: token,
-    appId,
-    uid: calleeUid,
-    expiresAt: String(expiresAt),
-  };
-
-  try {
-    getIO().to(`user:${calleeId}`).emit(CALL_EVENTS.INCOMING, payload);
-  } catch {
-    /* tests / no io */
-  }
-
-  void sendIncomingCallPush(
-    calleeId,
-    `Incoming ${modeLabel} call`,
-    `${callerDisplayName} is calling`,
-    {
-      type: pushType,
-      callType,
-      callerId,
-      callerDisplayName,
-      channelId: channel,
-    },
-  ).catch(() => {});
-}
-
-/** @deprecated Use signalOutgoingCall — kept for existing imports/tests */
-export const signalOutgoingVideoCall = signalOutgoingCall;
-
-function emitCallToUser(targetUserId: string, event: string, peerId: string) {
-  try {
-    getIO().to(`user:${targetUserId}`).emit(event, { peerId });
-  } catch {
-    /* tests / no io */
-  }
-}
-
-/** Callee declined — notify caller. */
-export async function signalCallDeclined(calleeId: string, callerId: string) {
-  assertCannotReplyToSystemDm(callerId);
-  await assertCanSignalCall(calleeId, callerId);
-  emitCallToUser(callerId, CALL_EVENTS.DECLINED, calleeId);
-}
-
-/** Either party ended the call — notify the other user. */
-export async function signalCallEnded(userId: string, otherId: string) {
-  if (userId === otherId) throw new AppError('Invalid call target', 400);
-  emitCallToUser(otherId, CALL_EVENTS.ENDED, userId);
-}
-
-/** Caller cancelled before callee answered — notify callee. */
-export async function signalCallCancelled(callerId: string, calleeId: string) {
-  assertCannotReplyToSystemDm(calleeId);
-  await assertCanSignalCall(callerId, calleeId);
-  emitCallToUser(calleeId, CALL_EVENTS.CANCELLED, callerId);
-}
+// 1:1 voice/video call signaling lives in call.service.ts (state machine + ring timeouts).

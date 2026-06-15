@@ -463,8 +463,12 @@ export async function insertServerDirectMessage(opts: {
    * so the user isn't notified twice. The DM row + `new_dm` socket event are still sent.
    */
   skipRecipientNotify?: boolean;
+  /** Insert already-read (informational rows like call logs that shouldn't badge). */
+  isRead?: boolean;
+  /** Also emit `new_dm` to the sender so their open thread updates live (no REST echo exists for server inserts). */
+  alsoEmitToSender?: boolean;
 }) {
-  const { senderId, recipientId, content, messageType, skipRecipientNotify } = opts;
+  const { senderId, recipientId, content, messageType, skipRecipientNotify, isRead, alsoEmitToSender } = opts;
   const trimmed = content.trim();
   if (!trimmed) throw new AppError('Message cannot be empty');
   if (trimmed.length > 2000) throw new AppError('Message too long (max 2000 chars)');
@@ -476,13 +480,16 @@ export async function insertServerDirectMessage(opts: {
       recipientId,
       content: trimmed,
       messageType,
+      ...(isRead ? { isRead: true } : {}),
     },
     select: dmSelect(),
   });
 
   const serialized = serializeDM(dm);
   try {
-    getIO().to(`user:${recipientId}`).emit('new_dm', serialized);
+    const io = getIO();
+    io.to(`user:${recipientId}`).emit('new_dm', serialized);
+    if (alsoEmitToSender) io.to(`user:${senderId}`).emit('new_dm', serialized);
   } catch {
     /* Socket.io not initialized (tests) */
   }

@@ -1,10 +1,18 @@
 import 'react-native-url-polyfill/auto';
 import { initReleaseDiagnostics } from './src/diagnostics/releaseDiagnostics';
+import { registerCallPushHandlers } from './src/background/callPushHandler';
 
 try {
   initReleaseDiagnostics();
 } catch {
   /* diagnostics are best-effort at module load */
+}
+
+try {
+  // Must run at module scope so killed-state FCM/Notifee events reach JS (Android).
+  registerCallPushHandlers();
+} catch {
+  /* best-effort */
 }
 
 import React from 'react';
@@ -29,6 +37,7 @@ import { preloadSvgaAssets } from './src/screens/room/SVGAGiftEffect';
 import { API_BASE_URL, pingBackend } from './src/api/client';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { ConnectivityProvider } from './src/components/Connectivity';
+import { AppUpdateGate } from './src/components/AppUpdateGate';
 
 function App() {
   useKeepAwake();
@@ -58,6 +67,8 @@ function App() {
                       <IncomingCallProvider>
                         <ConnectivityProvider>
                           <RootNavigator />
+                          {/* Overlays an update popup when the build is behind. */}
+                          <AppUpdateGate />
                         </ConnectivityProvider>
                       </IncomingCallProvider>
                     </SeatInvitePromptProvider>

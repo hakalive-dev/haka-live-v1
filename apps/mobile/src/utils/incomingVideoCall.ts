@@ -1,23 +1,37 @@
 import type { CallType } from '@haka-live/shared-types/events';
-import {
-  dismissIncomingCallFromExternal,
-  showIncomingCallFromExternal,
-  type IncomingCallPayload,
-} from '@/components/IncomingCallOverlay';
+import { navigationRef } from '../navigation/navigationRef';
+import type { RootStackParamList } from '../navigation/types';
 
-export type CallIncomingSocketPayload = IncomingCallPayload & {
-  expiresAt?: string;
+export type CallIncomingSocketPayload = {
+  callId?: string;
+  callerId: string;
+  callerDisplayName: string;
+  callType?: CallType;
+  channelId: string;
+  agoraToken: string;
+  appId: string;
+  uid: number;
 };
 
-function normalizeCallType(value: unknown): CallType {
-  return value === 'voice' ? 'voice' : 'video';
+function isOnCallScreen(): boolean {
+  const route = navigationRef.getCurrentRoute();
+  return route?.name === 'VideoCall' || route?.name === 'IncomingCall';
 }
 
-export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPayload) {
-  showIncomingCallFromExternal({
+/** Open the full-screen ringing UI (no-op if a call screen is already up). */
+export function presentIncomingCall(params: RootStackParamList['IncomingCall']): void {
+  if (!navigationRef.isReady()) return;
+  if (isOnCallScreen()) return; // server-side busy handles the real race; don't stack call UIs
+  navigationRef.navigate('IncomingCall', params);
+}
+
+/** Socket path — payload already carries this callee's Agora token. */
+export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPayload): void {
+  presentIncomingCall({
+    callId: payload.callId,
     callerId: payload.callerId,
     callerDisplayName: payload.callerDisplayName,
-    callType: normalizeCallType(payload.callType),
+    callType: payload.callType === 'voice' ? 'voice' : 'video',
     channelId: payload.channelId,
     agoraToken: payload.agoraToken,
     appId: payload.appId,
@@ -25,18 +39,27 @@ export function promptIncomingVideoCallFromSocket(payload: CallIncomingSocketPay
   });
 }
 
+/** Push path — no token in the payload; IncomingCallScreen fetches one on answer. */
 export function promptIncomingVideoCallFromPush(
   callerId: string,
   callerDisplayName: string,
-  callType: CallType = 'video',
-) {
-  showIncomingCallFromExternal({
+  opts?: { callId?: string; autoAnswer?: boolean; callType?: CallType },
+): void {
+  presentIncomingCall({
     callerId,
     callerDisplayName,
-    callType,
+    callId: opts?.callId,
+    autoAnswer: opts?.autoAnswer,
+    callType: opts?.callType === 'voice' ? 'voice' : 'video',
   });
 }
 
-export function dismissIncomingCall(callerId?: string) {
-  dismissIncomingCallFromExternal(callerId);
+/** Close the ringing UI when the caller cancels / the call times out. */
+export function dismissIncomingCallIfActive(peerId?: string): void {
+  if (!navigationRef.isReady()) return;
+  const route = navigationRef.getCurrentRoute();
+  if (route?.name !== 'IncomingCall') return;
+  const params = route.params as RootStackParamList['IncomingCall'] | undefined;
+  if (peerId && params?.callerId !== peerId) return;
+  if (navigationRef.canGoBack()) navigationRef.goBack();
 }

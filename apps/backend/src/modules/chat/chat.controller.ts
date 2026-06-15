@@ -1,14 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as chatService from './chat.service';
-import {
-  notifyDmRecipient,
-  notifyRoomChatRecipients,
-  signalOutgoingCall,
-  signalCallDeclined,
-  signalCallEnded,
-  signalCallCancelled,
-} from './chat.push';
+import { notifyDmRecipient, notifyRoomChatRecipients } from './chat.push';
+import * as callService from './call.service';
 import { deriveCallChannelName } from './call-channel';
 import { ok, created } from '../../utils/response';
 import { getIO } from '../../sockets';
@@ -312,15 +306,27 @@ export async function getCallToken(req: Request, res: Response, next: NextFuncti
 export async function postCallInvite(req: Request, res: Response, next: NextFunction) {
   try {
     const callType = req.body?.callType === 'voice' ? 'voice' : 'video';
-    await signalOutgoingCall(req.user!.id, req.params.userId, callType);
-    ok(res, { signaled: true }, 'Call invite sent');
+    const result = await callService.startCall(req.user!.id, req.params.userId, callType);
+    ok(
+      res,
+      { signaled: result.status === 'ringing', ...result },
+      result.status === 'busy' ? 'User is on another call' : 'Call invite sent',
+    );
+  } catch (err) { next(err); }
+}
+
+/** POST /chat/conversations/:userId/call-answer — callee accepts; 410 if call already settled */
+export async function postCallAnswer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await callService.answerCall(req.user!.id, req.params.userId);
+    ok(res, { answered: true, ...result }, 'Call answered');
   } catch (err) { next(err); }
 }
 
 /** POST /chat/conversations/:userId/call-decline — callee rejects incoming call */
 export async function postCallDecline(req: Request, res: Response, next: NextFunction) {
   try {
-    await signalCallDeclined(req.user!.id, req.params.userId);
+    await callService.declineCall(req.user!.id, req.params.userId);
     ok(res, { declined: true }, 'Call declined');
   } catch (err) { next(err); }
 }
@@ -328,7 +334,7 @@ export async function postCallDecline(req: Request, res: Response, next: NextFun
 /** POST /chat/conversations/:userId/call-end — either party ends the call */
 export async function postCallEnd(req: Request, res: Response, next: NextFunction) {
   try {
-    await signalCallEnded(req.user!.id, req.params.userId);
+    await callService.endCall(req.user!.id, req.params.userId);
     ok(res, { ended: true }, 'Call ended');
   } catch (err) { next(err); }
 }
@@ -336,7 +342,7 @@ export async function postCallEnd(req: Request, res: Response, next: NextFunctio
 /** POST /chat/conversations/:userId/call-cancel — caller aborts before callee answers */
 export async function postCallCancel(req: Request, res: Response, next: NextFunction) {
   try {
-    await signalCallCancelled(req.user!.id, req.params.userId);
+    await callService.cancelCall(req.user!.id, req.params.userId);
     ok(res, { cancelled: true }, 'Call cancelled');
   } catch (err) { next(err); }
 }

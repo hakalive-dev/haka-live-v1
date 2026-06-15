@@ -12,7 +12,7 @@ index f17d2d4..d2f24a1 100644
    implementation "androidx.media3:media3-exoplayer:${androidxMedia3Version}"
    implementation "androidx.media3:media3-exoplayer-dash:${androidxMedia3Version}"
 diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java b/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
-index 9ac55d6..7995860 100644
+index 9ac55d6..849ba30 100644
 --- a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
 +++ b/node_modules/expo-video/android/src/main/java/expo/modules/video/player/DefaultLoadControl.java
 @@ -389,7 +389,7 @@ public class DefaultLoadControl implements LoadControl {
@@ -24,6 +24,15 @@ index 9ac55d6..7995860 100644
      return allocator;
    }
  
+@@ -449,7 +449,7 @@ public class DefaultLoadControl implements LoadControl {
+ 
+   @Override
+   public boolean shouldContinuePreloading(
+-    Timeline timeline, MediaPeriodId mediaPeriodId, long bufferedDurationUs) {
++    PlayerId playerId, Timeline timeline, MediaPeriodId mediaPeriodId, long bufferedDurationUs) {
+     for (PlayerLoadingState playerLoadingState : loadingStates.values()) {
+       if (playerLoadingState.isLoading) {
+         return false;
 diff --git a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/VideoPlayerLoadControl.kt b/node_modules/expo-video/android/src/main/java/expo/modules/video/player/VideoPlayerLoadControl.kt
 index 4ffe72b..c479d7e 100644
 --- a/node_modules/expo-video/android/src/main/java/expo/modules/video/player/VideoPlayerLoadControl.kt

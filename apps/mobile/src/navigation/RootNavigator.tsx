@@ -35,6 +35,7 @@ import { navigationRef } from "./navigationRef";
 import { usePushRegistration } from "../hooks/usePushRegistration";
 import { usePushNotificationOpen } from "../hooks/usePushNotificationOpen";
 import { useForegroundPush } from "../hooks/useForegroundPush";
+import { useCallNotificationOpen } from "../hooks/useCallNotificationOpen";
 import {
   DMConnectionProvider,
 } from "../hooks/useDMConnection";
@@ -161,6 +162,7 @@ export function RootNavigator() {
   usePushRegistration(Boolean(accessToken));
   usePushNotificationOpen(Boolean(accessToken));
   useForegroundPush(Boolean(accessToken));
+  useCallNotificationOpen(Boolean(accessToken));
   useMessagesBadgeQuery(Boolean(accessToken));
 
   useInviteLinkCapture();
@@ -268,6 +270,19 @@ export function RootNavigator() {
                   options={{
                     presentation: "fullScreenModal",
                     animation: "fade",
+                  }}
+                />
+                <Root.Screen
+                  name="IncomingCall"
+                  getComponent={lazyScreen(
+                    () =>
+                      require("@screens/chat/IncomingCallScreen")
+                        .IncomingCallScreen,
+                  )}
+                  options={{
+                    presentation: "fullScreenModal",
+                    animation: "fade",
+                    gestureEnabled: false,
                   }}
                 />
 

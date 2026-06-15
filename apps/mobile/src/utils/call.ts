@@ -12,10 +12,15 @@ async function startCall(
   callType: CallType,
 ): Promise<void> {
   try {
-    const [t] = await Promise.all([
+    const [t, invite] = await Promise.all([
       chatApi.getCallToken(userId),
       chatApi.postCallInvite(userId, callType),
     ]);
+    if (invite.status === 'busy') {
+      const label = callType === 'voice' ? 'Voice call' : 'Video call';
+      Alert.alert(label, `${displayName} is on another call right now.`);
+      return;
+    }
     if (!navigationRef.isReady()) return;
     navigationRef.navigate('VideoCall', {
       userId,

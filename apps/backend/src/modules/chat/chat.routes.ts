@@ -34,6 +34,7 @@ router.get('/friends/online',                    ctrl.getOnlineFriends);
 
 // ── 1:1 Video Call ─────────────────────────────────────────────────────────────
 router.post('/conversations/:userId/call-invite',  ctrl.postCallInvite);
+router.post('/conversations/:userId/call-answer',  ctrl.postCallAnswer);
 router.post('/conversations/:userId/call-decline', ctrl.postCallDecline);
 router.post('/conversations/:userId/call-end',     ctrl.postCallEnd);
 router.post('/conversations/:userId/call-cancel', ctrl.postCallCancel);

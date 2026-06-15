@@ -9,6 +9,11 @@ import {
   settleStateRankingRewards,
   listStateRankingEnabledCountries,
 } from '../modules/leaderboard/state-ranking.service';
+import {
+  settleRankingRewards,
+  REWARD_BOARDS,
+  type RewardPeriod,
+} from '../modules/leaderboard/ranking-rewards.service';
 import { dailyDateKey } from '../modules/leaderboard/state-ranking-keys';
 import { withSchedulerLock } from '../utils/distributed-lock';
 
@@ -74,6 +79,24 @@ async function settleAndClearStateRankings(settlingDateKey: string): Promise<voi
   );
 }
 
+/**
+ * Credit ranking-board rewards (Agent/Activity) for the period that just closed, BEFORE its
+ * Redis sorted set is deleted below. No-op unless a board is enabled + configured for `period`.
+ * `periodDate` is the boundary day: yesterday for daily, the reset day for weekly/monthly.
+ */
+async function settleRankingRewardsForPeriod(period: RewardPeriod, periodDate: Date): Promise<void> {
+  for (const board of REWARD_BOARDS) {
+    try {
+      const n = await settleRankingRewards(board, period, periodDate);
+      if (n > 0) {
+        console.log(`🏆 ranking reward [${board}/${period}] — credited ${n} user(s)`);
+      }
+    } catch (err: any) {
+      console.error(`❌ ranking reward [${board}/${period}] failed:`, err?.message ?? err);
+    }
+  }
+}
+
 async function resetKeys(keys: string[], label: string, regionalPeriod?: Period): Promise<void> {
   if (keys.length === 0) return;
   try {
@@ -83,6 +106,12 @@ async function resetKeys(keys: string[], label: string, regionalPeriod?: Period)
       const settlingDateKey = dailyDateKey(yesterday);
       await settleAndClearStateRankings(settlingDateKey);
     }
+
+    // Settle ranking-board rewards before the period's sorted set is cleared.
+    const settleDate = new Date();
+    settleDate.setUTCHours(0, 0, 0, 0);
+    if (label === 'daily') settleDate.setUTCDate(settleDate.getUTCDate() - 1);
+    await settleRankingRewardsForPeriod(label as RewardPeriod, settleDate);
 
     const count = await redis.del(...keys);
     let regional = 0;

@@ -66,6 +66,7 @@ import { getActiveRoomIdFromNavigation } from '@navigation/roomNavigation';
 import { useRoomSession } from '@/room/RoomSessionProvider';
 import type { DirectMessage, Gift, TeamAnnouncementPayload } from '@/types';
 import {
+  callLogDmLabel,
   coinTransferDmBody,
   parseLegacyDmJson,
   resolveStructuredDmCard,
@@ -1092,6 +1093,32 @@ export function DMConversationScreen({ route, navigation }: Props) {
                     </View>
                   );
                 })()
+              ) : item.messageType === 'call_log' ? (
+                <TouchableOpacity
+                  style={[
+                    styles.bubble,
+                    isMine ? dmMessageBubbleStyles.bubbleMine : dmMessageBubbleStyles.bubbleTheirs,
+                    styles.callLogBubble,
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => void startVideoCall(userId, displayName)}
+                >
+                  <Ionicons
+                    name="videocam"
+                    size={18}
+                    color={isMine ? '#FFF' : Colors.primary}
+                  />
+                  <Text
+                    style={[
+                      dmMessageBubbleStyles.bubbleText,
+                      isMine
+                        ? dmMessageBubbleStyles.bubbleTextMine
+                        : dmMessageBubbleStyles.bubbleTextTheirs,
+                    ]}
+                  >
+                    {callLogDmLabel(item.content, isMine)}
+                  </Text>
+                </TouchableOpacity>
               ) : (
                 <View
                   style={[
@@ -1468,6 +1495,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E0F5',
     paddingVertical: Spacing.md,
+  },
+  callLogBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   withdrawalCardWrap: {
     alignSelf: 'flex-start',

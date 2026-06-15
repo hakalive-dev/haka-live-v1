@@ -171,6 +171,21 @@ export type RootStackParamList = {
     agoraToken: string;
     appId: string;
     uid: number;
+    /** True when this side answered (callee) — skips ringback / "Ringing…" UI. */
+    incoming?: boolean;
+  };
+  /** Full-screen ringing UI. Token fields are absent on the push path (fetched on answer). */
+  IncomingCall: {
+    callerId: string;
+    callerDisplayName: string;
+    callId?: string;
+    callType?: 'voice' | 'video';
+    channelId?: string;
+    agoraToken?: string;
+    appId?: string;
+    uid?: number;
+    /** Auto-accept on mount (user tapped the notification's Answer action). */
+    autoAnswer?: boolean;
   };
 };
 

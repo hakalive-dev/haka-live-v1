@@ -88,10 +88,15 @@ function patchExpoVideoLoadControl() {
   if (!fs.existsSync(loadControl)) return;
 
   const original = fs.readFileSync(loadControl, 'utf8');
-  const patched = original.replace(
-    '@Override\n  public Allocator getAllocator() {\n    return allocator;\n  }',
-    '@Override\n  public Allocator getAllocator(PlayerId playerId) {\n    return allocator;\n  }',
-  );
+  const patched = original
+    .replace(
+      '@Override\n  public Allocator getAllocator() {\n    return allocator;\n  }',
+      '@Override\n  public Allocator getAllocator(PlayerId playerId) {\n    return allocator;\n  }',
+    )
+    .replace(
+      'public boolean shouldContinuePreloading(\n    Timeline timeline, MediaPeriodId mediaPeriodId, long bufferedDurationUs) {',
+      'public boolean shouldContinuePreloading(\n    PlayerId playerId, Timeline timeline, MediaPeriodId mediaPeriodId, long bufferedDurationUs) {',
+    );
   if (patched !== original) fs.writeFileSync(loadControl, patched, 'utf8');
 }
 

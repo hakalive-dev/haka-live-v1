@@ -337,6 +337,27 @@ export function warmBackendForAuth(): Promise<boolean> {
   return checkBackendReachable(REACHABILITY_TIMEOUT_MS, REACHABILITY_ATTEMPTS);
 }
 
+/** Longest reset window we'll wait out before retrying a rate-limited GET. */
+const MAX_429_RETRY_WAIT_S = 5;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Seconds until the limiter window resets, from `Retry-After` (preferred) or the
+ * standard `RateLimit-Reset` header. Returns null when neither is usable.
+ */
+function parseRetryDelaySeconds(headers: Headers): number | null {
+  for (const name of ['retry-after', 'ratelimit-reset']) {
+    const raw = headers.get(name);
+    if (raw == null) continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return null;
+}
+
 async function _request<T>(spec: RequestSpec, _retry = false): Promise<FetchResponse<T>> {
   if (cachedAccessToken === undefined) {
     cachedAccessToken = (await TokenStorage.getAccess()) ?? null;
@@ -462,6 +483,19 @@ async function _request<T>(spec: RequestSpec, _retry = false): Promise<FetchResp
         },
       },
     }, true);
+  }
+
+  // A 429 means this identity briefly exhausted its request budget. For idempotent
+  // GET reads, wait out a SHORT reset window and retry once so a transient burst
+  // doesn't dead-end a screen (e.g. DM history showing "couldn't load messages").
+  // Never auto-retry writes — replaying a POST could double-send a gift/message.
+  if (response.status === 429 && spec.method === 'GET' && !_retry) {
+    const resetSeconds = parseRetryDelaySeconds(response.headers);
+    if (resetSeconds !== null && resetSeconds <= MAX_429_RETRY_WAIT_S) {
+      logDiagnostic('api_http', `429_retry ${spec.path}`, { waitSeconds: resetSeconds });
+      await sleep(resetSeconds * 1000 + 250); // small buffer past the window edge
+      return _request<T>(spec, true);
+    }
   }
 
   let body: unknown;

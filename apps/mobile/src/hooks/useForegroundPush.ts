@@ -9,6 +9,12 @@ import { navigationRef } from '@/navigation/navigationRef';
 import { isRnFirebaseMessagingLinked } from '@/utils/rnfbMessaging';
 import { showSeatInviteFromExternal } from '@/components/SeatInvitePrompt';
 import { seatInvitationFromPushData } from '@/utils/seatInvitePayload';
+import {
+  promptIncomingVideoCallFromPush,
+  dismissIncomingCallIfActive,
+} from '@/utils/incomingVideoCall';
+import { leaveVideoCallIfActive } from '@/utils/videoCall';
+import { cancelIncomingCallNotification } from '@/services/callNotifications';
 import { invalidateChatUnreadQueries } from './useDMConnection';
 
 function isViewingDmConversation(senderId: string | undefined): boolean {
@@ -40,6 +46,27 @@ export function useForegroundPush(enabled: boolean) {
         if (type === 'room_seat_invite') {
           const invite = seatInvitationFromPushData(data as Record<string, string | undefined>);
           if (invite) showSeatInviteFromExternal(invite);
+          return;
+        }
+
+        // Call pushes mirror the socket events — this is the rescue path when the
+        // user socket silently died (stale-token reconnect). presentIncomingCall
+        // no-ops if the socket already opened the ringing UI.
+        if (type === 'video_call' && typeof data.callerId === 'string') {
+          promptIncomingVideoCallFromPush(
+            data.callerId,
+            typeof data.callerDisplayName === 'string' ? data.callerDisplayName : 'Someone',
+            { callId: typeof data.callId === 'string' && data.callId ? data.callId : undefined },
+          );
+          return;
+        }
+        if (type === 'video_call_signal') {
+          const peerId = typeof data.peerId === 'string' ? data.peerId : undefined;
+          leaveVideoCallIfActive(peerId);
+          dismissIncomingCallIfActive(peerId);
+          void cancelIncomingCallNotification(
+            typeof data.callId === 'string' && data.callId ? data.callId : undefined,
+          );
           return;
         }
 
